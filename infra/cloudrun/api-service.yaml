@@ -17,7 +17,7 @@ spec:
     metadata:
       annotations:
         run.googleapis.com/cloudsql-instances: simplebuildpro:us-central1:simplebuildpro-db
-        run.googleapis.com/vpc-access-connector: projects/simplebuildpro/locations/us-central1/connectors/simplebuildpro-vpc-connector
+        run.googleapis.com/vpc-access-connector: projects/simplebuildpro/locations/us-central1/connectors/sbpro-vpc-connector
         run.googleapis.com/vpc-access-egress: private-ranges-only
         autoscaling.knative.dev/minScale: '1'
         autoscaling.knative.dev/maxScale: '10'

@@ -24,8 +24,8 @@ COPY packages/shared/ packages/shared/
 COPY packages/db/ packages/db/
 COPY apps/api/ apps/api/
 
-# Build the API (tsc with rootDir ../../ requires monorepo root)
-RUN cd apps/api && npx tsc --outDir ./dist --rootDir ../../ && echo "API build complete"
+# Build the API with esbuild (bundles all imports into single file)
+RUN npm run build --workspace=@simplebuildpro/api
 
 # ─── Stage 2: Production ────────────────────────────────────
 FROM node:20-alpine AS production
@@ -46,10 +46,8 @@ COPY packages/shared/package.json packages/shared/
 RUN npm ci --omit=dev --workspace=@simplebuildpro/api && \
     npm cache clean --force
 
-# Copy built files from builder
+# Copy built bundle from builder (single file, all deps bundled)
 COPY --from=builder /app/apps/api/dist/ apps/api/dist/
-COPY --from=builder /app/packages/shared/src/ packages/shared/src/
-COPY --from=builder /app/packages/db/src/ packages/db/src/
 
 # Copy Drizzle migrations
 COPY migrations/ migrations/
@@ -68,4 +66,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:8080/health/live || exit 1
 
 # Start the API server
-CMD ["node", "apps/api/dist/apps/api/src/index.js"]
+CMD ["node", "apps/api/dist/index.mjs"]
