@@ -18,7 +18,7 @@ import {
   Layout, MousePointer, Hand, Grid3x3, Video, FormInput,
   Heading1, Heading2, Heading3, ListOrdered, Quote, Minus,
   CircleDot, ToggleLeft, Table, Map, Star, MessageSquare,
-  Navigation, Footer as FooterIcon, SlidersHorizontal, Lock,
+  Navigation, PanelBottom as FooterIcon, SlidersHorizontal, Lock,
 } from 'lucide-react';
 import clsx from 'clsx';
 
