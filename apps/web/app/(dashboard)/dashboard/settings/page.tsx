@@ -5,7 +5,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/lib/store';
@@ -27,7 +27,7 @@ const PLAN_FEATURES: Record<string, string[]> = {
   enterprise: ['Unlimited everything', 'Custom AI limits', '500 GB storage', 'Dedicated support', 'SSO / SAML', 'SLA guarantee'],
 };
 
-export default function SettingsPage() {
+function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, setUser, logout: storeLogout } = useAuthStore();
@@ -166,7 +166,7 @@ export default function SettingsPage() {
 
           {/* Content */}
           <div className="flex-1 min-w-0">
-            {/* ─── Profile Tab ───────────────────────────── */}
+            {/* Profile Tab */}
             {activeTab === 'profile' && (
               <div className="bg-white rounded-xl border border-slate-200 p-6">
                 <h2 className="text-lg font-bold text-slate-900 mb-6">Profile</h2>
@@ -217,10 +217,9 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* ─── Billing Tab ───────────────────────────── */}
+            {/* Billing Tab */}
             {activeTab === 'billing' && (
               <div className="space-y-6">
-                {/* Current Plan */}
                 <div className="bg-white rounded-xl border border-slate-200 p-6">
                   <h2 className="text-lg font-bold text-slate-900 mb-4">Current Plan</h2>
 
@@ -251,7 +250,6 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {/* Plan Comparison */}
                 <div className="grid md:grid-cols-3 gap-4">
                   {(['free', 'pro', 'business'] as const).map((plan) => {
                     const isCurrent = (user?.plan || 'free') === plan;
@@ -297,10 +295,9 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* ─── Security Tab ──────────────────────────── */}
+            {/* Security Tab */}
             {activeTab === 'security' && (
               <div className="space-y-6">
-                {/* Change Password */}
                 <div className="bg-white rounded-xl border border-slate-200 p-6">
                   <h2 className="text-lg font-bold text-slate-900 mb-6">Change Password</h2>
 
@@ -345,7 +342,6 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* MFA / Two-Factor Authentication */}
                 <MfaSection />
               </div>
             )}
@@ -353,6 +349,18 @@ export default function SettingsPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="animate-pulse text-slate-400">Loading settings...</div>
+      </div>
+    }>
+      <SettingsContent />
+    </Suspense>
   );
 }
 
@@ -396,7 +404,6 @@ function MfaSection() {
     fetchStatus();
   }, []);
 
-  // Start MFA setup
   const handleStartSetup = async () => {
     setSetupStep('qr');
     try {
@@ -421,7 +428,6 @@ function MfaSection() {
     }
   };
 
-  // Verify TOTP code and enable MFA
   const handleVerifySetup = async () => {
     if (verifyCode.length !== 6 || !/^\d{6}$/.test(verifyCode)) {
       setVerifyError('Enter a valid 6-digit code.');
@@ -455,7 +461,6 @@ function MfaSection() {
     }
   };
 
-  // Disable MFA
   const handleDisableMfa = async () => {
     setDisabling(true);
     try {
@@ -528,7 +533,6 @@ function MfaSection() {
         </span>
       </div>
 
-      {/* ─── MFA Enabled State ─────────────────────── */}
       {mfaEnabled && setupStep !== 'done' && (
         <div className="space-y-4">
           <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -549,7 +553,6 @@ function MfaSection() {
             Disable 2FA
           </Button>
 
-          {/* Disable confirmation */}
           {disableOpen && (
             <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg space-y-3">
               <div className="flex items-start gap-2">
@@ -584,7 +587,6 @@ function MfaSection() {
         </div>
       )}
 
-      {/* ─── Setup Flow: Idle ────────────────────── */}
       {!mfaEnabled && setupStep === 'idle' && (
         <div className="space-y-4">
           <div className="p-4 bg-slate-50 rounded-lg">
@@ -602,7 +604,6 @@ function MfaSection() {
         </div>
       )}
 
-      {/* ─── Setup Flow: QR Code ─────────────────── */}
       {setupStep === 'qr' && (
         <div className="space-y-5">
           <div>
@@ -671,7 +672,6 @@ function MfaSection() {
         </div>
       )}
 
-      {/* ─── Setup Flow: Done — Recovery Codes ───── */}
       {setupStep === 'done' && recoveryCodes.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">

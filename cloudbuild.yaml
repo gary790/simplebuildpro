@@ -10,7 +10,15 @@ steps:
       - '.'
     id: 'build-api'
 
-  # Build Web image  
+  # Push API image immediately (don't wait for web)
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:latest'
+    id: 'push-api'
+    waitFor: ['build-api']
+
+  # Build Web image (runs in parallel with push-api)
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
@@ -20,10 +28,15 @@ steps:
       - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:latest'
       - '.'
     id: 'build-web'
+    waitFor: ['-']
 
-images:
-  - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:latest'
-  - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:latest'
+  # Push Web image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:latest'
+    id: 'push-web'
+    waitFor: ['build-web']
 
 logsBucket: 'gs://simplebuildpro_cloudbuild'
 

@@ -6,12 +6,12 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { setTokens, authApi } from '@/lib/api-client';
 import { useAuthStore } from '@/lib/store';
 
-export default function OAuthCallbackPage() {
+function CallbackHandler() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const setUser = useAuthStore((s) => s.setUser);
@@ -80,5 +80,17 @@ export default function OAuthCallbackPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function OAuthCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-8 h-8 mx-auto border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <CallbackHandler />
+    </Suspense>
   );
 }
