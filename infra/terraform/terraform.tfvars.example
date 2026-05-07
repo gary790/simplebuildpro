@@ -1,9 +1,48 @@
 # ============================================================
-# SimpleBuild Pro — Terraform Variables
-# Copy to terraform.tfvars and fill in real values
+# SimpleBuild Pro — Terraform Variables Example
+# Copy this file to terraform.tfvars and fill in your values
+# NEVER commit terraform.tfvars to version control
 # ============================================================
 
-project_id  = "simplebuildpro"
+# ─── GCP Project ───────────────────────────────────────────
+project_id  = "your-gcp-project-id"
 region      = "us-central1"
-domain      = "simplebuildpro.com"
 environment = "production"
+
+# ─── Domain ────────────────────────────────────────────────
+domain = "yourdomain.com"
+
+# ─── Notes ─────────────────────────────────────────────────
+# 1. Ensure the GCP project exists and billing is enabled.
+# 2. The service account running Terraform needs these roles:
+#    - roles/editor (or more granular: Cloud Run Admin, Cloud SQL Admin,
+#      Secret Manager Admin, Storage Admin, Compute Admin, etc.)
+# 3. Secrets (Stripe, Anthropic, Google OAuth, GitHub OAuth, Redis URL)
+#    are managed via Secret Manager. After `terraform apply`, populate them:
+#
+#    echo -n "sk_live_..." | gcloud secrets versions add stripe-secret-key --data-file=-
+#    echo -n "sk-ant-..." | gcloud secrets versions add anthropic-api-key --data-file=-
+#    echo -n "your-google-client-id" | gcloud secrets versions add google-client-id --data-file=-
+#    echo -n "your-google-client-secret" | gcloud secrets versions add google-client-secret --data-file=-
+#    echo -n "your-github-client-id" | gcloud secrets versions add github-client-id --data-file=-
+#    echo -n "your-github-client-secret" | gcloud secrets versions add github-client-secret --data-file=-
+#    echo -n "redis://10.0.0.x:6379" | gcloud secrets versions add redis-url --data-file=-
+#
+# 4. After initial apply, note the output values:
+#    - api_url: Cloud Run API service URL
+#    - web_url: Cloud Run Web service URL
+#    - lb_ip:   Global Load Balancer IP (point DNS here)
+#    - db_connection: Cloud SQL connection string (sensitive)
+#
+# 5. DNS setup: Create A records for your domain pointing to lb_ip:
+#    yourdomain.com       -> <lb_ip>
+#    www.yourdomain.com   -> <lb_ip>
+#    api.yourdomain.com   -> <lb_ip>
+#
+# 6. SSL certificates are auto-provisioned via Google-managed certs.
+#    Allow up to 24 hours for initial provisioning.
+#
+# 7. For staging environments, create a separate terraform.tfvars:
+#    project_id  = "your-staging-project-id"
+#    environment = "staging"
+#    domain      = "staging.yourdomain.com"

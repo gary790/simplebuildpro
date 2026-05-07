@@ -1,365 +1,457 @@
 # SimpleBuild Pro
 
-**Enterprise Website Builder** — Build, preview, and deploy production websites at scale.
+**A full-stack website builder platform** — code editor, visual drag-and-drop builder, AI assistant, live preview, one-click deploy, team collaboration, and billing. Built for production deployment on Google Cloud Platform.
 
-**Domain**: [simplebuildpro.com](https://simplebuildpro.com)  
-**API**: [api.simplebuildpro.com](https://api.simplebuildpro.com)  
-**GitHub**: [gary790/simplebuildpro](https://github.com/gary790/simplebuildpro)
+## Project Overview
 
----
+- **Name**: SimpleBuild Pro
+- **Stack**: Next.js 14 (frontend) + Hono (API) + PostgreSQL (Drizzle ORM) + GCP (Cloud Run, Cloud SQL, GCS, CDN)
+- **Architecture**: Turborepo monorepo with shared packages
+- **Lines of Code**: ~14,800+ across 90+ files
 
-## Overview
+## Features
 
-SimpleBuild Pro is a full-stack SaaS website builder featuring a browser-based IDE with Monaco code editor, Claude-powered AI assistant, isolated live preview via Novita sandbox, one-click deploy to global CDN, Stripe billing, and team collaboration — all hosted on Google Cloud.
+### Completed
 
-## Architecture
+- **Full IDE Editor** — Monaco-based code editor with file tree, tabs, terminal output, keyboard shortcuts (Cmd+S save, Cmd+B build)
+- **Visual Website Builder** — Drag-and-drop component library (layouts, text, media, forms, interactive elements, navigation) with device preview (desktop/tablet/mobile), undo/redo, grid overlay, and Tailwind CSS integration
+- **Code/Visual Mode Toggle** — Seamlessly switch between code editor and visual builder for HTML files
+- **AI Chat Assistant** — Claude-powered AI chat integrated into the editor for code generation and assistance
+- **Authentication** — Email/password signup & login with JWT access/refresh tokens, bcrypt password hashing
+- **OAuth2 Login** — Google and GitHub OAuth2 with account linking, auto-registration, and secure callback handling
+- **MFA/2FA (TOTP)** — Full two-factor authentication: QR code setup, TOTP verification, recovery codes, enable/disable flow with frontend UI in Settings
+- **Project Management** — CRUD projects with slug-based routing, settings, and status tracking
+- **File Management** — Create, edit, rename, delete files and folders; bulk upsert; content hashing
+- **Asset Management** — Upload to GCS with CDN URLs, signed upload URLs, MIME type detection
+- **Build System** — HTML/CSS/JS minification (html-minifier-terser, clean-css, terser), versioned snapshots stored in GCS
+- **Deploy Pipeline** — One-click deploy to GCS with CDN distribution, version rollback support
+- **Lighthouse Scoring** — Integrated into build step via PageSpeed Insights API with static-analysis fallback; scores performance, accessibility, best practices, SEO
+- **Live Preview** — Novita sandbox-based live preview with real-time updates
+- **Custom Domains** — Domain management with DNS verification and SSL certificate tracking
+- **Billing & Subscriptions** — Stripe integration with checkout, portal, webhook handling; four plans (Free, Pro, Business, Enterprise)
+- **Organizations & Teams** — Create orgs, manage members (owner/admin/editor/viewer roles), update roles, remove members
+- **Invitation System** — Email-based org invitations with token-based acceptance, 7-day expiry, revocation
+- **Admin Dashboard** — Platform overview (users, projects, deployments, orgs), user/project lists with pagination, plan distribution, AI usage metrics, system health monitoring
+- **Rate Limiting** — Redis (Memorystore) backed sliding-window limiter with in-memory fallback; per-category limits (auth, API, AI, deploy, upload)
+- **Structured Logging** — JSON structured logs for Cloud Logging with severity levels, request tracing, correlation IDs, audit logging
+- **Request Tracing** — X-Request-ID propagation, response timing headers
+- **Infrastructure as Code** — Full Terraform configuration for GCP: Cloud Run, Cloud SQL PostgreSQL 16, VPC, Secret Manager, GCS buckets, CDN, global load balancer, managed SSL, Artifact Registry
+- **Database Migrations** — Versioned SQL migration files (0001_initial_schema, 0002_add_mfa_oauth_invitations)
+- **CI/CD Pipeline** — GitHub Actions workflow for build, test, deploy
+- **Testing** — Playwright E2E tests (auth flows, editor, dashboard) + Vitest API integration tests (health, auth, projects, files, orgs, MFA, admin)
 
-```
-simplebuildpro/                     # Turborepo monorepo
-├── apps/
-│   ├── api/                        # Hono REST API (Cloud Run, port 8080)
-│   │   ├── src/
-│   │   │   ├── index.ts            # Server entry — middleware + route registration
-│   │   │   ├── routes/
-│   │   │   │   ├── health.ts       # /health — DB connectivity check
-│   │   │   │   ├── auth.ts         # /api/v1/auth — signup, login, refresh, logout, profile
-│   │   │   │   ├── projects.ts     # /api/v1/projects — CRUD, templates, pagination
-│   │   │   │   ├── files.ts        # /api/v1/files — upsert, bulk, rename, delete
-│   │   │   │   ├── assets.ts       # /api/v1/assets — upload, signed URL, GCS CDN
-│   │   │   │   ├── ai.ts           # /api/v1/ai — Claude chat + SSE streaming
-│   │   │   │   ├── preview.ts      # /api/v1/preview — Novita sandbox lifecycle
-│   │   │   │   ├── build.ts        # /api/v1/build — minify, snapshot, version
-│   │   │   │   ├── deploy.ts       # /api/v1/deploy — GCS deploy, custom domains, rollback
-│   │   │   │   └── billing.ts      # /api/v1/billing — Stripe checkout, portal, webhooks
-│   │   │   ├── middleware/
-│   │   │   │   ├── auth.ts         # JWT verification, session injection
-│   │   │   │   ├── error-handler.ts# AppError class, Zod + generic error handling
-│   │   │   │   └── rate-limiter.ts # Sliding-window rate limiter per category
-│   │   │   └── services/
-│   │   │       ├── storage.ts      # Google Cloud Storage wrapper (upload, signed URLs, batch)
-│   │   │       └── novita.ts       # Novita sandbox SDK (create, update, kill, logs)
-│   │   ├── package.json
-│   │   └── tsconfig.json
-│   │
-│   └── web/                        # Next.js 15 frontend (Cloud Run, port 3000)
-│       ├── app/
-│       │   ├── layout.tsx          # Root layout — AuthProvider + ToastContainer
-│       │   ├── page.tsx            # Landing page — hero, features, pricing, CTA
-│       │   ├── globals.css         # Tailwind + editor layout + custom scrollbars
-│       │   ├── (auth)/
-│       │   │   ├── login/page.tsx  # Login form with JWT token management
-│       │   │   └── signup/page.tsx # Signup with plan selection
-│       │   ├── (dashboard)/
-│       │   │   └── dashboard/
-│       │   │       ├── page.tsx    # Project grid/list, usage cards, create modal
-│       │   │       └── settings/page.tsx  # Profile, billing (Stripe), security tabs
-│       │   ├── editor/
-│       │   │   └── [projectId]/page.tsx   # Full IDE workspace
-│       │   ├── components/
-│       │   │   ├── auth-provider.tsx       # Session restore, route protection
-│       │   │   ├── ui/
-│       │   │   │   ├── button.tsx          # Variant/size system, loading state
-│       │   │   │   ├── modal.tsx           # Animated overlay + ESC dismiss
-│       │   │   │   ├── toast.tsx           # Zustand-backed notification system
-│       │   │   │   └── dropdown.tsx        # Click-outside menu
-│       │   │   └── editor/
-│       │   │       ├── file-tree.tsx       # Hierarchical file browser
-│       │   │       ├── code-editor.tsx     # Monaco wrapper (custom theme, shortcuts)
-│       │   │       ├── tab-bar.tsx         # Open file tabs with dirty indicators
-│       │   │       ├── preview-panel.tsx   # Novita iframe, device toggle, controls
-│       │   │       └── ai-chat.tsx         # Claude streaming chat, file-update parser
-│       │   └── lib/
-│       │       ├── api-client.ts   # Typed fetch wrapper, auto-refresh, SSE streaming
-│       │       └── store.ts        # Zustand stores (auth, editor, chat)
-│       ├── next.config.js          # Standalone output, security headers, Monaco webpack
-│       ├── tailwind.config.js      # Brand palette, editor typography, animations
-│       └── package.json
-│
-├── packages/
-│   ├── db/                         # Drizzle ORM + PostgreSQL (Cloud SQL)
-│   │   ├── src/
-│   │   │   ├── schema.ts          # 16 tables: users, orgs, projects, files, assets,
-│   │   │   │                      #   versions, deployments, domains, oauth, refresh_tokens,
-│   │   │   │                      #   ai_conversations, ai_messages, preview_sessions,
-│   │   │   │                      #   subscriptions, usage_logs, org_members
-│   │   │   ├── client.ts          # Connection pool, health check, SSL config
-│   │   │   └── index.ts           # Re-exports
-│   │   ├── drizzle.config.ts
-│   │   └── package.json
-│   │
-│   └── shared/                     # Types, constants, templates, validation
-│       ├── src/
-│       │   ├── types.ts            # 30+ TypeScript interfaces (User, Project, File, etc.)
-│       │   ├── constants.ts        # URLs, GCS buckets, plan limits, rate limits, AI config
-│       │   ├── templates.ts        # 5 starter templates (blank, landing, portfolio, blog, business)
-│       │   ├── validation.ts       # Zod-style validators + slugify
-│       │   └── index.ts
-│       └── package.json
-│
-├── infra/
-│   ├── docker/
-│   │   ├── Dockerfile.api          # Multi-stage: build → production (node:20-alpine)
-│   │   └── Dockerfile.web          # Multi-stage: deps → build → standalone Next.js
-│   ├── terraform/
-│   │   └── main.tf                 # Full GCP IaC: VPC, Cloud SQL (HA), Cloud Run (API + Web),
-│   │                               #   GCS buckets, Secret Manager, Artifact Registry,
-│   │                               #   Global LB + CDN, SSL certificates, HTTP→HTTPS redirect
-│   └── cloudbuild.yaml             # CI/CD: test → build images → push → migrate → deploy
-│
-├── ecosystem.config.cjs            # PM2 config for local dev (API + Web)
-├── .env.example                    # All required environment variables
-├── turbo.json                      # Turborepo pipeline config
-├── tsconfig.json                   # Root TypeScript config with workspace path aliases
-├── package.json                    # Workspaces, scripts, engines
-└── .gitignore
-```
+### Data Architecture
 
-## Tech Stack
+**Database**: Cloud SQL PostgreSQL 16 via Drizzle ORM
 
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | Next.js 15, React 19, TypeScript, Tailwind CSS, Zustand, Monaco Editor |
-| **Backend** | Hono 4, Node.js 20, TypeScript, Zod validation |
-| **Database** | PostgreSQL 16 (Cloud SQL), Drizzle ORM |
-| **Storage** | Google Cloud Storage (4 buckets: assets, builds, deploys, snapshots) |
-| **AI** | Anthropic Claude (claude-sonnet-4-20250514), SSE streaming |
-| **Preview** | Novita Sandbox SDK (isolated runtime per project) |
-| **Billing** | Stripe (subscriptions, checkout, billing portal, webhooks) |
-| **Auth** | JWT (access + refresh tokens), bcrypt, session management |
-| **CDN** | Google Cloud CDN + Global Load Balancer |
-| **CI/CD** | Google Cloud Build → Artifact Registry → Cloud Run |
-| **IaC** | Terraform (VPC, Cloud SQL HA, Cloud Run, GCS, LB, SSL, Secrets) |
-| **Monorepo** | Turborepo with npm workspaces |
+| Table | Description |
+|---|---|
+| `users` | User accounts with plan, MFA, OAuth fields |
+| `oauth_accounts` | Google/GitHub OAuth linked accounts |
+| `refresh_tokens` | JWT refresh token hashes with expiry/revocation |
+| `organizations` | Teams with slug, owner, plan |
+| `org_members` | Membership with role-based access |
+| `org_invitations` | Pending invitations with token + expiry |
+| `projects` | User projects with settings, status |
+| `project_files` | File content with path, hash, MIME type |
+| `project_assets` | Binary assets in GCS with CDN URLs |
+| `project_versions` | Versioned snapshots for rollback |
+| `deployments` | Deploy records with status, URLs, Lighthouse scores |
+| `custom_domains` | Domain + SSL + DNS verification |
+| `ai_conversations` | AI chat sessions per project |
+| `ai_messages` | Individual chat messages with token tracking |
+| `preview_sessions` | Novita sandbox sessions |
+| `subscriptions` | Stripe subscription state |
+| `usage_logs` | Metered usage (AI tokens, deploys, storage) |
+| `audit_logs` | Security audit trail |
+
+**Storage Services**: GCS buckets for assets, builds, deploys, snapshots; Redis (Memorystore) for rate limiting
 
 ## API Endpoints
 
-### Auth (`/api/v1/auth`)
+### Authentication
 | Method | Path | Description |
-|--------|------|-------------|
-| POST | `/signup` | Create account (email, password, name) |
-| POST | `/login` | Authenticate, return JWT tokens |
-| POST | `/refresh` | Rotate access token |
-| POST | `/logout` | Revoke refresh token |
-| GET | `/me` | Get current user profile |
-| PATCH | `/me` | Update name / avatar |
-| POST | `/change-password` | Change password, revoke all sessions |
+|---|---|---|
+| `POST` | `/api/v1/auth/signup` | Register new user |
+| `POST` | `/api/v1/auth/login` | Email/password login |
+| `POST` | `/api/v1/auth/refresh` | Refresh JWT tokens |
+| `POST` | `/api/v1/auth/logout` | Revoke all tokens |
+| `GET` | `/api/v1/auth/me` | Get current user profile |
+| `PATCH` | `/api/v1/auth/me` | Update profile (name, avatar) |
+| `POST` | `/api/v1/auth/change-password` | Change password |
 
-### Projects (`/api/v1/projects`)
+### OAuth2
 | Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | List projects (paginated, filterable) |
-| GET | `/:id` | Get project with files, assets, versions |
-| POST | `/` | Create project (optional template) |
-| PATCH | `/:id` | Update project metadata |
-| DELETE | `/:id` | Cascade delete project |
+|---|---|---|
+| `GET` | `/api/v1/oauth/google` | Redirect to Google OAuth |
+| `GET` | `/api/v1/oauth/google/callback` | Google OAuth callback |
+| `GET` | `/api/v1/oauth/github` | Redirect to GitHub OAuth |
+| `GET` | `/api/v1/oauth/github/callback` | GitHub OAuth callback |
 
-### Files (`/api/v1/files`)
+### MFA
 | Method | Path | Description |
-|--------|------|-------------|
-| GET | `/:projectId` | List files (optional content) |
-| GET | `/:projectId/:path` | Get single file |
-| PUT | `/:projectId` | Upsert single file |
-| PUT | `/:projectId/bulk` | Bulk upsert (AI updates) |
-| DELETE | `/:projectId/:path` | Delete file |
-| POST | `/:projectId/rename` | Rename file |
+|---|---|---|
+| `GET` | `/api/v1/mfa/status` | Check MFA enabled/disabled |
+| `POST` | `/api/v1/mfa/setup` | Generate TOTP secret + QR |
+| `POST` | `/api/v1/mfa/verify-setup` | Verify code & enable MFA |
+| `POST` | `/api/v1/mfa/verify` | Verify MFA during login |
+| `POST` | `/api/v1/mfa/disable` | Disable MFA (requires password) |
 
-### Assets (`/api/v1/assets`)
+### Projects
 | Method | Path | Description |
-|--------|------|-------------|
-| GET | `/:projectId` | List assets |
-| POST | `/:projectId/upload` | Direct upload (multipart) |
-| POST | `/:projectId/upload-url` | Get signed upload URL |
-| POST | `/:projectId/confirm-upload` | Confirm direct GCS upload |
-| DELETE | `/:projectId/:assetId` | Delete asset |
+|---|---|---|
+| `GET` | `/api/v1/projects` | List user projects |
+| `POST` | `/api/v1/projects` | Create project |
+| `GET` | `/api/v1/projects/:id` | Get project details |
+| `PATCH` | `/api/v1/projects/:id` | Update project |
+| `DELETE` | `/api/v1/projects/:id` | Delete project |
 
-### AI (`/api/v1/ai`)
+### Files & Assets
 | Method | Path | Description |
-|--------|------|-------------|
-| POST | `/chat` | Send message (non-streaming) |
-| POST | `/chat/stream` | Send message (SSE streaming) |
-| GET | `/conversations/:projectId` | List conversations |
-| GET | `/conversations/:projectId/:id` | Get conversation messages |
+|---|---|---|
+| `GET` | `/api/v1/files?projectId=` | List project files |
+| `POST` | `/api/v1/files` | Upsert file |
+| `POST` | `/api/v1/files/bulk-upsert` | Bulk upsert files |
+| `DELETE` | `/api/v1/files` | Delete file |
+| `POST` | `/api/v1/files/rename` | Rename file |
+| `GET` | `/api/v1/assets?projectId=` | List assets |
+| `POST` | `/api/v1/assets/upload` | Upload asset |
+| `DELETE` | `/api/v1/assets/:id` | Delete asset |
 
-### Preview (`/api/v1/preview`)
+### Build & Deploy
 | Method | Path | Description |
-|--------|------|-------------|
-| POST | `/start` | Create / reuse Novita sandbox |
-| POST | `/update` | Hot-reload files in sandbox |
-| GET | `/status/:sessionId` | Check sandbox status |
-| POST | `/stop/:sessionId` | Kill sandbox |
-| GET | `/logs/:sessionId` | Get sandbox console logs |
+|---|---|---|
+| `POST` | `/api/v1/build` | Build project (minify + snapshot) |
+| `GET` | `/api/v1/build/versions?projectId=` | List versions |
+| `POST` | `/api/v1/build/restore` | Restore version |
+| `POST` | `/api/v1/deploy` | Deploy to CDN |
+| `GET` | `/api/v1/deploy?projectId=` | List deployments |
+| `POST` | `/api/v1/deploy/rollback` | Rollback deployment |
 
-### Build (`/api/v1/build`)
+### Organizations
 | Method | Path | Description |
-|--------|------|-------------|
-| POST | `/` | Build project (minify, validate, snapshot) |
-| GET | `/:projectId/versions` | List version history |
-| POST | `/:projectId/restore` | Restore from snapshot |
+|---|---|---|
+| `POST` | `/api/v1/organizations` | Create organization |
+| `GET` | `/api/v1/organizations/:id` | Get org details |
+| `GET` | `/api/v1/organizations/:id/members` | List members |
+| `PATCH` | `/api/v1/organizations/:id/members/:mid` | Update member role |
+| `DELETE` | `/api/v1/organizations/:id/members/:mid` | Remove member |
+| `POST` | `/api/v1/organizations/:id/invitations` | Send invitation |
+| `GET` | `/api/v1/organizations/:id/invitations` | List pending invitations |
+| `DELETE` | `/api/v1/organizations/:id/invitations/:iid` | Revoke invitation |
+| `POST` | `/api/v1/organizations/invitations/:token/accept` | Accept invitation |
 
-### Deploy (`/api/v1/deploy`)
+### Admin (Business/Enterprise only)
 | Method | Path | Description |
-|--------|------|-------------|
-| POST | `/` | Deploy version to CDN |
-| GET | `/:projectId` | List deployments |
-| POST | `/:projectId/rollback` | Rollback to previous |
-| POST | `/:projectId/domains` | Add custom domain |
-| POST | `/:projectId/domains/:id/verify` | Verify DNS |
-| GET | `/:projectId/domains` | List domains |
-| DELETE | `/:projectId/domains/:id` | Remove domain |
+|---|---|---|
+| `GET` | `/api/v1/admin/overview` | Dashboard stats |
+| `GET` | `/api/v1/admin/users` | Paginated user list |
+| `GET` | `/api/v1/admin/projects` | Paginated project list |
+| `GET` | `/api/v1/admin/deployments` | Recent deployments |
+| `GET` | `/api/v1/admin/audit-logs` | Audit log entries |
+| `GET` | `/api/v1/admin/health` | System health check |
 
-### Billing (`/api/v1/billing`)
+### Other
 | Method | Path | Description |
-|--------|------|-------------|
-| GET | `/usage` | Current month usage metrics |
-| POST | `/checkout` | Create Stripe checkout session |
-| POST | `/portal` | Open Stripe billing portal |
-| GET | `/subscription` | Get subscription details |
-| POST | `/webhook` | Stripe webhook handler |
+|---|---|---|
+| `POST` | `/api/v1/ai/message` | Send AI chat message |
+| `GET` | `/api/v1/ai/conversations` | List conversations |
+| `POST` | `/api/v1/preview/start` | Start preview sandbox |
+| `POST` | `/api/v1/billing/checkout` | Create Stripe checkout |
+| `GET` | `/api/v1/billing/subscription` | Get subscription |
+| `GET` | `/health` | Health check |
 
-### Health (`/health`)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/live` | Liveness probe |
-| GET | `/ready` | Readiness (DB connectivity) |
+## Project Structure
 
-## Plans & Limits
-
-| Feature | Free | Pro ($19/mo) | Business ($49/mo) | Enterprise |
-|---------|------|-------------|-------------------|------------|
-| Projects | 3 | 25 | Unlimited | Unlimited |
-| AI Messages/mo | 50 | 500 | 2,000 | Unlimited |
-| Storage | 100 MB | 5 GB | 25 GB | 500 GB |
-| Deploys/mo | 10 | Unlimited | Unlimited | Unlimited |
-| Custom Domains | 0 | 3 | 10 | Unlimited |
-| Collaborators | 0 | 5 | 25 | Unlimited |
-| Max File Size | 5 MB | 25 MB | 50 MB | 200 MB |
-
-## Data Model
-
-16 PostgreSQL tables managed by Drizzle ORM:
-
-- **users** — accounts, plans, org membership
-- **organizations** — teams with owner, slug, plan
-- **org_members** — user ↔ org roles (owner/admin/editor/viewer)
-- **projects** — name, slug, template, settings, status
-- **project_files** — path, content, hash, MIME, size
-- **project_assets** — uploaded files, GCS keys, CDN URLs, dimensions
-- **project_versions** — build snapshots, version numbers
-- **deployments** — deploy history, URLs, Lighthouse scores
-- **custom_domains** — domain, SSL status, DNS records
-- **oauth_accounts** — third-party auth providers
-- **refresh_tokens** — hashed tokens, expiry, revocation
-- **ai_conversations** — per-project chat threads
-- **ai_messages** — role, content, attachments, token usage
-- **preview_sessions** — Novita sandbox tracking
-- **subscriptions** — Stripe subscription state
-- **usage_logs** — per-action metering
+```
+simplebuildpro/
+├── apps/
+│   ├── api/                          # Hono API server
+│   │   ├── src/
+│   │   │   ├── index.ts              # Server entry + route registration
+│   │   │   ├── routes/
+│   │   │   │   ├── auth.ts           # Signup, login, refresh, profile
+│   │   │   │   ├── oauth.ts          # Google & GitHub OAuth2
+│   │   │   │   ├── mfa.ts            # TOTP 2FA setup/verify/disable
+│   │   │   │   ├── projects.ts       # Project CRUD
+│   │   │   │   ├── files.ts          # File management
+│   │   │   │   ├── assets.ts         # Asset upload/management
+│   │   │   │   ├── ai.ts             # AI chat (Claude)
+│   │   │   │   ├── preview.ts        # Novita sandbox preview
+│   │   │   │   ├── build.ts          # Build + minification
+│   │   │   │   ├── deploy.ts         # Deploy to GCS/CDN
+│   │   │   │   ├── billing.ts        # Stripe billing
+│   │   │   │   ├── organizations.ts  # Org CRUD + invitations
+│   │   │   │   ├── admin.ts          # Admin dashboard API
+│   │   │   │   └── health.ts         # Health check
+│   │   │   ├── middleware/
+│   │   │   │   ├── auth.ts           # JWT authentication
+│   │   │   │   ├── rate-limiter.ts   # Redis + memory rate limiter
+│   │   │   │   ├── request-logger.ts # Structured request logging
+│   │   │   │   └── error-handler.ts  # Global error handler
+│   │   │   └── services/
+│   │   │       ├── logger.ts         # Structured JSON logger
+│   │   │       ├── lighthouse.ts     # Lighthouse scoring service
+│   │   │       ├── storage.ts        # GCS storage service
+│   │   │       └── novita.ts         # Novita sandbox service
+│   │   └── package.json
+│   │
+│   └── web/                          # Next.js 14 frontend
+│       └── app/
+│           ├── (auth)/
+│           │   ├── login/page.tsx     # Login with OAuth buttons
+│           │   └── signup/page.tsx    # Registration
+│           ├── auth/callback/page.tsx # OAuth callback handler
+│           ├── (dashboard)/
+│           │   └── dashboard/
+│           │       ├── page.tsx       # Project dashboard
+│           │       ├── settings/page.tsx # Profile, billing, security + MFA
+│           │       └── admin/page.tsx # Admin dashboard
+│           ├── editor/[projectId]/page.tsx # Full IDE workspace
+│           ├── invite/[token]/page.tsx     # Invitation acceptance
+│           ├── components/
+│           │   ├── editor/
+│           │   │   ├── code-editor.tsx      # Monaco editor
+│           │   │   ├── website-builder.tsx   # Visual drag-and-drop builder
+│           │   │   ├── file-tree.tsx         # File explorer
+│           │   │   ├── tab-bar.tsx           # Editor tabs
+│           │   │   ├── preview-panel.tsx     # Live preview
+│           │   │   └── ai-chat.tsx           # AI chat panel
+│           │   └── ui/                       # Reusable UI components
+│           └── lib/
+│               ├── api-client.ts    # API client with auto-refresh
+│               └── store.ts         # Zustand global stores
+│
+├── packages/
+│   ├── db/                           # Database package
+│   │   └── src/
+│   │       ├── schema.ts            # Drizzle ORM schema (18 tables)
+│   │       ├── client.ts            # Database client
+│   │       └── index.ts             # Exports
+│   └── shared/                       # Shared package
+│       └── src/
+│           ├── types.ts             # TypeScript type contracts
+│           ├── constants.ts         # App constants, plan limits
+│           ├── validation.ts        # Zod validation schemas
+│           └── templates.ts         # Project templates
+│
+├── migrations/
+│   ├── 0001_initial_schema.sql      # Core tables, enums, indexes
+│   └── 0002_add_mfa_oauth_invitations.sql  # MFA + OAuth additions
+│
+├── tests/
+│   ├── e2e/
+│   │   ├── playwright.config.ts     # Playwright configuration
+│   │   ├── auth.spec.ts             # Auth E2E tests
+│   │   └── editor.spec.ts           # Editor E2E tests
+│   └── api/
+│       ├── vitest.config.ts         # Vitest configuration
+│       ├── health.test.ts           # Health/core API tests
+│       ├── auth.test.ts             # Auth API tests
+│       └── projects.test.ts         # Projects/orgs/MFA API tests
+│
+├── infra/
+│   └── terraform/
+│       ├── main.tf                  # Full GCP infrastructure
+│       ├── terraform.tfvars.example # Variable template
+│       └── .gitignore               # Terraform state exclusions
+│
+├── .github/workflows/               # CI/CD pipeline
+├── turbo.json                        # Turborepo configuration
+├── package.json                      # Root workspace config
+└── tsconfig.json                     # Root TypeScript config
+```
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js >= 20
-- PostgreSQL 16
-- Google Cloud SDK (for GCS + Cloud Run)
-- Stripe account (for billing)
-- Anthropic API key (for AI)
-- Novita API key (for preview sandboxes)
+- npm >= 10
+- PostgreSQL 16 (or use Docker)
+- Google Cloud SDK (for deployment)
+- Terraform >= 1.5 (for infrastructure)
 
 ### Local Development
 
 ```bash
-# 1. Clone
-git clone https://github.com/gary790/simplebuildpro.git
+# 1. Clone the repository
+git clone https://github.com/your-org/simplebuildpro.git
 cd simplebuildpro
 
 # 2. Install dependencies
 npm install
 
-# 3. Configure environment
-cp .env.example .env
-# Edit .env with your real credentials
+# 3. Set up environment variables
+cp apps/api/.env.example apps/api/.env
+# Fill in DATABASE_URL, JWT_SECRET, etc.
 
-# 4. Set up database
-createdb simplebuildpro
-npm run db:push
+# 4. Run database migrations
+psql $DATABASE_URL -f migrations/0001_initial_schema.sql
+psql $DATABASE_URL -f migrations/0002_add_mfa_oauth_invitations.sql
 
-# 5. Start dev servers (API + Web)
-pm2 start ecosystem.config.cjs
-# Or individually:
-#   npm run dev --workspace=apps/api   (port 8080)
-#   npm run dev --workspace=apps/web   (port 3000)
-
-# 6. Open
-open http://localhost:3000
+# 5. Start development servers
+npm run dev
+# API: http://localhost:8080
+# Web: http://localhost:3000
 ```
 
-### Production Deployment
+### Environment Variables (API)
+
+```env
+# Database
+DATABASE_URL=postgresql://user:pass@localhost:5432/simplebuildpro
+
+# JWT
+JWT_SECRET=your-64-char-random-secret
+JWT_ACCESS_EXPIRY=15m
+JWT_REFRESH_EXPIRY=30d
+
+# Google OAuth
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+
+# GitHub OAuth
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_CLIENT_SECRET=your-github-client-secret
+
+# Redis (Memorystore)
+REDIS_URL=redis://localhost:6379
+
+# Stripe
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Anthropic (AI)
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Google Cloud
+GCP_PROJECT_ID=simplebuildpro
+GCS_ASSETS_BUCKET=simplebuildpro-assets
+GCS_BUILDS_BUCKET=simplebuildpro-builds
+GCS_DEPLOYS_BUCKET=simplebuildpro-deploys
+
+# Novita (Preview Sandbox)
+NOVITA_API_KEY=your-novita-key
+
+# PageSpeed Insights
+PAGESPEED_API_KEY=your-pagespeed-key
+
+# App URLs
+API_URL=http://localhost:8080
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:8080
+```
+
+### Running Tests
 
 ```bash
-# 1. Provision infrastructure
-cd infra/terraform
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars
-terraform init
-terraform plan
-terraform apply
+# API integration tests (requires running API server)
+npm run test:api
 
-# 2. Set secrets in Secret Manager
-# (DATABASE_URL, JWT_SECRET, STRIPE_SECRET_KEY, etc.)
+# E2E tests (requires running API + Web servers)
+npm run test:e2e
 
-# 3. Build and deploy via Cloud Build
-gcloud builds submit --config=infra/cloudbuild.yaml
-
-# Or manual Docker build:
-npm run docker:api
-npm run docker:web
+# E2E tests with UI
+npm run test:e2e:ui
 ```
 
-## Completed Features
+## Deployment
 
-- [x] Full REST API with 11 route modules (auth, projects, files, assets, AI, preview, build, deploy, billing, health)
-- [x] JWT authentication with refresh token rotation
-- [x] Rate limiting per category (auth, API, AI, deploy, upload)
-- [x] Global error handling with AppError + Zod validation
-- [x] Next.js 15 frontend with landing page, auth flows, dashboard
-- [x] Monaco code editor with custom dark theme, IntelliSense, shortcuts
-- [x] File tree sidebar with create/rename/delete context menus
-- [x] AI chat panel with Claude SSE streaming + file update parser
-- [x] Preview panel with Novita sandbox, device toggle, hot-reload
-- [x] Dashboard with project grid/list, usage cards, search, create modal
-- [x] Settings page with profile, billing (Stripe plans), security tabs
-- [x] Zustand state management (auth, editor, chat stores)
-- [x] Typed API client with auto-refresh, error handling, SSE support
-- [x] 5 starter templates (blank, landing, portfolio, blog, business)
-- [x] Drizzle ORM schema with 16 tables + relations
-- [x] Multi-stage Docker builds for API and Web
-- [x] Cloud Build CI/CD pipeline
-- [x] Terraform IaC for full GCP stack (VPC, Cloud SQL HA, Cloud Run, GCS, CDN, LB, SSL, Secrets)
-- [x] PM2 ecosystem config for local dev
-- [x] Comprehensive .env.example
+### GCP Infrastructure (Terraform)
 
-## Pending / Next Steps
+```bash
+cd infra/terraform
 
-- [ ] Incorporate original website-builder.jsx reference implementation
-- [ ] Database migrations directory with versioned SQL files
-- [ ] End-to-end tests (Playwright)
-- [ ] API integration tests
-- [ ] WebSocket real-time collaboration
-- [ ] OAuth2 providers (Google, GitHub)
-- [ ] MFA / 2FA support
-- [ ] Organization invitation flows
-- [ ] Asset image optimization pipeline
-- [ ] Lighthouse score integration in build step
-- [ ] Usage alerting and quota enforcement
-- [ ] Admin dashboard
-- [ ] Custom domain SSL automation (Let's Encrypt via cert-manager)
-- [ ] Load testing and performance benchmarks
-- [ ] Monitoring and alerting (Cloud Monitoring + PagerDuty)
+# 1. Copy and fill in variables
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your GCP project details
 
-## Deployment Status
+# 2. Initialize Terraform
+terraform init
 
-- **Platform**: Google Cloud (Cloud Run + Cloud SQL + GCS + Cloud CDN)
-- **Status**: Infrastructure defined, pending first production deploy
-- **Tech Stack**: Hono + Next.js + TypeScript + Tailwind CSS + Drizzle + PostgreSQL
-- **Last Updated**: May 2026
+# 3. Plan and review
+terraform plan
+
+# 4. Apply infrastructure
+terraform apply
+
+# 5. Note the outputs: api_url, web_url, lb_ip
+```
+
+### Deploy Application
+
+```bash
+# Build Docker images
+npm run docker:api
+npm run docker:web
+
+# Tag and push to Artifact Registry
+docker tag simplebuildpro-api us-central1-docker.pkg.dev/PROJECT_ID/simplebuildpro/api:latest
+docker push us-central1-docker.pkg.dev/PROJECT_ID/simplebuildpro/api:latest
+
+docker tag simplebuildpro-web us-central1-docker.pkg.dev/PROJECT_ID/simplebuildpro/web:latest
+docker push us-central1-docker.pkg.dev/PROJECT_ID/simplebuildpro/web:latest
+
+# Deploy to Cloud Run (handled by CI/CD or manual gcloud commands)
+```
+
+### DNS Setup
+
+Point your domain's DNS to the load balancer IP:
+```
+simplebuildpro.com      A     <lb_ip>
+www.simplebuildpro.com  A     <lb_ip>
+api.simplebuildpro.com  A     <lb_ip>
+```
+
+SSL certificates are auto-provisioned by Google-managed certificates.
+
+## Plan Limits
+
+| Feature | Free | Pro ($19/mo) | Business ($49/mo) | Enterprise |
+|---|---|---|---|---|
+| Projects | 3 | 25 | Unlimited | Unlimited |
+| AI Messages/mo | 50 | 500 | 2,000 | Unlimited |
+| Storage | 100 MB | 5 GB | 25 GB | 500 GB |
+| Deploys/mo | 10 | Unlimited | Unlimited | Unlimited |
+| Custom Domains | 0 | 3 | 10 | Unlimited |
+| Collaborators | 0 | 5 | 25 | Unlimited |
+| MFA | Yes | Yes | Yes | Yes |
+| Admin Dashboard | No | No | Yes | Yes |
+
+## Security
+
+- **Password hashing**: bcrypt with cost factor 12
+- **JWT tokens**: Short-lived access tokens (15 min) + long-lived refresh tokens (30 days)
+- **Refresh token rotation**: Old tokens revoked on refresh
+- **MFA/TOTP**: RFC 6238 compliant with recovery codes (SHA-256 hashed)
+- **OAuth2**: Secure state parameter, PKCE-ready
+- **Rate limiting**: Redis-backed sliding window with per-category limits
+- **CORS**: Strict origin whitelist
+- **Security headers**: X-Content-Type-Options, X-Frame-Options, etc.
+- **Audit logging**: All sensitive actions logged with user, IP, user-agent
+- **Secret management**: GCP Secret Manager for production secrets
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 14, React 18, Tailwind CSS, Zustand, Lucide Icons |
+| API | Hono, Node.js 20, TypeScript |
+| Database | PostgreSQL 16, Drizzle ORM |
+| Auth | JWT (jsonwebtoken), bcryptjs, TOTP |
+| AI | Anthropic Claude (claude-sonnet-4-20250514) |
+| Storage | Google Cloud Storage |
+| Preview | Novita Sandbox |
+| Billing | Stripe |
+| Rate Limiting | Redis (GCP Memorystore) |
+| Build Tools | html-minifier-terser, clean-css, terser, sharp |
+| Infrastructure | GCP Cloud Run, Cloud SQL, Cloud CDN, Terraform |
+| CI/CD | GitHub Actions |
+| Testing | Playwright (E2E), Vitest (API) |
+| Monorepo | Turborepo |
+
+## License
+
+Proprietary. All rights reserved.

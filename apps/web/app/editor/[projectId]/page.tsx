@@ -1,6 +1,7 @@
 // ============================================================
 // SimpleBuild Pro — Editor Workspace
 // Full IDE: file tree, Monaco editor, preview, AI chat
+// Integrated with visual Website Builder for HTML files
 // ============================================================
 
 'use client';
@@ -17,14 +18,17 @@ import { CodeEditor } from '@/components/editor/code-editor';
 import { TabBar } from '@/components/editor/tab-bar';
 import { PreviewPanel } from '@/components/editor/preview-panel';
 import { AiChat } from '@/components/editor/ai-chat';
+import { WebsiteBuilder } from '@/components/editor/website-builder';
 import {
   ArrowLeft, Save, Play, Rocket, Sparkles, FolderTree,
   Eye, Terminal, Image, Settings, Loader2, ChevronDown,
   FilePlus, FolderPlus, MoreVertical, Package, Globe,
-  History, Upload, Download,
+  History, Upload, Download, Layout, Code,
 } from 'lucide-react';
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/dropdown';
 import clsx from 'clsx';
+
+type EditorMode = 'code' | 'visual';
 
 export default function EditorPage() {
   const params = useParams();
@@ -47,6 +51,7 @@ export default function EditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [editorMode, setEditorMode] = useState<EditorMode>('code');
 
   // Modal states
   const [createFileOpen, setCreateFileOpen] = useState(false);
@@ -115,7 +120,6 @@ export default function EditorPage() {
     setSaving(true);
     try {
       await filesApi.upsert(project.id, { path: filePath, content: fileContent });
-      // Mark tab clean
       useEditorStore.getState().markTabDirty(filePath, false);
       toast('success', 'Saved', filePath);
     } catch (err: any) {
@@ -159,7 +163,6 @@ export default function EditorPage() {
     addTerminalLog(`[${new Date().toLocaleTimeString()}] Starting build...`);
 
     try {
-      // Save all dirty first
       await handleSaveAll();
 
       const result = await buildApi.build({ projectId: project.id });
@@ -169,7 +172,7 @@ export default function EditorPage() {
 
       if (result.warnings.length > 0) {
         for (const w of result.warnings) {
-          addTerminalLog(`  ⚠ ${w.file}: ${w.message}`);
+          addTerminalLog(`  [warn] ${w.file}: ${w.message}`);
         }
       }
 
@@ -190,7 +193,6 @@ export default function EditorPage() {
     addTerminalLog(`[${new Date().toLocaleTimeString()}] Starting deploy...`);
 
     try {
-      // Build first
       const buildResult = await handleBuild();
       if (!buildResult) {
         setDeployStatus('error');
@@ -213,13 +215,30 @@ export default function EditorPage() {
     }
   }, [project?.id, handleBuild, setDeployStatus, setLastDeployUrl, addTerminalLog]);
 
+  // ─── Visual Builder: Insert HTML ──────────────────────
+  const handleInsertHtml = useCallback((html: string) => {
+    if (!activeFile) return;
+    const currentContent = files.get(activeFile) || '';
+
+    // Try to insert before </body> if present
+    const bodyCloseIndex = currentContent.toLowerCase().lastIndexOf('</body>');
+    let newContent: string;
+    if (bodyCloseIndex >= 0) {
+      newContent = currentContent.slice(0, bodyCloseIndex) + '\n' + html + '\n' + currentContent.slice(bodyCloseIndex);
+    } else {
+      newContent = currentContent + '\n' + html;
+    }
+
+    updateFile(activeFile, newContent);
+    toast('success', 'Component inserted');
+  }, [activeFile, files, updateFile]);
+
   // ─── Create file/folder ────────────────────────────────
   const handleCreateFile = useCallback(async () => {
     if (!project?.id || !newFileName.trim()) return;
     const fullPath = createFileParent ? `${createFileParent}/${newFileName.trim()}` : newFileName.trim();
 
     if (isFolder) {
-      // Create a placeholder file to create the folder
       const placeholderPath = `${fullPath}/.gitkeep`;
       updateFile(placeholderPath, '');
       try {
@@ -249,7 +268,7 @@ export default function EditorPage() {
       await filesApi.rename(project.id, renamePath, newPath);
       renameFile(renamePath, newPath);
       setRenameOpen(false);
-      toast('success', 'Renamed', `${renamePath} → ${newPath}`);
+      toast('success', 'Renamed', `${renamePath} -> ${newPath}`);
     } catch (err: any) {
       toast('error', 'Rename failed', err.message);
     }
@@ -300,6 +319,9 @@ export default function EditorPage() {
     );
   }
 
+  // Check if current file is HTML (for visual builder toggle)
+  const isHtmlFile = activeFile?.endsWith('.html') || activeFile?.endsWith('.htm');
+
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#1E1E1E]">
       {/* ─── Top Bar ──────────────────────────────────────── */}
@@ -323,6 +345,41 @@ export default function EditorPage() {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {/* Editor Mode Toggle (only for HTML files) */}
+          {isHtmlFile && (
+            <>
+              <div className="flex items-center bg-[#3C3C3C] rounded-md p-0.5">
+                <button
+                  onClick={() => setEditorMode('code')}
+                  className={clsx(
+                    'flex items-center gap-1 px-2 py-1 rounded text-2xs font-medium transition-colors',
+                    editorMode === 'code'
+                      ? 'bg-brand-600 text-white'
+                      : 'text-slate-400 hover:text-white',
+                  )}
+                  title="Code Editor"
+                >
+                  <Code size={11} />
+                  Code
+                </button>
+                <button
+                  onClick={() => setEditorMode('visual')}
+                  className={clsx(
+                    'flex items-center gap-1 px-2 py-1 rounded text-2xs font-medium transition-colors',
+                    editorMode === 'visual'
+                      ? 'bg-brand-600 text-white'
+                      : 'text-slate-400 hover:text-white',
+                  )}
+                  title="Visual Builder"
+                >
+                  <Layout size={11} />
+                  Visual
+                </button>
+              </div>
+              <div className="w-px h-5 bg-white/10 mx-1" />
+            </>
+          )}
+
           {/* Save */}
           <Button
             size="xs"
@@ -474,40 +531,47 @@ export default function EditorPage() {
 
         {/* Editor + Preview split */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Editor Panel */}
-          <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-            <TabBar />
-            <div className="flex-1 overflow-hidden">
-              <CodeEditor onSave={handleSave} />
-            </div>
-
-            {/* Terminal Panel */}
-            {isTerminalOpen && (
-              <div className="border-t border-[#1E1E1E] bg-[#1E1E1E] shrink-0" style={{ height: '180px' }}>
-                <div className="flex items-center justify-between px-3 h-7 bg-[#252526] border-b border-[#1E1E1E]">
-                  <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Output</span>
-                  <button
-                    onClick={clearTerminalLogs}
-                    className="text-2xs text-slate-500 hover:text-slate-300 transition-colors"
-                  >
-                    Clear
-                  </button>
-                </div>
-                <div className="h-[calc(100%-28px)] overflow-y-auto p-2 font-mono text-xs text-slate-400 dark-scroll">
-                  {terminalLogs.length === 0 ? (
-                    <p className="text-slate-600">No output yet. Build or deploy to see logs.</p>
-                  ) : (
-                    terminalLogs.map((log, i) => (
-                      <div key={i} className="whitespace-pre-wrap">{log}</div>
-                    ))
-                  )}
-                </div>
+          {/* Editor Panel — Code or Visual Builder */}
+          {editorMode === 'visual' && isHtmlFile ? (
+            <WebsiteBuilder
+              onInsertHtml={handleInsertHtml}
+              onSwitchToCode={() => setEditorMode('code')}
+            />
+          ) : (
+            <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+              <TabBar />
+              <div className="flex-1 overflow-hidden">
+                <CodeEditor onSave={handleSave} />
               </div>
-            )}
-          </div>
 
-          {/* Preview Panel */}
-          <PreviewPanel />
+              {/* Terminal Panel */}
+              {isTerminalOpen && (
+                <div className="border-t border-[#1E1E1E] bg-[#1E1E1E] shrink-0" style={{ height: '180px' }}>
+                  <div className="flex items-center justify-between px-3 h-7 bg-[#252526] border-b border-[#1E1E1E]">
+                    <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Output</span>
+                    <button
+                      onClick={clearTerminalLogs}
+                      className="text-2xs text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="h-[calc(100%-28px)] overflow-y-auto p-2 font-mono text-xs text-slate-400 dark-scroll">
+                    {terminalLogs.length === 0 ? (
+                      <p className="text-slate-600">No output yet. Build or deploy to see logs.</p>
+                    ) : (
+                      terminalLogs.map((log, i) => (
+                        <div key={i} className="whitespace-pre-wrap">{log}</div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Preview Panel (only in code mode; visual builder has its own preview) */}
+          {editorMode === 'code' && <PreviewPanel />}
         </div>
 
         {/* AI Chat Panel */}
@@ -520,6 +584,9 @@ export default function EditorPage() {
           <span>{files.size} file{files.size !== 1 ? 's' : ''}</span>
           {activeFile && (
             <span className="text-white/70">{activeFile}</span>
+          )}
+          {editorMode === 'visual' && (
+            <span className="bg-white/20 px-1.5 py-0.5 rounded text-white/90 font-medium">Visual Builder</span>
           )}
         </div>
         <div className="flex items-center gap-3">

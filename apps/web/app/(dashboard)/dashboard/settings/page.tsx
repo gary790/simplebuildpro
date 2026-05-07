@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/toast';
 import {
   User, CreditCard, Shield, ArrowLeft, Check, ExternalLink, Loader2,
+  Smartphone, Copy, ShieldCheck, ShieldOff, KeyRound, AlertTriangle,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -298,53 +299,418 @@ export default function SettingsPage() {
 
             {/* ─── Security Tab ──────────────────────────── */}
             {activeTab === 'security' && (
-              <div className="bg-white rounded-xl border border-slate-200 p-6">
-                <h2 className="text-lg font-bold text-slate-900 mb-6">Change Password</h2>
+              <div className="space-y-6">
+                {/* Change Password */}
+                <div className="bg-white rounded-xl border border-slate-200 p-6">
+                  <h2 className="text-lg font-bold text-slate-900 mb-6">Change Password</h2>
 
-                <div className="space-y-4 max-w-md">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Password</label>
-                    <input
-                      type="password"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                      placeholder="Min. 8 characters"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div className="pt-2">
-                    <Button
-                      onClick={handleChangePassword}
-                      loading={saving}
-                      disabled={!currentPassword || !newPassword || !confirmPassword}
-                    >
-                      Change Password
-                    </Button>
+                  <div className="space-y-4 max-w-md">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Current Password</label>
+                      <input
+                        type="password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                        placeholder="Min. 8 characters"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      />
+                    </div>
+                    <div className="pt-2">
+                      <Button
+                        onClick={handleChangePassword}
+                        loading={saving}
+                        disabled={!currentPassword || !newPassword || !confirmPassword}
+                      >
+                        Change Password
+                      </Button>
+                    </div>
                   </div>
                 </div>
+
+                {/* MFA / Two-Factor Authentication */}
+                <MfaSection />
               </div>
             )}
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+// ─── MFA / Two-Factor Authentication Section ─────────────────
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
+function MfaSection() {
+  const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [mfaLoading, setMfaLoading] = useState(true);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [recoveryCodesRemaining, setRecoveryCodesRemaining] = useState(0);
+
+  // Setup flow
+  const [setupStep, setSetupStep] = useState<'idle' | 'qr' | 'verify' | 'done'>('idle');
+  const [secret, setSecret] = useState('');
+  const [qrCodeUrl, setQrCodeUrl] = useState('');
+  const [verifyCode, setVerifyCode] = useState('');
+  const [verifyError, setVerifyError] = useState('');
+  const [verifying, setVerifying] = useState(false);
+
+  // Disable flow
+  const [disableOpen, setDisableOpen] = useState(false);
+  const [disablePassword, setDisablePassword] = useState('');
+  const [disabling, setDisabling] = useState(false);
+
+  // Fetch MFA status
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/mfa/status`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('sbp_access_token')}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setMfaEnabled(data.data.enabled);
+          setRecoveryCodesRemaining(data.data.recoveryCodesRemaining || 0);
+        }
+      } catch { /* ignore */ }
+      finally { setMfaLoading(false); }
+    };
+    fetchStatus();
+  }, []);
+
+  // Start MFA setup
+  const handleStartSetup = async () => {
+    setSetupStep('qr');
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/mfa/setup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('sbp_access_token')}`,
+        },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSecret(data.data.secret);
+        setQrCodeUrl(data.data.qrCodeUrl);
+      } else {
+        toast('error', 'MFA setup failed', data.error?.message);
+        setSetupStep('idle');
+      }
+    } catch (err: any) {
+      toast('error', 'MFA setup failed', err.message);
+      setSetupStep('idle');
+    }
+  };
+
+  // Verify TOTP code and enable MFA
+  const handleVerifySetup = async () => {
+    if (verifyCode.length !== 6 || !/^\d{6}$/.test(verifyCode)) {
+      setVerifyError('Enter a valid 6-digit code.');
+      return;
+    }
+    setVerifying(true);
+    setVerifyError('');
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/mfa/verify-setup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('sbp_access_token')}`,
+        },
+        body: JSON.stringify({ token: verifyCode }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMfaEnabled(true);
+        setRecoveryCodes(data.data.recoveryCodes || []);
+        setRecoveryCodesRemaining(data.data.recoveryCodes?.length || 0);
+        setSetupStep('done');
+        toast('success', 'MFA enabled', 'Save your recovery codes!');
+      } else {
+        setVerifyError(data.error?.message || 'Invalid code.');
+      }
+    } catch (err: any) {
+      setVerifyError(err.message);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // Disable MFA
+  const handleDisableMfa = async () => {
+    setDisabling(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/mfa/disable`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('sbp_access_token')}`,
+        },
+        body: JSON.stringify({ password: disablePassword }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMfaEnabled(false);
+        setDisableOpen(false);
+        setDisablePassword('');
+        setSetupStep('idle');
+        setRecoveryCodes([]);
+        toast('success', 'MFA disabled');
+      } else {
+        toast('error', 'Failed to disable MFA', data.error?.message);
+      }
+    } catch (err: any) {
+      toast('error', 'Failed to disable MFA', err.message);
+    } finally {
+      setDisabling(false);
+    }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast('success', 'Copied to clipboard');
+  };
+
+  if (mfaLoading) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="flex items-center gap-2 text-slate-500">
+          <Loader2 size={16} className="animate-spin" />
+          <span className="text-sm">Loading security settings...</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className={clsx(
+            'p-2 rounded-lg',
+            mfaEnabled ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500',
+          )}>
+            <Smartphone size={18} />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Two-Factor Authentication</h2>
+            <p className="text-sm text-slate-500">
+              {mfaEnabled
+                ? 'Your account is protected with TOTP-based 2FA.'
+                : 'Add an extra layer of security to your account.'}
+            </p>
+          </div>
+        </div>
+        <span className={clsx(
+          'text-xs font-semibold px-2.5 py-1 rounded-full',
+          mfaEnabled ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600',
+        )}>
+          {mfaEnabled ? 'Enabled' : 'Disabled'}
+        </span>
+      </div>
+
+      {/* ─── MFA Enabled State ─────────────────────── */}
+      {mfaEnabled && setupStep !== 'done' && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <ShieldCheck size={16} className="text-green-600 shrink-0" />
+            <p className="text-sm text-green-700">
+              Two-factor authentication is active. {recoveryCodesRemaining > 0 && (
+                <span className="font-medium">{recoveryCodesRemaining} recovery codes remaining.</span>
+              )}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDisableOpen(true)}
+            icon={<ShieldOff size={14} />}
+            className="text-red-600 border-red-200 hover:bg-red-50"
+          >
+            Disable 2FA
+          </Button>
+
+          {/* Disable confirmation */}
+          {disableOpen && (
+            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg space-y-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
+                <p className="text-sm text-red-700">
+                  Disabling 2FA will remove the extra security layer. Enter your password to confirm.
+                </p>
+              </div>
+              <input
+                type="password"
+                value={disablePassword}
+                onChange={(e) => setDisablePassword(e.target.value)}
+                placeholder="Enter your password"
+                className="w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={handleDisableMfa}
+                  loading={disabling}
+                  disabled={!disablePassword}
+                >
+                  Confirm Disable
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => { setDisableOpen(false); setDisablePassword(''); }}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Setup Flow: Idle ────────────────────── */}
+      {!mfaEnabled && setupStep === 'idle' && (
+        <div className="space-y-4">
+          <div className="p-4 bg-slate-50 rounded-lg">
+            <h3 className="text-sm font-semibold text-slate-800 mb-2">How it works</h3>
+            <ol className="text-xs text-slate-600 space-y-1.5 list-decimal list-inside">
+              <li>Install an authenticator app (Google Authenticator, Authy, 1Password).</li>
+              <li>Scan the QR code or enter the secret key manually.</li>
+              <li>Enter the 6-digit code from your app to verify.</li>
+              <li>Save your recovery codes in a safe place.</li>
+            </ol>
+          </div>
+          <Button onClick={handleStartSetup} icon={<KeyRound size={14} />}>
+            Set Up Two-Factor Authentication
+          </Button>
+        </div>
+      )}
+
+      {/* ─── Setup Flow: QR Code ─────────────────── */}
+      {setupStep === 'qr' && (
+        <div className="space-y-5">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800 mb-3">
+              Step 1: Scan the QR code with your authenticator app
+            </h3>
+            <div className="flex items-start gap-6">
+              {qrCodeUrl ? (
+                <img src={qrCodeUrl} alt="MFA QR Code" className="w-48 h-48 rounded-lg border border-slate-200" />
+              ) : (
+                <div className="w-48 h-48 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center">
+                  <Loader2 size={24} className="animate-spin text-slate-400" />
+                </div>
+              )}
+              <div className="flex-1 space-y-3">
+                <p className="text-xs text-slate-500">
+                  Can&apos;t scan? Enter this secret key manually:
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 px-3 py-2 bg-slate-100 rounded-lg text-sm font-mono text-slate-800 break-all select-all">
+                    {secret}
+                  </code>
+                  <button
+                    onClick={() => copyToClipboard(secret)}
+                    className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                    title="Copy secret"
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-w-xs">
+            <h3 className="text-sm font-semibold text-slate-800 mb-2">
+              Step 2: Enter the 6-digit code
+            </h3>
+            <input
+              type="text"
+              value={verifyCode}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                setVerifyCode(val);
+                setVerifyError('');
+              }}
+              placeholder="000000"
+              maxLength={6}
+              className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-mono text-center text-lg tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && handleVerifySetup()}
+            />
+            {verifyError && (
+              <p className="text-xs text-red-600 mt-1">{verifyError}</p>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <Button onClick={handleVerifySetup} loading={verifying} disabled={verifyCode.length !== 6}>
+              Verify & Enable
+            </Button>
+            <Button variant="secondary" onClick={() => { setSetupStep('idle'); setVerifyCode(''); setVerifyError(''); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Setup Flow: Done — Recovery Codes ───── */}
+      {setupStep === 'done' && recoveryCodes.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+            <div className="text-sm text-amber-700">
+              <p className="font-semibold">Save your recovery codes!</p>
+              <p className="text-xs mt-1">
+                If you lose access to your authenticator app, use these codes to log in.
+                Each code can only be used once. Store them in a secure location.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+            {recoveryCodes.map((code, i) => (
+              <div key={i} className="font-mono text-sm text-slate-800 bg-white px-3 py-1.5 rounded border border-slate-200 text-center">
+                {code}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<Copy size={13} />}
+              onClick={() => copyToClipboard(recoveryCodes.join('\n'))}
+            >
+              Copy All Codes
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => { setSetupStep('idle'); setRecoveryCodes([]); }}
+            >
+              I&apos;ve Saved My Codes
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
