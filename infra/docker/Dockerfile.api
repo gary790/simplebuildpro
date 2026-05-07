@@ -9,14 +9,14 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy root package files for workspace resolution
-COPY package.json package-lock.json* turbo.json tsconfig.json ./
+COPY package.json package-lock.json turbo.json tsconfig.json ./
 
 # Copy workspace package.json files
 COPY apps/api/package.json apps/api/
 COPY packages/db/package.json packages/db/
 COPY packages/shared/package.json packages/shared/
 
-# Install all dependencies
+# Install all dependencies (dev included for tsc)
 RUN npm ci --include=dev
 
 # Copy source code
@@ -24,8 +24,8 @@ COPY packages/shared/ packages/shared/
 COPY packages/db/ packages/db/
 COPY apps/api/ apps/api/
 
-# Build the API
-RUN npm run build --workspace=apps/api
+# Build the API (tsc with rootDir ../../ requires monorepo root)
+RUN cd apps/api && npx tsc --outDir ./dist --rootDir ../../ && echo "API build complete"
 
 # ─── Stage 2: Production ────────────────────────────────────
 FROM node:20-alpine AS production
@@ -37,22 +37,22 @@ RUN addgroup -g 1001 -S appgroup && \
 WORKDIR /app
 
 # Copy root package files
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY packages/db/package.json packages/db/
 COPY packages/shared/package.json packages/shared/
 
 # Install production dependencies only
-RUN npm ci --omit=dev && \
+RUN npm ci --omit=dev --workspace=@simplebuildpro/api && \
     npm cache clean --force
 
-# Copy built files
+# Copy built files from builder
 COPY --from=builder /app/apps/api/dist/ apps/api/dist/
 COPY --from=builder /app/packages/shared/src/ packages/shared/src/
 COPY --from=builder /app/packages/db/src/ packages/db/src/
 
 # Copy Drizzle migrations
-COPY packages/db/migrations/ packages/db/migrations/
+COPY migrations/ migrations/
 
 # Switch to non-root user
 USER appuser
@@ -68,4 +68,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:8080/health/live || exit 1
 
 # Start the API server
-CMD ["node", "apps/api/dist/index.js"]
+CMD ["node", "apps/api/dist/apps/api/src/index.js"]
