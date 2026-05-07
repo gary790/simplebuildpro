@@ -1,0 +1,27 @@
+{
+  "name": "simplebuildpro",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "db:generate": "npm run generate --workspace=packages/db",
+    "db:migrate": "npm run migrate --workspace=packages/db",
+    "db:push": "npm run push --workspace=packages/db",
+    "docker:api": "docker build -f infra/docker/Dockerfile.api -t simplebuildpro-api .",
+    "docker:web": "docker build -f infra/docker/Dockerfile.web -t simplebuildpro-web ."
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "npm@10.8.0"
+}

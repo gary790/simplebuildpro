@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "incremental": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "paths": {
+      "@simplebuildpro/db": ["./packages/db/src"],
+      "@simplebuildpro/db/*": ["./packages/db/src/*"],
+      "@simplebuildpro/shared": ["./packages/shared/src"],
+      "@simplebuildpro/shared/*": ["./packages/shared/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".next"]
+}

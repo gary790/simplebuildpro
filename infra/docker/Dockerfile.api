@@ -1,0 +1,71 @@
+# ============================================================
+# SimpleBuild Pro — API Server Dockerfile
+# Multi-stage build for Cloud Run deployment
+# ============================================================
+
+# ─── Stage 1: Build ─────────────────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy root package files for workspace resolution
+COPY package.json package-lock.json* turbo.json tsconfig.json ./
+
+# Copy workspace package.json files
+COPY apps/api/package.json apps/api/
+COPY packages/db/package.json packages/db/
+COPY packages/shared/package.json packages/shared/
+
+# Install all dependencies
+RUN npm ci --include=dev
+
+# Copy source code
+COPY packages/shared/ packages/shared/
+COPY packages/db/ packages/db/
+COPY apps/api/ apps/api/
+
+# Build the API
+RUN npm run build --workspace=apps/api
+
+# ─── Stage 2: Production ────────────────────────────────────
+FROM node:20-alpine AS production
+
+# Security: run as non-root
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
+
+WORKDIR /app
+
+# Copy root package files
+COPY package.json package-lock.json* ./
+COPY apps/api/package.json apps/api/
+COPY packages/db/package.json packages/db/
+COPY packages/shared/package.json packages/shared/
+
+# Install production dependencies only
+RUN npm ci --omit=dev && \
+    npm cache clean --force
+
+# Copy built files
+COPY --from=builder /app/apps/api/dist/ apps/api/dist/
+COPY --from=builder /app/packages/shared/src/ packages/shared/src/
+COPY --from=builder /app/packages/db/src/ packages/db/src/
+
+# Copy Drizzle migrations
+COPY packages/db/migrations/ packages/db/migrations/
+
+# Switch to non-root user
+USER appuser
+
+# Cloud Run uses PORT env var (default 8080)
+ENV NODE_ENV=production
+ENV PORT=8080
+
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:8080/health/live || exit 1
+
+# Start the API server
+CMD ["node", "apps/api/dist/index.js"]

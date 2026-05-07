@@ -1,0 +1,9 @@
+# ============================================================
+# SimpleBuild Pro — Terraform Variables
+# Copy to terraform.tfvars and fill in real values
+# ============================================================
+
+project_id  = "simplebuildpro"
+region      = "us-central1"
+domain      = "simplebuildpro.com"
+environment = "production"

@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.dev.vars
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Wrangler
+.wrangler/
+
+# Drizzle
+drizzle/meta/
+
+# Logs
+*.log
+npm-debug.log*
+pids/
+logs/
+
+# PM2
+.pm2/
+
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/*.tfvars
+infra/terraform/.terraform.lock.hcl
+
+# Backups
+*.backup
+*.bak
+*.tar.gz
+*.zip
+
+# Google Cloud service account keys
+*-service-account-key.json
+credentials.json
