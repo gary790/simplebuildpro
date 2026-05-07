@@ -17,11 +17,11 @@ RUN npm ci
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy all node_modules from deps
+# Copy all node_modules from deps (including workspace hoisted)
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package.json ./package.json
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 
-COPY package.json turbo.json tsconfig.json ./
+COPY package.json package-lock.json turbo.json tsconfig.json ./
 COPY packages/shared/ packages/shared/
 COPY apps/web/ apps/web/
 
@@ -29,6 +29,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
 RUN npm run build --workspace=apps/web
+
+# Debug: Show standalone output structure
+RUN echo "=== Standalone root ===" && \
+    ls -la /app/apps/web/.next/standalone/ && \
+    echo "=== Standalone apps/web ===" && \
+    ls -la /app/apps/web/.next/standalone/apps/web/ 2>/dev/null || echo "No apps/web in standalone" && \
+    echo "=== Looking for server.js ===" && \
+    find /app/apps/web/.next/standalone -name "server.js" -type f 2>/dev/null
 
 # ─── Stage 3: Production ────────────────────────────────────
 FROM node:20-alpine AS production
@@ -41,13 +49,22 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
-# Copy Next.js standalone output
+# Copy Next.js standalone output (preserves monorepo structure)
 COPY --from=builder /app/apps/web/.next/standalone ./
+# Copy static assets to the correct location
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
+# Copy public assets if they exist
+COPY --from=builder /app/apps/web/public ./apps/web/public
 
-# Create public dir in case it doesn't exist
-RUN mkdir -p ./apps/web/public
+# Verify the server.js location
+RUN echo "=== Production /app contents ===" && \
+    ls -la /app/ && \
+    echo "=== /app/apps/web contents ===" && \
+    ls -la /app/apps/web/ 2>/dev/null || true && \
+    echo "=== Finding server.js ===" && \
+    find /app -name "server.js" -type f 2>/dev/null
 
 USER appuser
 
