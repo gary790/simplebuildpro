@@ -29,14 +29,6 @@ ENV NODE_ENV=production
 
 RUN npm run build --workspace=apps/web
 
-# Debug: Show standalone output structure
-RUN echo "=== Standalone root ===" && \
-    ls -la /app/apps/web/.next/standalone/ && \
-    echo "=== Standalone apps/web ===" && \
-    ls -la /app/apps/web/.next/standalone/apps/web/ 2>/dev/null || echo "No apps/web in standalone" && \
-    echo "=== Looking for server.js ===" && \
-    find /app/apps/web/.next/standalone -name "server.js" -type f 2>/dev/null
-
 # ─── Stage 3: Production ────────────────────────────────────
 FROM node:20-alpine AS production
 
@@ -56,14 +48,6 @@ COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 # Copy public assets if they exist
 COPY --from=builder /app/apps/web/public ./apps/web/public
-
-# Verify the server.js location
-RUN echo "=== Production /app contents ===" && \
-    ls -la /app/ && \
-    echo "=== /app/apps/web contents ===" && \
-    ls -la /app/apps/web/ 2>/dev/null || true && \
-    echo "=== Finding server.js ===" && \
-    find /app -name "server.js" -type f 2>/dev/null
 
 USER appuser
 
