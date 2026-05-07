@@ -55,3 +55,4 @@ infra/terraform/.terraform.lock.hcl
 *-service-account-key.json
 credentials.json
 simplebuildpro-sa-key.json
+.github/workflows/
