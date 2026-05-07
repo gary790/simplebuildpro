@@ -17,9 +17,8 @@ RUN npm ci
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy all node_modules from deps (including workspace hoisted)
+# Copy all node_modules from deps (hoisted to root in monorepo)
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 
 COPY package.json package-lock.json turbo.json tsconfig.json ./
 COPY packages/shared/ packages/shared/
