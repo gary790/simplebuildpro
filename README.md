@@ -7,7 +7,7 @@
 - **Name**: SimpleBuild Pro
 - **Stack**: Next.js 14 (frontend) + Hono (API) + PostgreSQL (Drizzle ORM) + GCP (Cloud Run, Cloud SQL, GCS, CDN)
 - **Architecture**: Turborepo monorepo with shared packages
-- **Lines of Code**: ~14,800+ across 90+ files
+- **Lines of Code**: ~16,000+ across 100+ files
 
 ## Features
 
@@ -37,7 +37,13 @@
 - **Request Tracing** — X-Request-ID propagation, response timing headers
 - **Infrastructure as Code** — Full Terraform configuration for GCP: Cloud Run, Cloud SQL PostgreSQL 16, VPC, Secret Manager, GCS buckets, CDN, global load balancer, managed SSL, Artifact Registry
 - **Database Migrations** — Versioned SQL migration files (0001_initial_schema, 0002_add_mfa_oauth_invitations)
-- **CI/CD Pipeline** — GitHub Actions workflow for build, test, deploy
+- **CI/CD Pipeline** — GitHub Actions workflows: deploy.yml (build → test → migrate → deploy to Cloud Run with Workload Identity Federation), pr-checks.yml (lint, type check, tests, Docker build verification, security audit)
+- **Docker Compose** — Full local development environment (PostgreSQL 16, Redis 7, API with hot-reload, Next.js dev server, optional pgAdmin + Redis Commander)
+- **Cloud Run Configs** — Knative YAML service definitions for API and Web with startup/liveness/readiness probes, VPC connector, Cloud SQL integration
+- **Deployment Scripts** — Automated scripts: deploy-cloudrun.sh (build + push + deploy), migrate.sh (migration runner with tracking), manage-secrets.sh (Secret Manager ops), cloud-sql.sh (instance create/backup/restore), gcp-setup.sh (full GCP project bootstrap)
+- **Environment Configs** — Typed env validation (apps/api/src/config/), environment-specific CORS, rate-limit configs, .env templates for dev/staging/prod
+- **Monitoring & APM** — Cloud Logging structured logs, W3C/Cloud Trace propagation, custom metrics reporter, error reporting (Cloud Error Reporting format), alert condition checks
+- **Health Probes** — Cloud Run compatible: /health (detailed), /health/ready (readiness), /health/live (liveness), /health/startup (startup), /health/metrics (Prometheus-style)
 - **Testing** — Playwright E2E tests (auth flows, editor, dashboard) + Vitest API integration tests (health, auth, projects, files, orgs, MFA, admin)
 
 ### Data Architecture
@@ -256,7 +262,35 @@ simplebuildpro/
 │       ├── terraform.tfvars.example # Variable template
 │       └── .gitignore               # Terraform state exclusions
 │
-├── .github/workflows/               # CI/CD pipeline
+├── .github/workflows/
+│   ├── deploy.yml               # CI/CD: build, test, migrate, deploy to Cloud Run
+│   └── pr-checks.yml            # PR: lint, type check, tests, Docker build, security scan
+│
+├── infra/
+│   ├── terraform/
+│   │   ├── main.tf              # Full GCP infrastructure
+│   │   ├── terraform.tfvars.example
+│   │   └── .gitignore
+│   ├── cloudrun/
+│   │   ├── api-service.yaml     # Cloud Run API service spec (Knative)
+│   │   ├── web-service.yaml     # Cloud Run Web service spec (Knative)
+│   │   └── services.ts          # Service config definitions
+│   └── docker/
+│       ├── Dockerfile.api       # Multi-stage API image
+│       └── Dockerfile.web       # Multi-stage Next.js image
+│
+├── scripts/
+│   ├── gcp-setup.sh             # One-time GCP project bootstrap
+│   ├── deploy-cloudrun.sh       # Build & deploy to Cloud Run
+│   ├── migrate.sh               # DB migration runner (local/staging/prod)
+│   ├── manage-secrets.sh        # Secret Manager operations
+│   ├── cloud-sql.sh             # Cloud SQL create/backup/restore
+│   └── dev-setup.sh             # Docker Compose local dev startup
+│
+├── docker-compose.yml               # Local dev: Postgres + Redis + API + Web
+├── .env.example                      # Dev environment template
+├── .env.production.example           # Production environment template
+├── .env.staging.example              # Staging environment template
 ├── turbo.json                        # Turborepo configuration
 ├── package.json                      # Root workspace config
 └── tsconfig.json                     # Root TypeScript config
@@ -272,25 +306,47 @@ simplebuildpro/
 - Google Cloud SDK (for deployment)
 - Terraform >= 1.5 (for infrastructure)
 
-### Local Development
+### Local Development (Docker Compose — Recommended)
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/simplebuildpro.git
+git clone https://github.com/gary790/simplebuildpro.git
 cd simplebuildpro
 
 # 2. Install dependencies
 npm install
 
 # 3. Set up environment variables
-cp apps/api/.env.example apps/api/.env
-# Fill in DATABASE_URL, JWT_SECRET, etc.
+cp .env.example .env
+# Fill in API keys (OAuth, Stripe, Anthropic, etc.)
 
-# 4. Run database migrations
-psql $DATABASE_URL -f migrations/0001_initial_schema.sql
-psql $DATABASE_URL -f migrations/0002_add_mfa_oauth_invitations.sql
+# 4. Start all services (Postgres, Redis, API, Web)
+./scripts/dev-setup.sh
+# Or manually: docker compose up -d
 
-# 5. Start development servers
+# 5. Services are available at:
+#    Web:   http://localhost:3000
+#    API:   http://localhost:8080
+#    Health: http://localhost:8080/health
+
+# Optional: Start with admin tools (pgAdmin, Redis Commander)
+./scripts/dev-setup.sh --tools
+```
+
+### Local Development (Manual)
+
+```bash
+# 1. Clone and install
+git clone https://github.com/gary790/simplebuildpro.git
+cd simplebuildpro && npm install
+
+# 2. Set up environment variables
+cp .env.example .env
+
+# 3. Run database migrations
+./scripts/migrate.sh local
+
+# 4. Start development servers
 npm run dev
 # API: http://localhost:8080
 # Web: http://localhost:3000
@@ -382,18 +438,59 @@ terraform apply
 ### Deploy Application
 
 ```bash
-# Build Docker images
+# Option 1: Automated (GitHub Actions — pushes to main auto-deploy)
+git push origin main
+
+# Option 2: Manual deployment script
+./scripts/deploy-cloudrun.sh all          # Deploy both API + Web
+./scripts/deploy-cloudrun.sh api          # Deploy API only
+./scripts/deploy-cloudrun.sh web          # Deploy Web only
+
+# Option 3: Docker + gcloud manual
 npm run docker:api
 npm run docker:web
+docker tag simplebuildpro-api us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:latest
+docker push us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:latest
+docker tag simplebuildpro-web us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:latest
+docker push us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:latest
+```
 
-# Tag and push to Artifact Registry
-docker tag simplebuildpro-api us-central1-docker.pkg.dev/PROJECT_ID/simplebuildpro/api:latest
-docker push us-central1-docker.pkg.dev/PROJECT_ID/simplebuildpro/api:latest
+### Database Migrations (Production)
 
-docker tag simplebuildpro-web us-central1-docker.pkg.dev/PROJECT_ID/simplebuildpro/web:latest
-docker push us-central1-docker.pkg.dev/PROJECT_ID/simplebuildpro/web:latest
+```bash
+# Run migrations via Cloud SQL Proxy
+./scripts/migrate.sh production
 
-# Deploy to Cloud Run (handled by CI/CD or manual gcloud commands)
+# Or via CI/CD (automatic on push to main)
+```
+
+### Secrets Management
+
+```bash
+# Check status of all secrets
+./scripts/manage-secrets.sh status
+
+# Initialize placeholder secrets
+./scripts/manage-secrets.sh init
+
+# Populate from .env file
+./scripts/manage-secrets.sh from-env
+
+# Set individual secret
+./scripts/manage-secrets.sh set simplebuildpro-jwt-secret
+
+# Grant access to service account
+./scripts/manage-secrets.sh grant simplebuildpro-api@simplebuildpro.iam.gserviceaccount.com
+```
+
+### Cloud SQL Operations
+
+```bash
+./scripts/cloud-sql.sh create    # Create instance
+./scripts/cloud-sql.sh backup    # Manual backup
+./scripts/cloud-sql.sh backups   # List backups
+./scripts/cloud-sql.sh connect   # Start SQL Proxy
+./scripts/cloud-sql.sh status    # Instance status
 ```
 
 ### DNS Setup
@@ -451,6 +548,19 @@ SSL certificates are auto-provisioned by Google-managed certificates.
 | CI/CD | GitHub Actions |
 | Testing | Playwright (E2E), Vitest (API) |
 | Monorepo | Turborepo |
+
+## URLs
+
+- **GitHub**: https://github.com/gary790/simplebuildpro
+- **Production API**: https://api.simplebuildpro.com
+- **Production Web**: https://app.simplebuildpro.com
+
+## Deployment Status
+
+- **Platform**: Google Cloud (Cloud Run + Cloud SQL + GCS + Cloud CDN)
+- **CI/CD**: GitHub Actions (auto-deploy on push to main)
+- **Status**: Infrastructure configured, awaiting GCP project activation
+- **Last Updated**: May 2026
 
 ## License
 

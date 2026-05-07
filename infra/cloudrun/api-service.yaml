@@ -1,0 +1,133 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SimpleBuild Pro — Cloud Run Service Definition (API)
+# Use: gcloud run services replace infra/cloudrun/api-service.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: simplebuildpro-api
+  labels:
+    cloud.googleapis.com/location: us-central1
+  annotations:
+    run.googleapis.com/ingress: internal-and-cloud-load-balancing
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/cloudsql-instances: simplebuildpro:us-central1:simplebuildpro-db
+        run.googleapis.com/vpc-access-connector: projects/simplebuildpro/locations/us-central1/connectors/simplebuildpro-vpc-connector
+        run.googleapis.com/vpc-access-egress: private-ranges-only
+        autoscaling.knative.dev/minScale: '1'
+        autoscaling.knative.dev/maxScale: '10'
+        run.googleapis.com/cpu-throttling: 'false'
+        run.googleapis.com/startup-cpu-boost: 'true'
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 60
+      serviceAccountName: simplebuildpro-api@simplebuildpro.iam.gserviceaccount.com
+      containers:
+        - image: us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:latest
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              memory: 512Mi
+              cpu: '1'
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: '8080'
+            - name: GCP_PROJECT_ID
+              value: simplebuildpro
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-database-url
+                  key: latest
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-redis-url
+                  key: latest
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-jwt-secret
+                  key: latest
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-jwt-refresh-secret
+                  key: latest
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-google-client-id
+                  key: latest
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-google-client-secret
+                  key: latest
+            - name: GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-github-client-id
+                  key: latest
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-github-client-secret
+                  key: latest
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-stripe-secret-key
+                  key: latest
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-stripe-webhook-secret
+                  key: latest
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-anthropic-api-key
+                  key: latest
+            - name: GCS_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-gcs-bucket
+                  key: latest
+            - name: NOVITA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-novita-api-key
+                  key: latest
+            - name: PAGESPEED_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-pagespeed-api-key
+                  key: latest
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 2
+            failureThreshold: 15
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 5
+  traffic:
+    - percent: 100
+      latestRevision: true

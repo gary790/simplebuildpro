@@ -20,8 +20,8 @@ domain = "yourdomain.com"
 # 3. Secrets (Stripe, Anthropic, Google OAuth, GitHub OAuth, Redis URL)
 #    are managed via Secret Manager. After `terraform apply`, populate them:
 #
-#    echo -n "sk_live_..." | gcloud secrets versions add stripe-secret-key --data-file=-
-#    echo -n "sk-ant-..." | gcloud secrets versions add anthropic-api-key --data-file=-
+#    echo -n "<your-stripe-key>" | gcloud secrets versions add stripe-secret-key --data-file=-
+#    echo -n "<your-anthropic-key>" | gcloud secrets versions add anthropic-api-key --data-file=-
 #    echo -n "your-google-client-id" | gcloud secrets versions add google-client-id --data-file=-
 #    echo -n "your-google-client-secret" | gcloud secrets versions add google-client-secret --data-file=-
 #    echo -n "your-github-client-id" | gcloud secrets versions add github-client-id --data-file=-

@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SimpleBuild Pro — Cloud Run Service Definition (Web/Frontend)
+# Use: gcloud run services replace infra/cloudrun/web-service.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: simplebuildpro-web
+  labels:
+    cloud.googleapis.com/location: us-central1
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '1'
+        autoscaling.knative.dev/maxScale: '5'
+        run.googleapis.com/cpu-throttling: 'true'
+        run.googleapis.com/startup-cpu-boost: 'true'
+    spec:
+      containerConcurrency: 100
+      timeoutSeconds: 60
+      serviceAccountName: simplebuildpro-web@simplebuildpro.iam.gserviceaccount.com
+      containers:
+        - image: us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:latest
+          ports:
+            - containerPort: 3000
+          resources:
+            limits:
+              memory: 512Mi
+              cpu: '1'
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: NEXT_PUBLIC_API_URL
+              value: https://api.simplebuildpro.com
+            - name: NEXT_PUBLIC_APP_URL
+              value: https://app.simplebuildpro.com
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 3
+            failureThreshold: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 5
+  traffic:
+    - percent: 100
+      latestRevision: true

@@ -28,11 +28,13 @@ import { errorHandler } from './middleware/error-handler';
 import { rateLimiter } from './middleware/rate-limiter';
 import { requestLogger } from './middleware/request-logger';
 import { logger } from './services/logger';
+import { apmMiddleware, metricsCollector } from './services/monitoring';
 
 const app = new Hono();
 
 // ─── Global Middleware ───────────────────────────────────────
 app.use('*', timing());
+app.use('*', apmMiddleware());
 app.use('*', requestLogger());
 app.use('*', secureHeaders());
 app.use('*', cors({
@@ -65,6 +67,16 @@ app.route('/api/v1/organizations', orgRoutes);
 app.route('/api/v1/mfa', mfaRoutes);
 app.route('/api/v1/admin', adminRoutes);
 app.route('/health', healthRoutes);
+
+// ─── Internal Metrics (protected) ────────────────────────────
+app.get('/internal/metrics', (c) => {
+  const authHeader = c.req.header('Authorization');
+  const internalToken = process.env.INTERNAL_METRICS_TOKEN;
+  if (internalToken && authHeader !== `Bearer ${internalToken}`) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  return c.json(metricsCollector.getMetrics());
+});
 
 // ─── Error Handler ───────────────────────────────────────────
 app.onError(errorHandler);
