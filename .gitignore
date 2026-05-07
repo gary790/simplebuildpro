@@ -56,3 +56,4 @@ infra/terraform/.terraform.lock.hcl
 credentials.json
 simplebuildpro-sa-key.json
 .github/workflows/
+.turbo/

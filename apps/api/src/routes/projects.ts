@@ -6,7 +6,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '@simplebuildpro/db';
-import { projects, projectFiles, projectAssets, projectVersions } from '@simplebuildpro/db';
+import { projects, projectFiles, projectAssets, projectVersions, deployments } from '@simplebuildpro/db';
 import { eq, and, desc, sql, count } from 'drizzle-orm';
 import { requireAuth, type AuthEnv } from '../middleware/auth';
 import { AppError } from '../middleware/error-handler';
@@ -41,7 +41,7 @@ projectRoutes.get('/', async (c) => {
       with: {
         deployments: {
           limit: 1,
-          orderBy: desc(projects.updatedAt),
+          orderBy: desc(deployments.createdAt),
         },
       },
     }),
