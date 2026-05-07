@@ -284,7 +284,7 @@ orgRoutes.post('/invitations/:token/accept', async (c) => {
   // Find invitation
   const [invitation] = await db.execute(sql`
     SELECT * FROM org_invitations WHERE token = ${token} AND accepted_at IS NULL
-  `) as any[];
+  `) as unknown as any[];
 
   if (!invitation) {
     throw new AppError(404, 'INVITATION_NOT_FOUND', 'Invitation not found or already accepted.');

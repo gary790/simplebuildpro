@@ -224,7 +224,7 @@ adminRoutes.get('/audit-logs', async (c) => {
     LIMIT ${pageSize} OFFSET ${offset}
   `);
 
-  const [total] = await db.execute(sql`SELECT COUNT(*) as count FROM audit_logs`) as any[];
+  const [total] = await db.execute(sql`SELECT COUNT(*) as count FROM audit_logs`) as unknown as any[];
 
   return c.json({
     success: true,

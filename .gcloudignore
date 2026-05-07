@@ -1,0 +1,24 @@
+# Cloud Build ignore - exclude heavy/unnecessary files
+.git/
+.github/
+node_modules/
+.next/
+dist/
+out/
+build/
+.wrangler/
+.vscode/
+.idea/
+tests/
+*.md
+*.log
+.env
+.env.local
+.env.*.local
+.dev.vars
+simplebuildpro-sa-key.json
+infra/terraform/.terraform/
+infra/terraform/*.tfstate*
+infra/terraform/*.tfvars
+tsconfig.tsbuildinfo
+.pm2/
