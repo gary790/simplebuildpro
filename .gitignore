@@ -54,3 +54,4 @@ infra/terraform/.terraform.lock.hcl
 # Google Cloud service account keys
 *-service-account-key.json
 credentials.json
+simplebuildpro-sa-key.json
