@@ -554,13 +554,60 @@ SSL certificates are auto-provisioned by Google-managed certificates.
 - **GitHub**: https://github.com/gary790/simplebuildpro
 - **Production API**: https://api.simplebuildpro.com
 - **Production Web**: https://app.simplebuildpro.com
+- **Cloud Run API**: https://simplebuildpro-api-397170798284.us-central1.run.app
+- **Cloud Run Web**: https://simplebuildpro-web-397170798284.us-central1.run.app
+- **Load Balancer IP**: 34.120.143.111
 
 ## Deployment Status
 
-- **Platform**: Google Cloud (Cloud Run + Cloud SQL + GCS + Cloud CDN)
-- **CI/CD**: GitHub Actions (auto-deploy on push to main)
-- **Status**: Infrastructure configured, awaiting GCP project activation
-- **Last Updated**: May 2026
+- **Platform**: Google Cloud (Cloud Run + Cloud SQL + Memorystore Redis + Load Balancer)
+- **Region**: us-central1
+- **Status**: ✅ Deployed and running
+- **Last Updated**: May 7, 2026
+
+### Infrastructure Components
+
+| Component | Resource | Status |
+|---|---|---|
+| **API Server** | Cloud Run `simplebuildpro-api` | ✅ Running |
+| **Web Frontend** | Cloud Run `simplebuildpro-web` | ✅ Running |
+| **Database** | Cloud SQL PostgreSQL 16 `simplebuildpro-db` (136.113.45.130) | ✅ RUNNABLE |
+| **Cache** | Memorystore Redis `simplebuildpro-redis` (10.1.204.211:6379) | ✅ READY |
+| **VPC Connector** | `sbpro-vpc-connector` (10.8.0.0/28) | ✅ READY |
+| **Load Balancer** | Global HTTPS LB (34.120.143.111) | ✅ Active |
+| **SSL Certificate** | Google-managed for api/app.simplebuildpro.com | ⏳ Pending DNS |
+| **Artifact Registry** | `us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro` | ✅ Ready |
+| **Secret Manager** | DATABASE_URL, REDIS_URL | ✅ Configured |
+
+### DNS Configuration Required
+
+To complete the deployment, add these DNS A records at your domain registrar:
+
+```
+api.simplebuildpro.com    A    34.120.143.111
+app.simplebuildpro.com    A    34.120.143.111
+simplebuildpro.com        A    34.120.143.111
+www.simplebuildpro.com    A    34.120.143.111
+```
+
+Once DNS propagates, the Google-managed SSL certificate will auto-provision (typically 10-30 minutes after DNS is set).
+
+### Redeployment
+
+```bash
+# Rebuild and push Docker images
+gcloud builds submit --config=cloudbuild.yaml --project=simplebuildpro
+
+# Deploy API
+gcloud run deploy simplebuildpro-api \
+  --image=us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:latest \
+  --region=us-central1 --project=simplebuildpro
+
+# Deploy Web
+gcloud run deploy simplebuildpro-web \
+  --image=us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:latest \
+  --region=us-central1 --project=simplebuildpro
+```
 
 ## License
 
