@@ -1,12 +1,12 @@
 // ============================================================
-// SimpleBuild Pro — Editor Workspace
-// Full IDE: file tree, Monaco editor, preview, AI chat
-// Integrated with Studio Builder for HTML files
+// SimpleBuild Pro — Editor Workspace (Redesigned Layout)
+// Left: AI Chat (always visible, white)
+// Right: Tabbed panel (Preview, Code, Explorer, Visual, Build, Deploy, Ship)
 // ============================================================
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEditorStore, useAuthStore, useChatStore } from '@/lib/store';
 import { projectsApi, filesApi, buildApi, deployApi } from '@/lib/api-client';
@@ -21,15 +21,33 @@ import { AiChat } from '@/components/editor/ai-chat';
 import { StudioBuilder } from '@/components/editor/studio-builder';
 import { ShipPanel } from '@/components/editor/ship-panel';
 import {
-  ArrowLeft, Save, Play, Rocket, Sparkles, FolderTree,
-  Eye, Terminal, Image, Settings, Loader2, ChevronDown,
-  FilePlus, FolderPlus, MoreVertical, Package, Globe,
-  History, Upload, Download, Layout, Code, Ship,
+  ArrowLeft, Save, Loader2,
+  FilePlus, FolderPlus, MoreVertical,
+  Package, Rocket, Ship, Eye, Code, Layout,
+  FolderTree, Paintbrush, Terminal, Settings,
+  History, Globe, Download, GripVertical,
 } from 'lucide-react';
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/dropdown';
 import clsx from 'clsx';
 
-type EditorMode = 'code' | 'visual';
+// ─── Tab definitions for the right panel ──────────────────────
+type RightTab = 'preview' | 'code' | 'explorer' | 'visual' | 'build' | 'deploy' | 'ship';
+
+interface TabDef {
+  id: RightTab;
+  label: string;
+  icon: React.ReactNode;
+}
+
+const RIGHT_TABS: TabDef[] = [
+  { id: 'preview',  label: 'Preview',  icon: <Eye size={13} /> },
+  { id: 'code',     label: 'Code',     icon: <Code size={13} /> },
+  { id: 'explorer', label: 'Explorer', icon: <FolderTree size={13} /> },
+  { id: 'visual',   label: 'Visual',   icon: <Paintbrush size={13} /> },
+  { id: 'build',    label: 'Build',    icon: <Package size={13} /> },
+  { id: 'deploy',   label: 'Deploy',   icon: <Rocket size={13} /> },
+  { id: 'ship',     label: 'Ship',     icon: <Ship size={13} /> },
+];
 
 export default function EditorPage() {
   const params = useParams();
@@ -41,18 +59,18 @@ export default function EditorPage() {
     project, setProject, files, setFiles, activeFile,
     openTabs, openTab, setActiveFile, updateFile, deleteFile, renameFile,
     buildStatus, setBuildStatus, deployStatus, setDeployStatus, setLastDeployUrl,
-    isChatOpen, toggleChat, previewSession,
+    previewSession,
     assets, setAssets,
     terminalLogs, addTerminalLog, clearTerminalLogs,
-    isTerminalOpen, toggleTerminal,
   } = useEditorStore();
 
   const { clearMessages: clearChat } = useChatStore();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(260);
-  const [editorMode, setEditorMode] = useState<EditorMode>('code');
+  const [activeTab, setActiveTab] = useState<RightTab>('preview');
+  const [chatWidth, setChatWidth] = useState(420);
+  const [isResizing, setIsResizing] = useState(false);
 
   // Modal states
   const [createFileOpen, setCreateFileOpen] = useState(false);
@@ -64,7 +82,34 @@ export default function EditorPage() {
   const [renameNewName, setRenameNewName] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePath, setDeletePath] = useState('');
-  const [shipOpen, setShipOpen] = useState(false);
+
+  // ─── Resize handler for chat panel ─────────────────────
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+
+    const startX = e.clientX;
+    const startWidth = chatWidth;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - startX;
+      const newWidth = Math.max(320, Math.min(700, startWidth + delta));
+      setChatWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [chatWidth]);
 
   // ─── Load project ──────────────────────────────────────
   useEffect(() => {
@@ -73,7 +118,6 @@ export default function EditorPage() {
         const data = await projectsApi.get(projectId);
         setProject(data as any);
 
-        // Load files into store
         const fileMap = new Map<string, string>();
         if ((data as any).files) {
           for (const f of (data as any).files) {
@@ -82,12 +126,11 @@ export default function EditorPage() {
         }
         setFiles(fileMap);
 
-        // Load assets
         if ((data as any).assets) {
           setAssets((data as any).assets);
         }
 
-        // Auto-open first HTML file or index
+        // Auto-open first HTML file
         const paths = Array.from(fileMap.keys());
         const indexFile = paths.find(
           (p) => p === 'index.html' || p === 'index.htm' || p.endsWith('/index.html'),
@@ -166,7 +209,6 @@ export default function EditorPage() {
 
     try {
       await handleSaveAll();
-
       const result = await buildApi.build({ projectId: project.id });
       setBuildStatus('success');
       addTerminalLog(`[${new Date().toLocaleTimeString()}] Build successful — v${result.versionNumber}`);
@@ -221,8 +263,6 @@ export default function EditorPage() {
   const handleInsertHtml = useCallback((html: string) => {
     if (!activeFile) return;
     const currentContent = files.get(activeFile) || '';
-
-    // Try to insert before </body> if present
     const bodyCloseIndex = currentContent.toLowerCase().lastIndexOf('</body>');
     let newContent: string;
     if (bodyCloseIndex >= 0) {
@@ -230,7 +270,6 @@ export default function EditorPage() {
     } else {
       newContent = currentContent + '\n' + html;
     }
-
     updateFile(activeFile, newContent);
     toast('success', 'Component inserted');
   }, [activeFile, files, updateFile]);
@@ -321,13 +360,232 @@ export default function EditorPage() {
     );
   }
 
-  // Check if current file is HTML (for visual builder toggle)
   const isHtmlFile = activeFile?.endsWith('.html') || activeFile?.endsWith('.htm');
+
+  // ─── Render right-panel tab content ─────────────────────
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'preview':
+        return <PreviewPanel />;
+
+      case 'code':
+        return (
+          <div className="flex flex-col flex-1 h-full overflow-hidden">
+            <TabBar />
+            <div className="flex-1 overflow-hidden">
+              <CodeEditor onSave={handleSave} />
+            </div>
+          </div>
+        );
+
+      case 'explorer':
+        return (
+          <div className="flex flex-col flex-1 h-full overflow-hidden bg-[#252526]">
+            {/* Explorer header */}
+            <div className="flex items-center justify-between px-3 h-10 border-b border-[#1E1E1E] shrink-0">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Files</span>
+              <div className="flex items-center gap-0.5">
+                <button
+                  onClick={() => {
+                    setCreateFileParent('');
+                    setIsFolder(false);
+                    setNewFileName('');
+                    setCreateFileOpen(true);
+                  }}
+                  className="p-1.5 rounded text-slate-500 hover:text-slate-300 hover:bg-white/10 transition-colors"
+                  title="New File"
+                >
+                  <FilePlus size={13} />
+                </button>
+                <button
+                  onClick={() => {
+                    setCreateFileParent('');
+                    setIsFolder(true);
+                    setNewFileName('');
+                    setCreateFileOpen(true);
+                  }}
+                  className="p-1.5 rounded text-slate-500 hover:text-slate-300 hover:bg-white/10 transition-colors"
+                  title="New Folder"
+                >
+                  <FolderPlus size={13} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto dark-scroll text-slate-300">
+              <FileTree
+                onCreateFile={(parent) => {
+                  setCreateFileParent(parent);
+                  setIsFolder(false);
+                  setNewFileName('');
+                  setCreateFileOpen(true);
+                }}
+                onCreateFolder={(parent) => {
+                  setCreateFileParent(parent);
+                  setIsFolder(true);
+                  setNewFileName('');
+                  setCreateFileOpen(true);
+                }}
+                onRename={(path) => {
+                  setRenamePath(path);
+                  setRenameNewName(path.split('/').pop() || '');
+                  setRenameOpen(true);
+                }}
+                onDelete={(path) => {
+                  setDeletePath(path);
+                  setDeleteOpen(true);
+                }}
+              />
+            </div>
+          </div>
+        );
+
+      case 'visual':
+        if (!isHtmlFile) {
+          return (
+            <div className="flex flex-col items-center justify-center h-full bg-[#1E1E1E] text-center px-8">
+              <Paintbrush size={32} className="text-slate-500 mb-3" />
+              <p className="text-sm text-slate-400 mb-1">Visual Builder</p>
+              <p className="text-xs text-slate-500">Open an HTML file first, then switch to Visual mode to drag & drop components.</p>
+            </div>
+          );
+        }
+        return (
+          <StudioBuilder
+            onInsertHtml={handleInsertHtml}
+            onSwitchToCode={() => setActiveTab('code')}
+          />
+        );
+
+      case 'build':
+        return (
+          <div className="flex flex-col h-full bg-[#1E1E1E]">
+            {/* Build header */}
+            <div className="flex items-center justify-between px-4 h-12 border-b border-[#2D2D2D] shrink-0">
+              <span className="text-sm font-semibold text-slate-300">Build</span>
+              <Button
+                size="xs"
+                onClick={handleBuild}
+                loading={buildStatus === 'building'}
+                icon={<Package size={13} />}
+              >
+                Run Build
+              </Button>
+            </div>
+            {/* Build status */}
+            <div className="px-4 py-3 border-b border-[#2D2D2D]">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Status:</span>
+                <span className={clsx(
+                  'text-xs font-medium px-2 py-0.5 rounded-full',
+                  buildStatus === 'idle' && 'bg-slate-700 text-slate-400',
+                  buildStatus === 'building' && 'bg-amber-900/50 text-amber-400',
+                  buildStatus === 'success' && 'bg-green-900/50 text-green-400',
+                  buildStatus === 'error' && 'bg-red-900/50 text-red-400',
+                )}>
+                  {buildStatus === 'idle' ? 'Ready' : buildStatus}
+                </span>
+              </div>
+            </div>
+            {/* Build logs */}
+            <div className="flex-1 overflow-y-auto p-3 font-mono text-xs text-slate-400 dark-scroll">
+              {terminalLogs.length === 0 ? (
+                <p className="text-slate-600">No build output yet. Click "Run Build" to start.</p>
+              ) : (
+                terminalLogs.map((log, i) => (
+                  <div key={i} className="whitespace-pre-wrap leading-relaxed">{log}</div>
+                ))
+              )}
+            </div>
+            <div className="px-3 py-2 border-t border-[#2D2D2D] shrink-0">
+              <button
+                onClick={clearTerminalLogs}
+                className="text-2xs text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Clear logs
+              </button>
+            </div>
+          </div>
+        );
+
+      case 'deploy':
+        return (
+          <div className="flex flex-col h-full bg-[#1E1E1E]">
+            {/* Deploy header */}
+            <div className="flex items-center justify-between px-4 h-12 border-b border-[#2D2D2D] shrink-0">
+              <span className="text-sm font-semibold text-slate-300">Deploy</span>
+              <Button
+                size="xs"
+                onClick={handleDeploy}
+                loading={deployStatus === 'deploying'}
+                icon={<Rocket size={13} />}
+              >
+                Deploy Now
+              </Button>
+            </div>
+            {/* Deploy status */}
+            <div className="px-4 py-3 border-b border-[#2D2D2D]">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs text-slate-500">Status:</span>
+                <span className={clsx(
+                  'text-xs font-medium px-2 py-0.5 rounded-full',
+                  deployStatus === 'idle' && 'bg-slate-700 text-slate-400',
+                  deployStatus === 'deploying' && 'bg-amber-900/50 text-amber-400',
+                  deployStatus === 'live' && 'bg-green-900/50 text-green-400',
+                  deployStatus === 'error' && 'bg-red-900/50 text-red-400',
+                )}>
+                  {deployStatus === 'idle' ? 'Not deployed' : deployStatus}
+                </span>
+              </div>
+              {useEditorStore.getState().lastDeployUrl && (
+                <a
+                  href={useEditorStore.getState().lastDeployUrl!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-brand-400 hover:text-brand-300 underline break-all"
+                >
+                  {useEditorStore.getState().lastDeployUrl}
+                </a>
+              )}
+            </div>
+            {/* Deploy info */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="space-y-3 text-xs text-slate-500">
+                <p>Deploy will automatically:</p>
+                <ul className="space-y-1.5 ml-3">
+                  <li className="flex items-center gap-2">
+                    <span className="w-1 h-1 rounded-full bg-slate-500" />
+                    Save all unsaved files
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-1 h-1 rounded-full bg-slate-500" />
+                    Build your project
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-1 h-1 rounded-full bg-slate-500" />
+                    Deploy to your configured hosting
+                  </li>
+                </ul>
+                <p className="text-slate-600 pt-2">
+                  Use the <strong className="text-slate-400">Ship</strong> tab for advanced deployment options (GitHub, Cloudflare, Vercel, etc.)
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'ship':
+        return <ShipPanel onClose={() => setActiveTab('preview')} inline />;
+
+      default:
+        return null;
+    }
+  };
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#1E1E1E]">
       {/* ─── Top Bar ──────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3 h-12 bg-[#252526] border-b border-[#1E1E1E] shrink-0 z-10">
+      <header className="flex items-center justify-between px-3 h-11 bg-[#252526] border-b border-[#1E1E1E] shrink-0 z-10">
+        {/* Left: Back + Project Name */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push('/dashboard')}
@@ -346,43 +604,8 @@ export default function EditorPage() {
           )}
         </div>
 
+        {/* Right: Quick actions */}
         <div className="flex items-center gap-1.5">
-          {/* Editor Mode Toggle (only for HTML files) */}
-          {isHtmlFile && (
-            <>
-              <div className="flex items-center bg-[#3C3C3C] rounded-md p-0.5">
-                <button
-                  onClick={() => setEditorMode('code')}
-                  className={clsx(
-                    'flex items-center gap-1 px-2 py-1 rounded text-2xs font-medium transition-colors',
-                    editorMode === 'code'
-                      ? 'bg-brand-600 text-white'
-                      : 'text-slate-400 hover:text-white',
-                  )}
-                  title="Code Editor"
-                >
-                  <Code size={11} />
-                  Code
-                </button>
-                <button
-                  onClick={() => setEditorMode('visual')}
-                  className={clsx(
-                    'flex items-center gap-1 px-2 py-1 rounded text-2xs font-medium transition-colors',
-                    editorMode === 'visual'
-                      ? 'bg-brand-600 text-white'
-                      : 'text-slate-400 hover:text-white',
-                  )}
-                  title="Visual Builder"
-                >
-                  <Layout size={11} />
-                  Visual
-                </button>
-              </div>
-              <div className="w-px h-5 bg-white/10 mx-1" />
-            </>
-          )}
-
-          {/* Save */}
           <Button
             size="xs"
             variant="ghost"
@@ -393,67 +616,8 @@ export default function EditorPage() {
             Save
           </Button>
 
-          {/* Build */}
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={handleBuild}
-            loading={buildStatus === 'building'}
-            className="text-slate-400 hover:text-white"
-            icon={<Package size={13} />}
-          >
-            Build
-          </Button>
+          <div className="w-px h-5 bg-white/10 mx-0.5" />
 
-          {/* Deploy */}
-          <Button
-            size="xs"
-            onClick={handleDeploy}
-            loading={deployStatus === 'deploying'}
-            icon={<Rocket size={13} />}
-          >
-            Deploy
-          </Button>
-
-          {/* Ship — GitHub, Cloudflare, Download */}
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={() => setShipOpen(true)}
-            className="text-slate-400 hover:text-white"
-            icon={<Ship size={13} />}
-          >
-            Ship
-          </Button>
-
-          {/* Separator */}
-          <div className="w-px h-5 bg-white/10 mx-1" />
-
-          {/* AI Chat Toggle */}
-          <button
-            onClick={toggleChat}
-            className={clsx(
-              'p-1.5 rounded-md transition-colors',
-              isChatOpen ? 'bg-brand-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/10',
-            )}
-            title="AI Assistant"
-          >
-            <Sparkles size={14} />
-          </button>
-
-          {/* Terminal Toggle */}
-          <button
-            onClick={toggleTerminal}
-            className={clsx(
-              'p-1.5 rounded-md transition-colors',
-              isTerminalOpen ? 'bg-white/20 text-white' : 'text-slate-400 hover:text-white hover:bg-white/10',
-            )}
-            title="Terminal"
-          >
-            <Terminal size={14} />
-          </button>
-
-          {/* More */}
           <Dropdown
             trigger={
               <button className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
@@ -464,142 +628,96 @@ export default function EditorPage() {
             <DropdownItem icon={<History size={14} />} onClick={() => toast('info', 'Version history coming soon')}>
               Version History
             </DropdownItem>
-            <DropdownItem icon={<Globe size={14} />} onClick={() => setShipOpen(true)}>
+            <DropdownItem icon={<Globe size={14} />} onClick={() => setActiveTab('ship')}>
               Custom Domains
             </DropdownItem>
-            <DropdownItem icon={<Settings size={14} />} onClick={() => setShipOpen(true)}>
+            <DropdownItem icon={<Settings size={14} />} onClick={() => setActiveTab('ship')}>
               Project Settings
             </DropdownItem>
             <DropdownSeparator />
-            <DropdownItem icon={<Download size={14} />} onClick={() => setShipOpen(true)}>
+            <DropdownItem icon={<Download size={14} />} onClick={() => setActiveTab('ship')}>
               Export Project
             </DropdownItem>
           </Dropdown>
         </div>
-      </div>
+      </header>
 
-      {/* ─── Main Content ─────────────────────────────────── */}
+      {/* ─── Main Content: Chat Left | Tabbed Right ─────── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar — File Tree */}
-        <div
-          className="flex flex-col bg-[#252526] border-r border-[#1E1E1E] shrink-0 overflow-hidden"
-          style={{ width: sidebarWidth }}
+        {/* ── Left Panel: AI Chat (always visible, white) ── */}
+        <aside
+          className="shrink-0 flex flex-col overflow-hidden"
+          style={{ width: chatWidth }}
         >
-          <div className="flex items-center justify-between px-3 h-9 border-b border-[#1E1E1E] shrink-0">
-            <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Explorer</span>
-            <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => {
-                  setCreateFileParent('');
-                  setIsFolder(false);
-                  setNewFileName('');
-                  setCreateFileOpen(true);
-                }}
-                className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-white/10 transition-colors"
-                title="New File"
-              >
-                <FilePlus size={12} />
-              </button>
-              <button
-                onClick={() => {
-                  setCreateFileParent('');
-                  setIsFolder(true);
-                  setNewFileName('');
-                  setCreateFileOpen(true);
-                }}
-                className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-white/10 transition-colors"
-                title="New Folder"
-              >
-                <FolderPlus size={12} />
-              </button>
-            </div>
-          </div>
+          <AiChat />
+        </aside>
 
-          <div className="flex-1 overflow-y-auto dark-scroll text-slate-300">
-            <FileTree
-              onCreateFile={(parent) => {
-                setCreateFileParent(parent);
-                setIsFolder(false);
-                setNewFileName('');
-                setCreateFileOpen(true);
-              }}
-              onCreateFolder={(parent) => {
-                setCreateFileParent(parent);
-                setIsFolder(true);
-                setNewFileName('');
-                setCreateFileOpen(true);
-              }}
-              onRename={(path) => {
-                setRenamePath(path);
-                setRenameNewName(path.split('/').pop() || '');
-                setRenameOpen(true);
-              }}
-              onDelete={(path) => {
-                setDeletePath(path);
-                setDeleteOpen(true);
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Editor + Preview split */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* Editor Panel — Code or Visual Builder */}
-          {editorMode === 'visual' && isHtmlFile ? (
-            <StudioBuilder
-              onInsertHtml={handleInsertHtml}
-              onSwitchToCode={() => setEditorMode('code')}
-            />
-          ) : (
-            <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-              <TabBar />
-              <div className="flex-1 overflow-hidden">
-                <CodeEditor onSave={handleSave} />
-              </div>
-
-              {/* Terminal Panel */}
-              {isTerminalOpen && (
-                <div className="border-t border-[#1E1E1E] bg-[#1E1E1E] shrink-0" style={{ height: '180px' }}>
-                  <div className="flex items-center justify-between px-3 h-7 bg-[#252526] border-b border-[#1E1E1E]">
-                    <span className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Output</span>
-                    <button
-                      onClick={clearTerminalLogs}
-                      className="text-2xs text-slate-500 hover:text-slate-300 transition-colors"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="h-[calc(100%-28px)] overflow-y-auto p-2 font-mono text-xs text-slate-400 dark-scroll">
-                    {terminalLogs.length === 0 ? (
-                      <p className="text-slate-600">No output yet. Build or deploy to see logs.</p>
-                    ) : (
-                      terminalLogs.map((log, i) => (
-                        <div key={i} className="whitespace-pre-wrap">{log}</div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+        {/* ── Resize Handle ── */}
+        <div
+          className={clsx(
+            'w-1 shrink-0 cursor-col-resize transition-colors group flex items-center justify-center',
+            isResizing ? 'bg-brand-500' : 'bg-[#1E1E1E] hover:bg-brand-500/50',
           )}
-
-          {/* Preview Panel (only in code mode; visual builder has its own preview) */}
-          {editorMode === 'code' && <PreviewPanel />}
+          onMouseDown={handleMouseDown}
+        >
+          <div className="w-0.5 h-8 rounded-full bg-slate-600 group-hover:bg-brand-400 transition-colors" />
         </div>
 
-        {/* AI Chat Panel */}
-        {isChatOpen && <AiChat />}
+        {/* ── Right Panel: Tab Bar + Content ── */}
+        <main className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          {/* Tab bar */}
+          <nav className="flex items-center bg-[#252526] border-b border-[#1E1E1E] shrink-0 overflow-x-auto no-scrollbar">
+            {RIGHT_TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+
+              // Show status indicators on certain tabs
+              let statusDot = null;
+              if (tab.id === 'build' && buildStatus === 'building') {
+                statusDot = <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />;
+              } else if (tab.id === 'build' && buildStatus === 'success') {
+                statusDot = <span className="w-1.5 h-1.5 rounded-full bg-green-400" />;
+              } else if (tab.id === 'build' && buildStatus === 'error') {
+                statusDot = <span className="w-1.5 h-1.5 rounded-full bg-red-400" />;
+              } else if (tab.id === 'deploy' && deployStatus === 'deploying') {
+                statusDot = <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />;
+              } else if (tab.id === 'deploy' && deployStatus === 'live') {
+                statusDot = <span className="w-1.5 h-1.5 rounded-full bg-green-400" />;
+              } else if (tab.id === 'deploy' && deployStatus === 'error') {
+                statusDot = <span className="w-1.5 h-1.5 rounded-full bg-red-400" />;
+              }
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={clsx(
+                    'flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium transition-colors border-b-2 whitespace-nowrap',
+                    isActive
+                      ? 'text-white border-brand-500 bg-[#1E1E1E]'
+                      : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-[#2D2D2D]',
+                  )}
+                >
+                  {tab.icon}
+                  {tab.label}
+                  {statusDot}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Tab content */}
+          <div className="flex-1 overflow-hidden">
+            {renderTabContent()}
+          </div>
+        </main>
       </div>
 
       {/* ─── Status Bar ──────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3 h-6 bg-brand-600 text-white text-2xs shrink-0">
+      <footer className="flex items-center justify-between px-3 h-6 bg-brand-600 text-white text-2xs shrink-0">
         <div className="flex items-center gap-3">
           <span>{files.size} file{files.size !== 1 ? 's' : ''}</span>
           {activeFile && (
             <span className="text-white/70">{activeFile}</span>
-          )}
-          {editorMode === 'visual' && (
-            <span className="bg-white/20 px-1.5 py-0.5 rounded text-white/90 font-medium">Studio Builder</span>
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -623,10 +741,7 @@ export default function EditorPage() {
           )}
           <span className="text-white/60">{user?.plan || 'free'} plan</span>
         </div>
-      </div>
-
-      {/* ─── Ship Panel ─────────────────────────────────── */}
-      {shipOpen && <ShipPanel onClose={() => setShipOpen(false)} />}
+      </footer>
 
       {/* ─── Create File/Folder Modal ─────────────────────── */}
       <Modal

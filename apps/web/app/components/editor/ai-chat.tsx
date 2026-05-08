@@ -141,7 +141,7 @@ function ActionBadge({ action }: { action: ActionEvent }) {
 }
 
 export function AiChat() {
-  const { project, updateFile, isChatOpen, toggleChat, openTab, setActiveFile } = useEditorStore();
+  const { project, updateFile, openTab, setActiveFile } = useEditorStore();
   const {
     conversationId, isLoading,
     setConversationId, setLoading,
@@ -158,12 +158,10 @@ export function AiChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Focus input on open
+  // Focus input on mount
   useEffect(() => {
-    if (isChatOpen) {
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
-  }, [isChatOpen]);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || !project?.id || isLoading) return;
@@ -394,10 +392,8 @@ export function AiChat() {
     setConversationId(null);
   };
 
-  if (!isChatOpen) return null;
-
   return (
-    <div className="flex flex-col h-full bg-white border-l border-slate-200 w-[380px] shrink-0">
+    <div className="flex flex-col h-full bg-white">
       {/* Header */}
       <div className="flex items-center justify-between px-4 h-12 border-b border-slate-200 bg-slate-50 shrink-0">
         <div className="flex items-center gap-2">
@@ -412,12 +408,7 @@ export function AiChat() {
           >
             <RotateCcw size={13} />
           </button>
-          <button
-            onClick={toggleChat}
-            className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-          >
-            <X size={14} />
-          </button>
+
         </div>
       </div>
 

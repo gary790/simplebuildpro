@@ -76,6 +76,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 
 interface ShipPanelProps {
   onClose: () => void;
+  inline?: boolean;
 }
 
 // ─── Helper: API fetch with auth ────────────────────────────
@@ -101,7 +102,7 @@ async function shipFetch<T>(path: string, options: RequestInit = {}): Promise<T>
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
 
-export function ShipPanel({ onClose }: ShipPanelProps) {
+export function ShipPanel({ onClose, inline = false }: ShipPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('github');
   const [connections, setConnections] = useState<Connection[]>([]);
   const [integrations, setIntegrations] = useState<ProjectIntegration[]>([]);
@@ -137,12 +138,11 @@ export function ShipPanel({ onClose }: ShipPanelProps) {
   const getConnection = (provider: string) => connections.find(c => c.provider === provider);
   const getIntegration = (provider: string) => integrations.find(i => i.provider === provider);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-
-      <div className="relative w-full max-w-3xl bg-[#1E1E1E] rounded-2xl shadow-2xl border border-white/10 overflow-hidden animate-slide-up max-h-[85vh] flex flex-col">
-        {/* Header */}
+  // ─── Inline mode: render directly without overlay ──────────
+  const content = (
+    <>
+      {/* Header */}
+      {!inline && (
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-brand-600/20 flex items-center justify-center">
@@ -157,9 +157,10 @@ export function ShipPanel({ onClose }: ShipPanelProps) {
             <X size={16} />
           </button>
         </div>
+      )}
 
-        {/* Tabs — scrollable */}
-        <div className="flex border-b border-white/10 px-4 overflow-x-auto shrink-0">
+      {/* Tabs — scrollable */}
+      <div className={clsx('flex border-b border-white/10 overflow-x-auto shrink-0', inline ? 'px-3' : 'px-4')}>
           {TABS.map((tab) => (
             <button
               key={tab.id}
@@ -186,8 +187,8 @@ export function ShipPanel({ onClose }: ShipPanelProps) {
           ))}
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto flex-1">
+      {/* Content */}
+      <div className={clsx('overflow-y-auto flex-1', inline ? 'p-4' : 'p-6')}>
           {loading ? (
             <div className="flex items-center justify-center h-48">
               <Loader2 size={24} className="animate-spin text-slate-400" />
@@ -246,7 +247,23 @@ export function ShipPanel({ onClose }: ShipPanelProps) {
               {activeTab === 'env' && <EnvVarsTab projectId={project?.id || ''} />}
             </>
           )}
-        </div>
+      </div>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <div className="flex flex-col h-full bg-[#1E1E1E] overflow-hidden">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-3xl bg-[#1E1E1E] rounded-2xl shadow-2xl border border-white/10 overflow-hidden animate-slide-up max-h-[85vh] flex flex-col">
+        {content}
       </div>
     </div>
   );

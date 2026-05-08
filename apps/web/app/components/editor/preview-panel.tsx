@@ -133,7 +133,7 @@ export function PreviewPanel() {
 
   return (
     <div className={clsx(
-      'flex flex-col h-full bg-white border-l border-slate-200',
+      'flex flex-col h-full bg-white',
       fullscreen && 'fixed inset-0 z-50',
     )}>
       {/* Header */}
