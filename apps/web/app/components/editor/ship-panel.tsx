@@ -507,6 +507,7 @@ function CloudflareTab({
 function DownloadTab({ projectId }: { projectId: string }) {
   const [downloading, setDownloading] = useState(false);
   const files = useEditorStore((s) => s.files);
+  const project = useEditorStore((s) => s.project);
 
   const handleDownloadZip = async () => {
     setDownloading(true);
