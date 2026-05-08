@@ -399,6 +399,10 @@ export const projectAssetsRelations = relations(projectAssets, ({ one }) => ({
   project: one(projects, { fields: [projectAssets.projectId], references: [projects.id] }),
 }));
 
+export const projectVersionsRelations = relations(projectVersions, ({ one }) => ({
+  project: one(projects, { fields: [projectVersions.projectId], references: [projects.id] }),
+}));
+
 export const deploymentsRelations = relations(deployments, ({ one }) => ({
   project: one(projects, { fields: [deployments.projectId], references: [projects.id] }),
   version: one(projectVersions, { fields: [deployments.versionId], references: [projectVersions.id] }),
