@@ -9,12 +9,69 @@ import crypto from 'crypto';
 import { getDb } from '@simplebuildpro/db';
 import { projects, projectFiles, userConnections, projectIntegrations, projectEnvVars } from '@simplebuildpro/db';
 import { eq, and } from 'drizzle-orm';
+import jwt from 'jsonwebtoken';
 import { requireAuth, type AuthEnv } from '../middleware/auth';
 import { AppError } from '../middleware/error-handler';
 import { logger } from '../services/logger';
 
 export const integrationsRoutes = new Hono<AuthEnv>();
 integrationsRoutes.use('*', requireAuth);
+
+// ─── Public OAuth routes (no requireAuth — browser navigations) ──
+// These handle the OAuth redirect flow initiated from popup windows.
+// The token is passed as a query parameter since browser navigations
+// cannot send Authorization headers.
+export const oauthConnectRoutes = new Hono();
+
+const JWT_SECRET = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET environment variable is required');
+  return secret;
+};
+
+/** Verify a Bearer token from query param and return userId */
+function verifyTokenFromQuery(token: string | undefined): string {
+  if (!token) {
+    throw new AppError(401, 'MISSING_TOKEN', 'OAuth connect requires a valid token.');
+  }
+  try {
+    const payload = jwt.verify(token, JWT_SECRET()) as { sub: string };
+    return payload.sub;
+  } catch {
+    throw new AppError(401, 'INVALID_TOKEN', 'Invalid or expired token.');
+  }
+}
+
+/** Build state string: randomHex:userId:projectId */
+function buildOAuthState(userId: string, projectId?: string): string {
+  const rand = crypto.randomBytes(16).toString('hex');
+  return projectId ? `${rand}:${userId}:${projectId}` : `${rand}:${userId}`;
+}
+
+/** Parse state string back to { userId, projectId } */
+function parseOAuthState(state: string): { userId: string; projectId?: string } {
+  const parts = state.split(':');
+  return { userId: parts[1], projectId: parts[2] || undefined };
+}
+
+/** Render a tiny HTML page that sends postMessage to opener and closes the popup */
+function oauthPopupResult(provider: string, success: boolean, errorMsg?: string): Response {
+  const data = JSON.stringify({ provider, success, error: errorMsg || null });
+  const html = `<!DOCTYPE html>
+<html><head><title>Connecting...</title></head>
+<body>
+<script>
+  if (window.opener) {
+    window.opener.postMessage({ type: 'oauth-connect-result', data: ${data} }, '*');
+  }
+  window.close();
+  // Fallback if popup blocker prevents close
+  document.body.innerHTML = '<p style="font-family:system-ui;text-align:center;margin-top:40vh">' +
+    (${JSON.stringify(success)} ? 'Connected! You can close this window.' : 'Connection failed. You can close this window.') + '</p>';
+</script>
+</body></html>`;
+  return new Response(html, { headers: { 'Content-Type': 'text/html' } });
+}
 
 // ─── Config ─────────────────────────────────────────────────
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || '';
@@ -112,6 +169,7 @@ integrationsRoutes.delete('/connections/:provider', async (c) => {
 // ═══════════════════════════════════════════════════════════════
 
 // Step 1: Redirect to GitHub OAuth with repo scope
+// (kept for backward compat — requires auth via Bearer header)
 integrationsRoutes.get('/connect/github', async (c) => {
   const session = c.get('session');
 
@@ -119,8 +177,8 @@ integrationsRoutes.get('/connect/github', async (c) => {
     throw new AppError(503, 'GITHUB_NOT_CONFIGURED', 'GitHub OAuth not configured.');
   }
 
-  const state = crypto.randomBytes(16).toString('hex') + ':' + session.userId;
-  const redirectUri = `${API_URL}/api/v1/projects/connect/github/callback`;
+  const state = buildOAuthState(session.userId);
+  const redirectUri = `${API_URL}/api/v1/connect/github/callback`;
 
   const params = new URLSearchParams({
     client_id: GITHUB_CLIENT_ID,
@@ -132,84 +190,9 @@ integrationsRoutes.get('/connect/github', async (c) => {
   return c.redirect(`https://github.com/login/oauth/authorize?${params}`);
 });
 
-// Step 2: GitHub OAuth callback
+// Legacy callback kept for backward compat — redirects to dashboard
 integrationsRoutes.get('/connect/github/callback', async (c) => {
-  const code = c.req.query('code');
-  const state = c.req.query('state');
-  const error = c.req.query('error');
-
-  if (error || !code || !state) {
-    return c.redirect(`${APP_URL}/dashboard?error=github_denied`);
-  }
-
-  const userId = state.split(':')[1];
-  if (!userId) {
-    return c.redirect(`${APP_URL}/dashboard?error=invalid_state`);
-  }
-
-  try {
-    // Exchange code for access token
-    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        client_id: GITHUB_CLIENT_ID,
-        client_secret: GITHUB_CLIENT_SECRET,
-        code,
-      }),
-    });
-    const tokenData = await tokenRes.json() as any;
-
-    if (!tokenData.access_token) {
-      return c.redirect(`${APP_URL}/dashboard?error=github_token_failed`);
-    }
-
-    // Get user info from GitHub
-    const userRes = await fetch('https://api.github.com/user', {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'SimpleBuildPro',
-      },
-    });
-    const ghUser = await userRes.json() as any;
-
-    const db = getDb();
-
-    // Upsert the connection
-    const existing = await db.query.userConnections.findFirst({
-      where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'github_repo')),
-    });
-
-    const connectionData = {
-      userId,
-      provider: 'github_repo',
-      displayName: ghUser.login,
-      accessToken: encrypt(tokenData.access_token),
-      refreshToken: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : null,
-      tokenExpiresAt: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
-      accountId: String(ghUser.id),
-      metadata: {
-        login: ghUser.login,
-        name: ghUser.name,
-        avatarUrl: ghUser.avatar_url,
-        scopes: tokenData.scope || 'repo',
-      },
-      updatedAt: new Date(),
-    };
-
-    if (existing) {
-      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
-    } else {
-      await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
-    }
-
-    logger.info(`GitHub connected: ${ghUser.login} (user ${userId})`);
-    return c.redirect(`${APP_URL}/dashboard?connected=github`);
-  } catch (err: any) {
-    logger.error(`GitHub OAuth callback error: ${err.message}`);
-    return c.redirect(`${APP_URL}/dashboard?error=github_failed`);
-  }
+  return c.redirect(`${APP_URL}/dashboard?error=use_popup_flow`);
 });
 
 // ─── GET /connect/github/repos — List user's repos ──────────
@@ -265,90 +248,15 @@ integrationsRoutes.get('/connect/github/repos', async (c) => {
 
 integrationsRoutes.get('/connect/vercel', async (c) => {
   const session = c.get('session');
-
-  if (!VERCEL_CLIENT_ID) {
-    throw new AppError(503, 'VERCEL_NOT_CONFIGURED', 'Vercel integration not configured.');
-  }
-
-  const state = crypto.randomBytes(16).toString('hex') + ':' + session.userId;
-  const redirectUri = `${API_URL}/api/v1/projects/connect/vercel/callback`;
-
-  const params = new URLSearchParams({
-    client_id: VERCEL_CLIENT_ID,
-    redirect_uri: redirectUri,
-    state,
-  });
-
+  if (!VERCEL_CLIENT_ID) throw new AppError(503, 'VERCEL_NOT_CONFIGURED', 'Vercel not configured.');
+  const state = buildOAuthState(session.userId);
+  const redirectUri = `${API_URL}/api/v1/connect/vercel/callback`;
+  const params = new URLSearchParams({ client_id: VERCEL_CLIENT_ID, redirect_uri: redirectUri, state });
   return c.redirect(`https://vercel.com/integrations/new?${params}`);
 });
 
 integrationsRoutes.get('/connect/vercel/callback', async (c) => {
-  const code = c.req.query('code');
-  const state = c.req.query('state');
-
-  if (!code || !state) {
-    return c.redirect(`${APP_URL}/dashboard?error=vercel_denied`);
-  }
-
-  const userId = state.split(':')[1];
-  if (!userId) return c.redirect(`${APP_URL}/dashboard?error=invalid_state`);
-
-  try {
-    const redirectUri = `${API_URL}/api/v1/projects/connect/vercel/callback`;
-    const tokenRes = await fetch('https://api.vercel.com/v2/oauth/access_token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: VERCEL_CLIENT_ID,
-        client_secret: VERCEL_CLIENT_SECRET,
-        code,
-        redirect_uri: redirectUri,
-      }),
-    });
-    const tokenData = await tokenRes.json() as any;
-
-    if (!tokenData.access_token) {
-      return c.redirect(`${APP_URL}/dashboard?error=vercel_token_failed`);
-    }
-
-    // Get Vercel user info
-    const userRes = await fetch('https://api.vercel.com/v2/user', {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
-    });
-    const vercelUser = await userRes.json() as any;
-
-    const db = getDb();
-    const existing = await db.query.userConnections.findFirst({
-      where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'vercel')),
-    });
-
-    const connectionData = {
-      userId,
-      provider: 'vercel',
-      displayName: vercelUser.user?.username || vercelUser.user?.name || 'Vercel',
-      accessToken: encrypt(tokenData.access_token),
-      refreshToken: null,
-      tokenExpiresAt: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
-      accountId: tokenData.team_id || vercelUser.user?.id || null,
-      metadata: {
-        username: vercelUser.user?.username,
-        teamId: tokenData.team_id,
-      },
-      updatedAt: new Date(),
-    };
-
-    if (existing) {
-      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
-    } else {
-      await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
-    }
-
-    logger.info(`Vercel connected: ${connectionData.displayName} (user ${userId})`);
-    return c.redirect(`${APP_URL}/dashboard?connected=vercel`);
-  } catch (err: any) {
-    logger.error(`Vercel OAuth error: ${err.message}`);
-    return c.redirect(`${APP_URL}/dashboard?error=vercel_failed`);
-  }
+  return c.redirect(`${APP_URL}/dashboard?error=use_popup_flow`);
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -357,92 +265,15 @@ integrationsRoutes.get('/connect/vercel/callback', async (c) => {
 
 integrationsRoutes.get('/connect/netlify', async (c) => {
   const session = c.get('session');
-
-  if (!NETLIFY_CLIENT_ID) {
-    throw new AppError(503, 'NETLIFY_NOT_CONFIGURED', 'Netlify integration not configured.');
-  }
-
-  const state = crypto.randomBytes(16).toString('hex') + ':' + session.userId;
-  const redirectUri = `${API_URL}/api/v1/projects/connect/netlify/callback`;
-
-  const params = new URLSearchParams({
-    client_id: NETLIFY_CLIENT_ID,
-    redirect_uri: redirectUri,
-    response_type: 'code',
-    state,
-  });
-
+  if (!NETLIFY_CLIENT_ID) throw new AppError(503, 'NETLIFY_NOT_CONFIGURED', 'Netlify not configured.');
+  const state = buildOAuthState(session.userId);
+  const redirectUri = `${API_URL}/api/v1/connect/netlify/callback`;
+  const params = new URLSearchParams({ client_id: NETLIFY_CLIENT_ID, redirect_uri: redirectUri, response_type: 'code', state });
   return c.redirect(`https://app.netlify.com/authorize?${params}`);
 });
 
 integrationsRoutes.get('/connect/netlify/callback', async (c) => {
-  const code = c.req.query('code');
-  const state = c.req.query('state');
-
-  if (!code || !state) {
-    return c.redirect(`${APP_URL}/dashboard?error=netlify_denied`);
-  }
-
-  const userId = state.split(':')[1];
-  if (!userId) return c.redirect(`${APP_URL}/dashboard?error=invalid_state`);
-
-  try {
-    const redirectUri = `${API_URL}/api/v1/projects/connect/netlify/callback`;
-    const tokenRes = await fetch('https://api.netlify.com/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        code,
-        client_id: NETLIFY_CLIENT_ID,
-        client_secret: NETLIFY_CLIENT_SECRET,
-        redirect_uri: redirectUri,
-      }),
-    });
-    const tokenData = await tokenRes.json() as any;
-
-    if (!tokenData.access_token) {
-      return c.redirect(`${APP_URL}/dashboard?error=netlify_token_failed`);
-    }
-
-    // Get Netlify user info
-    const userRes = await fetch('https://api.netlify.com/api/v1/user', {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
-    });
-    const netlifyUser = await userRes.json() as any;
-
-    const db = getDb();
-    const existing = await db.query.userConnections.findFirst({
-      where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'netlify')),
-    });
-
-    const connectionData = {
-      userId,
-      provider: 'netlify',
-      displayName: netlifyUser.full_name || netlifyUser.email || 'Netlify',
-      accessToken: encrypt(tokenData.access_token),
-      refreshToken: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : null,
-      tokenExpiresAt: null,
-      accountId: netlifyUser.id || null,
-      metadata: {
-        email: netlifyUser.email,
-        slug: netlifyUser.slug,
-      },
-      updatedAt: new Date(),
-    };
-
-    if (existing) {
-      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
-    } else {
-      await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
-    }
-
-    logger.info(`Netlify connected: ${connectionData.displayName} (user ${userId})`);
-    return c.redirect(`${APP_URL}/dashboard?connected=netlify`);
-  } catch (err: any) {
-    logger.error(`Netlify OAuth error: ${err.message}`);
-    return c.redirect(`${APP_URL}/dashboard?error=netlify_failed`);
-  }
+  return c.redirect(`${APP_URL}/dashboard?error=use_popup_flow`);
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1884,4 +1715,296 @@ integrationsRoutes.delete('/:id/env/:key', async (c) => {
     .where(and(eq(projectEnvVars.projectId, projectId), eq(projectEnvVars.key, key)));
 
   return c.json({ success: true, data: { message: `Variable ${key} deleted.` } });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PUBLIC OAUTH CONNECT ROUTES (popup-based, no requireAuth)
+// These run in a popup window opened by the Ship panel.
+// Token is passed as ?token= query param, verified inline.
+// Callbacks render a tiny HTML page that postMessages the result
+// back to the opener (editor) window and closes itself.
+// ═══════════════════════════════════════════════════════════════
+
+// ─── GitHub OAuth (popup) ────────────────────────────────────
+oauthConnectRoutes.get('/github', async (c) => {
+  const token = c.req.query('token');
+  const projectId = c.req.query('projectId');
+  const userId = verifyTokenFromQuery(token);
+
+  if (!GITHUB_CLIENT_ID) {
+    return oauthPopupResult('github', false, 'GitHub OAuth not configured.');
+  }
+
+  const state = buildOAuthState(userId, projectId);
+  const redirectUri = `${API_URL}/api/v1/connect/github/callback`;
+
+  const params = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    redirect_uri: redirectUri,
+    scope: 'repo read:user user:email',
+    state,
+  });
+
+  return c.redirect(`https://github.com/login/oauth/authorize?${params}`);
+});
+
+oauthConnectRoutes.get('/github/callback', async (c) => {
+  const code = c.req.query('code');
+  const state = c.req.query('state');
+  const error = c.req.query('error');
+
+  if (error || !code || !state) {
+    return oauthPopupResult('github', false, 'GitHub authorization was denied.');
+  }
+
+  const { userId } = parseOAuthState(state);
+  if (!userId) {
+    return oauthPopupResult('github', false, 'Invalid OAuth state.');
+  }
+
+  try {
+    // Exchange code for access token
+    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        client_id: GITHUB_CLIENT_ID,
+        client_secret: GITHUB_CLIENT_SECRET,
+        code,
+      }),
+    });
+    const tokenData = await tokenRes.json() as any;
+
+    if (!tokenData.access_token) {
+      return oauthPopupResult('github', false, 'Failed to get GitHub access token.');
+    }
+
+    // Get user info from GitHub
+    const userRes = await fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'SimpleBuildPro',
+      },
+    });
+    const ghUser = await userRes.json() as any;
+
+    const db = getDb();
+
+    // Upsert the connection
+    const existing = await db.query.userConnections.findFirst({
+      where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'github_repo')),
+    });
+
+    const connectionData = {
+      userId,
+      provider: 'github_repo',
+      displayName: ghUser.login,
+      accessToken: encrypt(tokenData.access_token),
+      refreshToken: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : null,
+      tokenExpiresAt: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
+      accountId: String(ghUser.id),
+      metadata: {
+        login: ghUser.login,
+        name: ghUser.name,
+        avatarUrl: ghUser.avatar_url,
+        scopes: tokenData.scope || 'repo',
+      },
+      updatedAt: new Date(),
+    };
+
+    if (existing) {
+      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
+    } else {
+      await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
+    }
+
+    logger.info(`GitHub connected via popup: ${ghUser.login} (user ${userId})`);
+    return oauthPopupResult('github', true);
+  } catch (err: any) {
+    logger.error(`GitHub OAuth popup callback error: ${err.message}`);
+    return oauthPopupResult('github', false, 'GitHub connection failed. Please try again.');
+  }
+});
+
+// ─── Vercel OAuth (popup) ────────────────────────────────────
+oauthConnectRoutes.get('/vercel', async (c) => {
+  const token = c.req.query('token');
+  const projectId = c.req.query('projectId');
+  const userId = verifyTokenFromQuery(token);
+
+  if (!VERCEL_CLIENT_ID) {
+    return oauthPopupResult('vercel', false, 'Vercel integration not configured.');
+  }
+
+  const state = buildOAuthState(userId, projectId);
+  const redirectUri = `${API_URL}/api/v1/connect/vercel/callback`;
+
+  const params = new URLSearchParams({
+    client_id: VERCEL_CLIENT_ID,
+    redirect_uri: redirectUri,
+    state,
+  });
+
+  return c.redirect(`https://vercel.com/integrations/new?${params}`);
+});
+
+oauthConnectRoutes.get('/vercel/callback', async (c) => {
+  const code = c.req.query('code');
+  const state = c.req.query('state');
+
+  if (!code || !state) {
+    return oauthPopupResult('vercel', false, 'Vercel authorization was denied.');
+  }
+
+  const { userId } = parseOAuthState(state);
+  if (!userId) return oauthPopupResult('vercel', false, 'Invalid OAuth state.');
+
+  try {
+    const redirectUri = `${API_URL}/api/v1/connect/vercel/callback`;
+    const tokenRes = await fetch('https://api.vercel.com/v2/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: VERCEL_CLIENT_ID,
+        client_secret: VERCEL_CLIENT_SECRET,
+        code,
+        redirect_uri: redirectUri,
+      }),
+    });
+    const tokenData = await tokenRes.json() as any;
+
+    if (!tokenData.access_token) {
+      return oauthPopupResult('vercel', false, 'Failed to get Vercel access token.');
+    }
+
+    const userRes = await fetch('https://api.vercel.com/v2/user', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const vercelUser = await userRes.json() as any;
+
+    const db = getDb();
+    const existing = await db.query.userConnections.findFirst({
+      where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'vercel')),
+    });
+
+    const connectionData = {
+      userId,
+      provider: 'vercel',
+      displayName: vercelUser.user?.username || vercelUser.user?.name || 'Vercel',
+      accessToken: encrypt(tokenData.access_token),
+      refreshToken: null,
+      tokenExpiresAt: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
+      accountId: tokenData.team_id || vercelUser.user?.id || null,
+      metadata: {
+        username: vercelUser.user?.username,
+        teamId: tokenData.team_id,
+      },
+      updatedAt: new Date(),
+    };
+
+    if (existing) {
+      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
+    } else {
+      await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
+    }
+
+    logger.info(`Vercel connected via popup: ${connectionData.displayName} (user ${userId})`);
+    return oauthPopupResult('vercel', true);
+  } catch (err: any) {
+    logger.error(`Vercel OAuth popup error: ${err.message}`);
+    return oauthPopupResult('vercel', false, 'Vercel connection failed. Please try again.');
+  }
+});
+
+// ─── Netlify OAuth (popup) ───────────────────────────────────
+oauthConnectRoutes.get('/netlify', async (c) => {
+  const token = c.req.query('token');
+  const projectId = c.req.query('projectId');
+  const userId = verifyTokenFromQuery(token);
+
+  if (!NETLIFY_CLIENT_ID) {
+    return oauthPopupResult('netlify', false, 'Netlify integration not configured.');
+  }
+
+  const state = buildOAuthState(userId, projectId);
+  const redirectUri = `${API_URL}/api/v1/connect/netlify/callback`;
+
+  const params = new URLSearchParams({
+    client_id: NETLIFY_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    state,
+  });
+
+  return c.redirect(`https://app.netlify.com/authorize?${params}`);
+});
+
+oauthConnectRoutes.get('/netlify/callback', async (c) => {
+  const code = c.req.query('code');
+  const state = c.req.query('state');
+
+  if (!code || !state) {
+    return oauthPopupResult('netlify', false, 'Netlify authorization was denied.');
+  }
+
+  const { userId } = parseOAuthState(state);
+  if (!userId) return oauthPopupResult('netlify', false, 'Invalid OAuth state.');
+
+  try {
+    const redirectUri = `${API_URL}/api/v1/connect/netlify/callback`;
+    const tokenRes = await fetch('https://api.netlify.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        client_id: NETLIFY_CLIENT_ID,
+        client_secret: NETLIFY_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+      }),
+    });
+    const tokenData = await tokenRes.json() as any;
+
+    if (!tokenData.access_token) {
+      return oauthPopupResult('netlify', false, 'Failed to get Netlify access token.');
+    }
+
+    const userRes = await fetch('https://api.netlify.com/api/v1/user', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const netlifyUser = await userRes.json() as any;
+
+    const db = getDb();
+    const existing = await db.query.userConnections.findFirst({
+      where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'netlify')),
+    });
+
+    const connectionData = {
+      userId,
+      provider: 'netlify',
+      displayName: netlifyUser.full_name || netlifyUser.email || 'Netlify',
+      accessToken: encrypt(tokenData.access_token),
+      refreshToken: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : null,
+      tokenExpiresAt: null,
+      accountId: netlifyUser.id || null,
+      metadata: {
+        email: netlifyUser.email,
+        slug: netlifyUser.slug,
+      },
+      updatedAt: new Date(),
+    };
+
+    if (existing) {
+      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
+    } else {
+      await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
+    }
+
+    logger.info(`Netlify connected via popup: ${connectionData.displayName} (user ${userId})`);
+    return oauthPopupResult('netlify', true);
+  } catch (err: any) {
+    logger.error(`Netlify OAuth popup error: ${err.message}`);
+    return oauthPopupResult('netlify', false, 'Netlify connection failed. Please try again.');
+  }
 });

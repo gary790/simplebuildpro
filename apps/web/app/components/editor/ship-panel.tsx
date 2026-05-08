@@ -98,6 +98,66 @@ async function shipFetch<T>(path: string, options: RequestInit = {}): Promise<T>
   return json.data as T;
 }
 
+// ─── Helper: Open OAuth popup window ─────────────────────────
+// Opens a centered popup that navigates to the public OAuth init
+// endpoint with the Bearer token as a query param. The callback
+// page sends postMessage back and closes itself.
+async function openOAuthPopup(
+  provider: 'github' | 'vercel' | 'netlify',
+  projectId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const { getAccessToken } = await import('@/lib/api-client');
+  const token = getAccessToken();
+  if (!token) {
+    return { success: false, error: 'Not authenticated. Please log in again.' };
+  }
+
+  const params = new URLSearchParams({ token, projectId });
+  const url = `${API_BASE}/api/v1/connect/${provider}?${params}`;
+
+  // Center the popup
+  const w = 600, h = 700;
+  const left = window.screenX + (window.outerWidth - w) / 2;
+  const top = window.screenY + (window.outerHeight - h) / 2;
+  const popup = window.open(url, `oauth_${provider}`, `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no`);
+
+  if (!popup) {
+    return { success: false, error: 'Popup was blocked. Please allow popups for this site.' };
+  }
+
+  // Wait for postMessage from the popup callback page
+  return new Promise<{ success: boolean; error?: string }>((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      resolve({ success: false, error: 'OAuth timed out. Please try again.' });
+    }, 5 * 60 * 1000); // 5 minute timeout
+
+    function handler(event: MessageEvent) {
+      // Accept messages from any origin (popup may redirect through provider domains)
+      if (event.data?.type !== 'oauth-connect-result') return;
+      const data = event.data.data as { provider: string; success: boolean; error?: string };
+      if (data.provider !== provider) return;
+
+      clearTimeout(timeout);
+      window.removeEventListener('message', handler);
+      resolve({ success: data.success, error: data.error || undefined });
+    }
+
+    window.addEventListener('message', handler);
+
+    // Also detect if popup was closed manually
+    const pollClosed = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(pollClosed);
+        clearTimeout(timeout);
+        window.removeEventListener('message', handler);
+        // If we get here without a message, the user closed the popup
+        resolve({ success: false, error: 'OAuth window was closed.' });
+      }
+    }, 500);
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
@@ -309,9 +369,23 @@ function GitHubTab({
     }
   };
 
-  const handleConnect = () => {
-    // Redirect to OAuth flow
-    window.location.href = `${API_BASE}/api/v1/projects/connect/github`;
+  const [connecting, setConnecting] = useState(false);
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    try {
+      const result = await openOAuthPopup('github', projectId);
+      if (result.success) {
+        toast('success', 'GitHub connected!');
+        onRefresh();
+      } else if (result.error && result.error !== 'OAuth window was closed.') {
+        toast('error', 'GitHub connection failed', result.error);
+      }
+    } catch (err: any) {
+      toast('error', 'Failed to connect GitHub', err.message);
+    } finally {
+      setConnecting(false);
+    }
   };
 
   const handleDisconnect = async () => {
@@ -690,9 +764,23 @@ function VercelTab({
 }) {
   const [projectName, setProjectName] = useState(integration?.config?.projectName || '');
   const [deploying, setDeploying] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
-  const handleConnect = () => {
-    window.location.href = `${API_BASE}/api/v1/projects/connect/vercel`;
+  const handleConnect = async () => {
+    setConnecting(true);
+    try {
+      const result = await openOAuthPopup('vercel', projectId);
+      if (result.success) {
+        toast('success', 'Vercel connected!');
+        onRefresh();
+      } else if (result.error && result.error !== 'OAuth window was closed.') {
+        toast('error', 'Vercel connection failed', result.error);
+      }
+    } catch (err: any) {
+      toast('error', 'Failed to connect Vercel', err.message);
+    } finally {
+      setConnecting(false);
+    }
   };
 
   const handleDisconnect = async () => {
@@ -787,9 +875,23 @@ function NetlifyTab({
 }) {
   const [siteName, setSiteName] = useState(integration?.config?.siteName || '');
   const [deploying, setDeploying] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
-  const handleConnect = () => {
-    window.location.href = `${API_BASE}/api/v1/projects/connect/netlify`;
+  const handleConnect = async () => {
+    setConnecting(true);
+    try {
+      const result = await openOAuthPopup('netlify', projectId);
+      if (result.success) {
+        toast('success', 'Netlify connected!');
+        onRefresh();
+      } else if (result.error && result.error !== 'OAuth window was closed.') {
+        toast('error', 'Netlify connection failed', result.error);
+      }
+    } catch (err: any) {
+      toast('error', 'Failed to connect Netlify', err.message);
+    } finally {
+      setConnecting(false);
+    }
   };
 
   const handleDisconnect = async () => {
