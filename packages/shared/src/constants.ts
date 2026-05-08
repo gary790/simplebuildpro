@@ -79,7 +79,7 @@ export const ASSET_MIME_TYPES = {
 } as const;
 
 export const MAX_CHAT_HISTORY_MESSAGES = 50;
-export const AI_MODEL = 'claude-sonnet-4-20250514';
+export const AI_MODEL = 'claude-opus-4-20250514';
 export const AI_MAX_TOKENS = 8192;
 
 // ─── Editor Language Mapping ─────────────────────────────────
