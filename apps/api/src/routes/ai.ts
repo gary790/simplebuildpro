@@ -1034,7 +1034,11 @@ aiRoutes.post('/chat/stream', async (c) => {
 
   const stream = new ReadableStream({
     async start(controller) {
-      const emit = (data: any) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      const emit = (data: any) => {
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch (e) { /* controller closed */ }
+      };
+
+      console.log(`[AI Stream] Starting — conv=${convId}, project=${projectId}, model=${AI_MODEL}, messages=${apiMessages.length}`);
 
       emit({ type: 'stream_start', conversationId: convId });
 
@@ -1047,6 +1051,8 @@ aiRoutes.post('/chat/stream', async (c) => {
 
       try {
         while (maxToolRounds > 0) {
+          console.log(`[AI Stream] Calling Anthropic — round=${4 - maxToolRounds}, msgCount=${currentMessages.length}`);
+
           // Make streaming request to Anthropic (with tools)
           const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
             method: 'POST',
@@ -1068,9 +1074,11 @@ aiRoutes.post('/chat/stream', async (c) => {
           if (!anthropicResponse.ok || !anthropicResponse.body) {
             const errText = await anthropicResponse.text().catch(() => '');
             console.error('[AI Stream] Anthropic error:', anthropicResponse.status, errText);
-            emit({ type: 'error', message: 'AI service returned an error.' });
+            emit({ type: 'error', message: `AI service error (${anthropicResponse.status}): ${errText.slice(0, 200)}` });
             break;
           }
+
+          console.log(`[AI Stream] Anthropic responded OK, reading stream...`);
 
           // Parse the stream to collect content blocks
           const reader = anthropicResponse.body.getReader();
