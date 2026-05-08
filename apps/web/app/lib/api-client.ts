@@ -494,16 +494,29 @@ export const deployApi = {
 export const billingApi = {
   getUsage: () =>
     apiFetch<{
-      plan: string;
-      aiTokensUsed: number;
-      aiTokensLimit: number;
-      deploysUsed: number;
-      deploysLimit: number;
-      storageUsedBytes: number;
-      storageLimitBytes: number;
-      projectsCount: number;
-      projectsLimit: number;
-      customDomainsLimit: number;
+      billingStatus: string;
+      paymentMethodAdded: boolean;
+      todaySpend: { cents: number; formatted: string };
+      monthSpend: { cents: number; formatted: string };
+      dailyLimit: { cents: number; formatted: string };
+      creditBalance: { cents: number; formatted: string };
+      freeTierLimits: {
+        ai_messages: number;
+        deploys: number;
+        storage_mb: number;
+        projects: number;
+        preview_minutes: number;
+        custom_domains: number;
+        bandwidth_mb: number;
+      } | null;
+      usage: {
+        projectsCount: number;
+        todayAiMessages: number;
+        monthAiMessages: number;
+        todayDeploys: number;
+        monthDeploys: number;
+        storageBytes: number;
+      };
     }>('/api/v1/billing/usage'),
 
   createCheckout: (data: { plan: 'pro' | 'business'; interval: 'monthly' | 'yearly' }) =>

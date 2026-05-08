@@ -6,8 +6,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '@simplebuildpro/db';
-import { users, dailyUsageSummary, billingEvents } from '@simplebuildpro/db';
-import { eq, and, sql, gte, desc } from 'drizzle-orm';
+import { users, dailyUsageSummary, billingEvents, projects, projectFiles, projectAssets, deployments, usageLogs } from '@simplebuildpro/db';
+import { eq, and, sql, gte, desc, count } from 'drizzle-orm';
 import { requireAuth, type AuthEnv } from '../middleware/auth';
 import { AppError } from '../middleware/error-handler';
 import {
@@ -24,11 +24,64 @@ billingRoutes.use('*', requireAuth);
 // ─── Get Current Usage & Billing Status ──────────────────────
 billingRoutes.get('/usage', async (c) => {
   const session = c.get('session');
+  const db = getDb();
   const status = await getBillingStatus(session.userId);
+
+  // Determine owner scope: user's org or direct ownership
+  const user = await db.query.users.findFirst({ where: eq(users.id, session.userId) });
+  const orgId = user?.organizationId || null;
+
+  // Count projects owned by user (via their org, or directly by userId)
+  const projectRows = orgId
+    ? await db.select({ cnt: count() }).from(projects).where(eq(projects.organizationId, orgId))
+    : await db.select({ cnt: count() }).from(projects).where(eq(projects.ownerId, session.userId));
+  const projectsCount = projectRows[0]?.cnt ?? 0;
+
+  // Today's and this month's AI messages (from usage_logs)
+  const today = new Date().toISOString().split('T')[0];
+  const monthStart = today.substring(0, 7) + '-01';
+
+  const todayAiRows = await db.select({ cnt: count() }).from(usageLogs)
+    .where(and(eq(usageLogs.userId, session.userId), eq(usageLogs.type, 'ai_tokens'), gte(usageLogs.createdAt, new Date(today))));
+  const todayAiMessages = todayAiRows[0]?.cnt ?? 0;
+
+  const monthAiRows = await db.select({ cnt: count() }).from(usageLogs)
+    .where(and(eq(usageLogs.userId, session.userId), eq(usageLogs.type, 'ai_tokens'), gte(usageLogs.createdAt, new Date(monthStart))));
+  const monthAiMessages = monthAiRows[0]?.cnt ?? 0;
+
+  // Today's and this month's deploys
+  const todayDeployRows = await db.select({ cnt: count() }).from(usageLogs)
+    .where(and(eq(usageLogs.userId, session.userId), eq(usageLogs.type, 'deploy'), gte(usageLogs.createdAt, new Date(today))));
+  const todayDeploys = todayDeployRows[0]?.cnt ?? 0;
+
+  const monthDeployRows = await db.select({ cnt: count() }).from(usageLogs)
+    .where(and(eq(usageLogs.userId, session.userId), eq(usageLogs.type, 'deploy'), gte(usageLogs.createdAt, new Date(monthStart))));
+  const monthDeploys = monthDeployRows[0]?.cnt ?? 0;
+
+  // Total storage used across all user's project files + assets
+  const storageRows = await db.select({
+    total: sql<string>`COALESCE(SUM(${projectFiles.sizeBytes}), 0)`,
+  }).from(projectFiles)
+    .innerJoin(projects, eq(projectFiles.projectId, projects.id))
+    .where(orgId ? eq(projects.organizationId, orgId) : eq(projects.ownerId, session.userId));
+  const fileStorageBytes = parseInt(storageRows[0]?.total || '0', 10);
+
+  const assetStorageRows = await db.select({
+    total: sql<string>`COALESCE(SUM(${projectAssets.sizeBytes}), 0)`,
+  }).from(projectAssets)
+    .innerJoin(projects, eq(projectAssets.projectId, projects.id))
+    .where(orgId ? eq(projects.organizationId, orgId) : eq(projects.ownerId, session.userId));
+  const assetStorageBytes = parseInt(assetStorageRows[0]?.total || '0', 10);
+
+  const totalStorageBytes = fileStorageBytes + assetStorageBytes;
+
+  // Free-tier limits for display
+  const limits = status.paymentMethodAdded ? null : FREE_TIER_LIMITS;
 
   return c.json({
     success: true,
     data: {
+      // Billing info
       billingStatus: status.status,
       paymentMethodAdded: status.paymentMethodAdded,
       todaySpend: {
@@ -47,7 +100,16 @@ billingRoutes.get('/usage', async (c) => {
         cents: status.creditBalance,
         formatted: `$${(status.creditBalance / 100).toFixed(2)}`,
       },
-      freeTierLimits: status.paymentMethodAdded ? null : FREE_TIER_LIMITS,
+      freeTierLimits: limits,
+      // Actual usage stats for dashboard cards
+      usage: {
+        projectsCount,
+        todayAiMessages,
+        monthAiMessages,
+        todayDeploys,
+        monthDeploys,
+        storageBytes: totalStorageBytes,
+      },
     },
   });
 });

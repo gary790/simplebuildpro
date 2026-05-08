@@ -32,15 +32,29 @@ interface ProjectItem {
 }
 
 interface UsageData {
-  plan: string;
-  aiTokensUsed: number;
-  aiTokensLimit: number;
-  deploysUsed: number;
-  deploysLimit: number;
-  storageUsedBytes: number;
-  storageLimitBytes: number;
-  projectsCount: number;
-  projectsLimit: number;
+  billingStatus: string;
+  paymentMethodAdded: boolean;
+  todaySpend: { cents: number; formatted: string };
+  monthSpend: { cents: number; formatted: string };
+  dailyLimit: { cents: number; formatted: string };
+  creditBalance: { cents: number; formatted: string };
+  freeTierLimits: {
+    ai_messages: number;
+    deploys: number;
+    storage_mb: number;
+    projects: number;
+    preview_minutes: number;
+    custom_domains: number;
+    bandwidth_mb: number;
+  } | null;
+  usage: {
+    projectsCount: number;
+    todayAiMessages: number;
+    monthAiMessages: number;
+    todayDeploys: number;
+    monthDeploys: number;
+    storageBytes: number;
+  };
 }
 
 const TEMPLATES = [
@@ -147,8 +161,8 @@ export default function DashboardPage() {
 
           <div className="flex items-center gap-3">
             {usage && (
-              <span className="hidden sm:inline text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full font-medium capitalize">
-                {usage.plan} Plan
+              <span className="hidden sm:inline text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
+                {usage.paymentMethodAdded ? 'Pay-As-You-Go' : 'Free Tier'}
               </span>
             )}
             <Dropdown
@@ -173,21 +187,45 @@ export default function DashboardPage() {
       {/* ─── Main ──────────────────────────────────────────── */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Usage Cards */}
-        {usage && (
+        {usage && usage.usage && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             {[
-              { label: 'Projects', value: `${usage.projectsCount}`, limit: usage.projectsLimit === -1 ? '∞' : `/${usage.projectsLimit}`, icon: FolderOpen },
-              { label: 'AI Messages', value: `${usage.aiTokensUsed}`, limit: `/${usage.aiTokensLimit}`, icon: BarChart3 },
-              { label: 'Deploys', value: `${usage.deploysUsed}`, limit: usage.deploysLimit === -1 ? '/∞' : `/${usage.deploysLimit}`, icon: Rocket },
-              { label: 'Storage', value: formatBytes(usage.storageUsedBytes), limit: `/ ${formatBytes(usage.storageLimitBytes)}`, icon: Globe },
-            ].map(({ label, value, limit, icon: Icon }) => (
+              {
+                label: 'Projects',
+                value: `${usage.usage.projectsCount}`,
+                sub: usage.freeTierLimits ? ` / ${usage.freeTierLimits.projects}` : '',
+                icon: FolderOpen,
+              },
+              {
+                label: 'AI Messages',
+                value: `${usage.usage.todayAiMessages}`,
+                sub: usage.freeTierLimits
+                  ? ` today / ${usage.freeTierLimits.ai_messages} free`
+                  : ` today (${usage.usage.monthAiMessages} this month)`,
+                icon: BarChart3,
+              },
+              {
+                label: 'Deploys',
+                value: `${usage.usage.todayDeploys}`,
+                sub: usage.freeTierLimits
+                  ? ` today / ${usage.freeTierLimits.deploys} free`
+                  : ` today (${usage.usage.monthDeploys} this month)`,
+                icon: Rocket,
+              },
+              {
+                label: 'Storage',
+                value: formatBytes(usage.usage.storageBytes),
+                sub: usage.freeTierLimits ? ` / ${usage.freeTierLimits.storage_mb} MB` : '',
+                icon: Globe,
+              },
+            ].map(({ label, value, sub, icon: Icon }) => (
               <div key={label} className="bg-white rounded-xl border border-slate-200 p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Icon size={14} className="text-slate-400" />
                   <span className="text-xs font-medium text-slate-500">{label}</span>
                 </div>
                 <p className="text-lg font-bold text-slate-900">
-                  {value}<span className="text-sm font-normal text-slate-400">{limit}</span>
+                  {value}<span className="text-sm font-normal text-slate-400">{sub}</span>
                 </p>
               </div>
             ))}
