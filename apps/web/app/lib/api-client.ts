@@ -336,17 +336,29 @@ export const aiApi = {
     onEvent: AIStreamCallback,
   ) => {
     const url = `${API_BASE}/api/v1/ai/chat/stream`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      },
-      body: JSON.stringify(data),
-    });
+    console.log('[AI Stream] Starting fetch to:', url);
 
-    if (!res.ok || !res.body) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify(data),
+      });
+    } catch (fetchErr: any) {
+      console.error('[AI Stream] Fetch failed:', fetchErr);
+      onEvent({ type: 'error', message: `Network error: ${fetchErr.message}` });
+      return;
+    }
+
+    console.log('[AI Stream] Response status:', res.status, 'ok:', res.ok, 'body:', !!res.body);
+
+    if (!res.ok) {
       const errJson = await res.json().catch(() => null);
+      console.error('[AI Stream] API error:', res.status, errJson);
       onEvent({
         type: 'error',
         message: errJson?.error?.message || `AI service error (${res.status})`,
@@ -354,30 +366,51 @@ export const aiApi = {
       return;
     }
 
+    if (!res.body) {
+      console.error('[AI Stream] No response body');
+      onEvent({ type: 'error', message: 'No response body from AI service' });
+      return;
+    }
+
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let eventCount = 0;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log('[AI Stream] Stream done, total events:', eventCount);
+          break;
+        }
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const eventData = line.slice(6).trim();
-          if (!eventData || eventData === '[DONE]') continue;
-          try {
-            const event: AIStreamEvent = JSON.parse(eventData);
-            onEvent(event);
-          } catch {
-            // Skip malformed events
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const eventData = line.slice(6).trim();
+            if (!eventData || eventData === '[DONE]') continue;
+            try {
+              const event: AIStreamEvent = JSON.parse(eventData);
+              eventCount++;
+              if (eventCount <= 3 || event.type === 'stream_end' || event.type === 'error') {
+                console.log('[AI Stream] Event:', event.type, event);
+              }
+              onEvent(event);
+            } catch (parseErr) {
+              console.warn('[AI Stream] Parse error for line:', eventData.slice(0, 100));
+            }
           }
         }
       }
+    } catch (readErr: any) {
+      console.error('[AI Stream] Read error:', readErr);
+      onEvent({ type: 'error', message: `Stream read error: ${readErr.message}` });
+      return;
     }
 
     // Process remaining buffer
@@ -389,11 +422,14 @@ export const aiApi = {
           if (!eventData || eventData === '[DONE]') continue;
           try {
             const event: AIStreamEvent = JSON.parse(eventData);
+            eventCount++;
             onEvent(event);
           } catch { /* skip */ }
         }
       }
     }
+
+    console.log('[AI Stream] Complete, total events processed:', eventCount);
   },
 
   getConversations: (projectId: string) =>

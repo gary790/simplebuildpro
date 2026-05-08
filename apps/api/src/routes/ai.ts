@@ -765,7 +765,7 @@ aiRoutes.post('/chat', async (c) => {
   if (!project) throw new AppError(404, 'PROJECT_NOT_FOUND', 'Project not found.');
 
   // Check AI usage limits
-  const limits = PLAN_LIMITS[session.plan];
+  const limits = PLAN_LIMITS[session.plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS.free;
   if (limits.aiMessagesPerMonth !== -1) {
     const [{ count: usageCount }] = await db.select({ count: count() })
       .from(aiMessages)
@@ -969,7 +969,7 @@ aiRoutes.post('/chat/stream', async (c) => {
   if (!project) throw new AppError(404, 'PROJECT_NOT_FOUND', 'Project not found.');
 
   // Check AI usage limits
-  const limits = PLAN_LIMITS[session.plan];
+  const limits = PLAN_LIMITS[session.plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS.free;
   if (limits.aiMessagesPerMonth !== -1) {
     const [{ count: usageCount }] = await db.select({ count: count() })
       .from(aiMessages)
