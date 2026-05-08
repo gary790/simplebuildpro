@@ -8,12 +8,13 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { getDb } from '@simplebuildpro/db';
-import { users, refreshTokens, oauthAccounts } from '@simplebuildpro/db';
+import { users, refreshTokens, oauthAccounts, emailVerificationTokens, passwordResetTokens } from '@simplebuildpro/db';
 import { eq, and } from 'drizzle-orm';
 import { AppError } from '../middleware/error-handler';
 import { requireAuth, generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../middleware/auth';
 import type { AuthEnv } from '../middleware/auth';
 import { rateLimiter } from '../middleware/rate-limiter';
+import { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../services/email';
 
 export const authRoutes = new Hono<AuthEnv>();
 
@@ -63,6 +64,17 @@ authRoutes.post('/signup', async (c) => {
     userId: user.id,
     tokenHash,
     expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+  });
+
+  // Send verification email (non-blocking)
+  const verificationToken = crypto.randomBytes(48).toString('hex');
+  await db.insert(emailVerificationTokens).values({
+    userId: user.id,
+    token: verificationToken,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+  });
+  sendVerificationEmail(user.email, user.name, verificationToken).catch(err => {
+    console.error('[signup] Failed to send verification email:', err);
   });
 
   return c.json({
@@ -325,4 +337,168 @@ authRoutes.post('/change-password', requireAuth, async (c) => {
     .where(eq(refreshTokens.userId, session.userId));
 
   return c.json({ success: true, data: { message: 'Password changed. Please log in again.' } });
+});
+
+// ─── Send Verification Email ─────────────────────────────────
+authRoutes.post('/send-verification', requireAuth, async (c) => {
+  const session = c.get('session');
+  const db = getDb();
+
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, session.userId),
+  });
+
+  if (!user) {
+    throw new AppError(404, 'USER_NOT_FOUND', 'User not found.');
+  }
+
+  if (user.emailVerified) {
+    return c.json({ success: true, data: { message: 'Email already verified.' } });
+  }
+
+  // Generate token
+  const token = crypto.randomBytes(48).toString('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+  await db.insert(emailVerificationTokens).values({
+    userId: user.id,
+    token,
+    expiresAt,
+  });
+
+  await sendVerificationEmail(user.email, user.name, token);
+
+  return c.json({ success: true, data: { message: 'Verification email sent.' } });
+});
+
+// ─── Verify Email ────────────────────────────────────────────
+const verifyEmailSchema = z.object({
+  token: z.string().min(1),
+});
+
+authRoutes.post('/verify-email', async (c) => {
+  const body = await c.req.json();
+  const { token } = verifyEmailSchema.parse(body);
+
+  const db = getDb();
+
+  const record = await db.query.emailVerificationTokens.findFirst({
+    where: eq(emailVerificationTokens.token, token),
+  });
+
+  if (!record) {
+    throw new AppError(400, 'INVALID_TOKEN', 'Invalid or expired verification token.');
+  }
+
+  if (record.usedAt) {
+    throw new AppError(400, 'TOKEN_USED', 'This verification link has already been used.');
+  }
+
+  if (new Date() > record.expiresAt) {
+    throw new AppError(400, 'TOKEN_EXPIRED', 'This verification link has expired. Please request a new one.');
+  }
+
+  // Mark token as used
+  await db.update(emailVerificationTokens)
+    .set({ usedAt: new Date() })
+    .where(eq(emailVerificationTokens.id, record.id));
+
+  // Mark user email as verified
+  await db.update(users)
+    .set({ emailVerified: true, updatedAt: new Date() })
+    .where(eq(users.id, record.userId));
+
+  // Send welcome email
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, record.userId),
+  });
+  if (user) {
+    await sendWelcomeEmail(user.email, user.name);
+  }
+
+  return c.json({ success: true, data: { message: 'Email verified successfully.' } });
+});
+
+// ─── Forgot Password (request reset) ────────────────────────
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+authRoutes.post('/forgot-password', async (c) => {
+  const body = await c.req.json();
+  const { email } = forgotPasswordSchema.parse(body);
+
+  const db = getDb();
+
+  const user = await db.query.users.findFirst({
+    where: eq(users.email, email.toLowerCase()),
+  });
+
+  // Always return success to prevent email enumeration
+  if (!user) {
+    return c.json({ success: true, data: { message: 'If an account with that email exists, a reset link has been sent.' } });
+  }
+
+  // Generate reset token
+  const token = crypto.randomBytes(48).toString('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+  await db.insert(passwordResetTokens).values({
+    userId: user.id,
+    token,
+    expiresAt,
+  });
+
+  await sendPasswordResetEmail(user.email, user.name, token);
+
+  return c.json({ success: true, data: { message: 'If an account with that email exists, a reset link has been sent.' } });
+});
+
+// ─── Reset Password (with token) ────────────────────────────
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z.string().min(8).max(128),
+});
+
+authRoutes.post('/reset-password', async (c) => {
+  const body = await c.req.json();
+  const { token, newPassword } = resetPasswordSchema.parse(body);
+
+  const db = getDb();
+
+  const record = await db.query.passwordResetTokens.findFirst({
+    where: eq(passwordResetTokens.token, token),
+  });
+
+  if (!record) {
+    throw new AppError(400, 'INVALID_TOKEN', 'Invalid or expired reset token.');
+  }
+
+  if (record.usedAt) {
+    throw new AppError(400, 'TOKEN_USED', 'This reset link has already been used.');
+  }
+
+  if (new Date() > record.expiresAt) {
+    throw new AppError(400, 'TOKEN_EXPIRED', 'This reset link has expired. Please request a new one.');
+  }
+
+  // Hash new password
+  const newHash = await bcrypt.hash(newPassword, 12);
+
+  // Mark token as used
+  await db.update(passwordResetTokens)
+    .set({ usedAt: new Date() })
+    .where(eq(passwordResetTokens.id, record.id));
+
+  // Update user password
+  await db.update(users)
+    .set({ passwordHash: newHash, updatedAt: new Date() })
+    .where(eq(users.id, record.userId));
+
+  // Revoke all refresh tokens (force re-login everywhere)
+  await db.update(refreshTokens)
+    .set({ revokedAt: new Date() })
+    .where(eq(refreshTokens.userId, record.userId));
+
+  return c.json({ success: true, data: { message: 'Password reset successfully. Please log in with your new password.' } });
 });

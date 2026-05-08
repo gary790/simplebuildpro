@@ -339,6 +339,32 @@ export const billingEvents = pgTable('billing_events', {
   typeIdx: index('billing_events_type_idx').on(table.type),
 }));
 
+// ─── Email Verification Tokens ───────────────────────────────
+export const emailVerificationTokens = pgTable('email_verification_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  token: varchar('token', { length: 128 }).notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  tokenIdx: index('evt_token_idx').on(table.token),
+  userIdx: index('evt_user_idx').on(table.userId),
+}));
+
+// ─── Password Reset Tokens ───────────────────────────────────
+export const passwordResetTokens = pgTable('password_reset_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  token: varchar('token', { length: 128 }).notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  tokenIdx: index('prt_token_idx').on(table.token),
+  userIdx: index('prt_user_idx').on(table.userId),
+}));
+
 // ─── Relations ───────────────────────────────────────────────
 export const usersRelations = relations(users, ({ one, many }) => ({
   organization: one(organizations, { fields: [users.organizationId], references: [organizations.id] }),
