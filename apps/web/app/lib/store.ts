@@ -1,6 +1,6 @@
 // ============================================================
-// SimpleBuild Pro — Global State Store
-// Zustand for lightweight, performant state management
+// SimpleBuild Pro — Global State Store (Phase 3)
+// Added WebContainer state, streamingFiles tracking
 // ============================================================
 
 import { create } from 'zustand';
@@ -71,11 +71,21 @@ interface EditorState {
   isAssetsOpen: boolean;
   toggleAssets: () => void;
 
-  // Sandbox
+  // Sandbox (kept for backward compat)
   sandboxUrl: string | null;
   setSandboxUrl: (url: string | null) => void;
   sandboxStatus: 'idle' | 'creating' | 'running' | 'stopping' | 'stopped' | 'error';
   setSandboxStatus: (status: EditorState['sandboxStatus']) => void;
+
+  // WebContainer (Phase 3)
+  webcontainerReady: boolean;
+  setWebcontainerReady: (ready: boolean) => void;
+  webcontainerUrl: string | null;
+  setWebcontainerUrl: (url: string | null) => void;
+
+  // Streaming file tracking (which file is currently being written by AI)
+  streamingFile: string | null;
+  setStreamingFile: (path: string | null) => void;
 
   // Build / Deploy status
   buildStatus: 'idle' | 'building' | 'success' | 'error';
@@ -113,7 +123,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const files = new Map(get().files);
     files.delete(path);
     set({ files });
-    // Close tab if open
     const tabs = get().openTabs.filter(t => t.path !== path);
     const active = get().activeFile === path ? (tabs[0]?.path || null) : get().activeFile;
     set({ openTabs: tabs, activeFile: active });
@@ -126,7 +135,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       files.set(newPath, content);
     }
     set({ files });
-    // Update tabs
     const tabs = get().openTabs.map(t =>
       t.path === oldPath ? { ...t, path: newPath } : t
     );
@@ -187,11 +195,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isAssetsOpen: false,
   toggleAssets: () => set({ isAssetsOpen: !get().isAssetsOpen }),
 
-  // Sandbox
+  // Sandbox (backward compat)
   sandboxUrl: null,
   setSandboxUrl: (sandboxUrl) => set({ sandboxUrl }),
   sandboxStatus: 'idle',
   setSandboxStatus: (sandboxStatus) => set({ sandboxStatus }),
+
+  // WebContainer (Phase 3)
+  webcontainerReady: false,
+  setWebcontainerReady: (webcontainerReady) => set({ webcontainerReady }),
+  webcontainerUrl: null,
+  setWebcontainerUrl: (webcontainerUrl) => set({ webcontainerUrl }),
+
+  // Streaming file
+  streamingFile: null,
+  setStreamingFile: (streamingFile) => set({ streamingFile }),
 
   // Build / Deploy
   buildStatus: 'idle',
@@ -215,6 +233,12 @@ interface ChatMessage {
   timestamp: string;
   isStreaming?: boolean;
   appliedFiles?: boolean;
+  // Phase 3: files written during this message
+  filesWritten?: string[];
+  // Phase 3: shell commands executed
+  shellCommands?: string[];
+  // Attachments sent with user message
+  attachments?: { filename: string; mimeType: string; url: string }[];
 }
 
 interface ChatState {

@@ -79,8 +79,10 @@ export const ASSET_MIME_TYPES = {
 } as const;
 
 export const MAX_CHAT_HISTORY_MESSAGES = 50;
-export const AI_MODEL = 'claude-opus-4-20250514';
-export const AI_MAX_TOKENS = 8192;
+// Phase 3: Switched from Opus (slow, expensive) to Sonnet 4 (fast, 5x cheaper)
+// Single-pass output needs higher token limit — all files in one response
+export const AI_MODEL = 'claude-sonnet-4-20250514';
+export const AI_MAX_TOKENS = 16384;
 
 // ─── Editor Language Mapping ─────────────────────────────────
 export const FILE_LANGUAGE_MAP: Record<string, string> = {

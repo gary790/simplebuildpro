@@ -1,14 +1,14 @@
 // ============================================================
-// SimpleBuild Pro — AI Routes (Phase 2: Sandbox Architecture)
-// Anthropic Claude with tool_use against E2B sandboxes
-// No more XML protocol — AI calls real tools (run_command,
-// write_file, read_file, list_files) against Linux containers
+// SimpleBuild Pro — AI Routes (Phase 3: Single-Pass Streaming)
+// NO tool-calling loop. ONE Anthropic call. Files streamed via
+// structured XML tags. Frontend writes to WebContainer in
+// real-time. 10x faster than Phase 2.
 // ============================================================
 
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '@simplebuildpro/db';
-import { projects, projectFiles, aiConversations, aiMessages, usageLogs, userConnections, projectIntegrations } from '@simplebuildpro/db';
+import { projects, projectFiles, aiConversations, aiMessages, usageLogs, userConnections } from '@simplebuildpro/db';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { requireAuth, type AuthEnv } from '../middleware/auth';
 import { AppError } from '../middleware/error-handler';
@@ -50,60 +50,11 @@ function decrypt(encryptedText: string): string {
   }
 }
 
-// ─── Sandbox Tools (NEW — interact with E2B sandbox) ────────
-const SANDBOX_TOOLS = [
-  {
-    name: 'run_command',
-    description: 'Run a bash command in the project sandbox. Use for:\n- grep/find to search files\n- sed to edit files in place\n- cat to read file contents\n- rm to delete files or directories\n- mkdir to create directories\n- npm install to add packages\n- Any other shell command\nWorking directory is /home/user/project/.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        command: { type: 'string', description: 'The bash command to execute' },
-      },
-      required: ['command'],
-    },
-  },
-  {
-    name: 'write_file',
-    description: 'Create or overwrite a file in the project sandbox. Use for creating new files or fully rewriting existing ones. For small edits to existing files, prefer run_command with sed instead.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        path: { type: 'string', description: 'File path relative to project root (e.g., "index.html", "src/app.js")' },
-        content: { type: 'string', description: 'Complete file content' },
-      },
-      required: ['path', 'content'],
-    },
-  },
-  {
-    name: 'read_file',
-    description: 'Read the contents of a file from the project sandbox. Use before editing to understand current state.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        path: { type: 'string', description: 'File path relative to project root' },
-      },
-      required: ['path'],
-    },
-  },
-  {
-    name: 'list_files',
-    description: 'List files and directories in the project sandbox. Gives awareness of project structure.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        path: { type: 'string', description: 'Directory path relative to project root (default: ".")' },
-      },
-      required: [],
-    },
-  },
-];
-
-// ─── Deploy/Ship Tools (KEPT from old architecture) ─────────
+// ─── Deploy Tools (KEPT — invoked explicitly, not in AI loop) ─
 const DEPLOY_TOOLS = [
   {
     name: 'github_push',
-    description: 'Push the current project files to a GitHub repository. The user must have a connected GitHub account.',
+    description: 'Push the current project files to a GitHub repository.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -156,78 +107,7 @@ const DEPLOY_TOOLS = [
   },
 ];
 
-// All tools available to the AI
-const ALL_TOOLS = [...SANDBOX_TOOLS, ...DEPLOY_TOOLS];
-
-// ─── Sandbox Tool Executor ──────────────────────────────────
-async function executeSandboxTool(
-  toolName: string,
-  toolInput: Record<string, any>,
-  projectId: string,
-): Promise<{ success: boolean; result: any; error?: string; filesChanged?: string[] }> {
-  try {
-    switch (toolName) {
-      case 'run_command': {
-        const { command } = toolInput;
-        const result = await sandboxService.execCommand(projectId, command);
-        // Detect file changes from certain commands
-        const filesChanged: string[] = [];
-        const cmd = command.trim().toLowerCase();
-        if (cmd.startsWith('sed ') || cmd.startsWith('rm ') || cmd.startsWith('mv ') ||
-            cmd.startsWith('cp ') || cmd.startsWith('touch ') || cmd.includes('>') ||
-            cmd.startsWith('mkdir ')) {
-          filesChanged.push('*'); // Signal that files may have changed
-        }
-        return {
-          success: result.exitCode === 0,
-          result: {
-            stdout: result.stdout.slice(0, 10000), // Truncate large outputs
-            stderr: result.stderr.slice(0, 5000),
-            exitCode: result.exitCode,
-          },
-          error: result.exitCode !== 0 ? result.stderr.slice(0, 500) : undefined,
-          filesChanged,
-        };
-      }
-
-      case 'write_file': {
-        const { path, content } = toolInput;
-        await sandboxService.writeFile(projectId, path, content);
-        return {
-          success: true,
-          result: { path, size: content.length, message: `File written: ${path}` },
-          filesChanged: [path],
-        };
-      }
-
-      case 'read_file': {
-        const { path } = toolInput;
-        const content = await sandboxService.readFile(projectId, path);
-        return {
-          success: true,
-          result: { path, content: content.slice(0, 50000), size: content.length },
-        };
-      }
-
-      case 'list_files': {
-        const { path = '.' } = toolInput;
-        const files = await sandboxService.listFiles(projectId, path);
-        return {
-          success: true,
-          result: { path, files: files.slice(0, 200) },
-        };
-      }
-
-      default:
-        return { success: false, result: null, error: `Unknown sandbox tool: ${toolName}` };
-    }
-  } catch (err: any) {
-    logger.error(`[AI Tool] ${toolName} failed: ${err.message}`);
-    return { success: false, result: null, error: err.message };
-  }
-}
-
-// ─── Deploy Tool Executor (kept from old architecture) ──────
+// ─── Deploy Tool Executor (kept from Phase 2) ────────────────
 async function executeDeployTool(
   toolName: string,
   toolInput: Record<string, any>,
@@ -256,28 +136,10 @@ async function executeDeployTool(
       }
 
       case 'github_push': {
-        // First, snapshot files from sandbox to DB so we have the latest
-        const snapshotFiles = await sandboxService.snapshotFiles(projectId).catch(() => []);
-        if (snapshotFiles.length > 0) {
-          for (const file of snapshotFiles) {
-            const existing = await db.query.projectFiles.findFirst({
-              where: and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, file.path)),
-            });
-            const contentHash = crypto.createHash('sha256').update(file.content).digest('hex');
-            const sizeBytes = Buffer.byteLength(file.content, 'utf-8');
-
-            if (existing) {
-              await db.update(projectFiles).set({
-                content: file.content, contentHash, sizeBytes, updatedAt: new Date(),
-              }).where(eq(projectFiles.id, existing.id));
-            } else {
-              await db.insert(projectFiles).values({
-                projectId, path: file.path, content: file.content,
-                contentHash, mimeType: 'text/plain', sizeBytes,
-              });
-            }
-          }
-        }
+        // Snapshot files from DB
+        const dbFiles = await db.query.projectFiles.findMany({
+          where: eq(projectFiles.projectId, projectId),
+        });
 
         const { repo, branch = 'main', commit_message } = toolInput;
         const connection = await db.query.userConnections.findFirst({
@@ -288,10 +150,7 @@ async function executeDeployTool(
         }
 
         const token = decrypt(connection.accessToken);
-        const files = await db.query.projectFiles.findMany({
-          where: eq(projectFiles.projectId, projectId),
-        });
-        if (files.length === 0) {
+        if (dbFiles.length === 0) {
           return { success: false, result: null, error: 'No files to push.' };
         }
 
@@ -319,7 +178,7 @@ async function executeDeployTool(
         } catch { /* Branch doesn't exist */ }
 
         const treeItems: any[] = [];
-        for (const file of files) {
+        for (const file of dbFiles) {
           const blobRes = await fetch(`${apiBase}/git/blobs`, {
             method: 'POST', headers,
             body: JSON.stringify({ content: file.content || '', encoding: 'utf-8' }),
@@ -355,12 +214,14 @@ async function executeDeployTool(
           });
         }
 
-        const actionResult = {
-          status: 'success', commitSha: commitData.sha, filesCount: files.length,
-          url: `https://github.com/${owner}/${repoName}/tree/${branch}`,
+        logger.info(`[AI Tool] GitHub push: ${owner}/${repoName}#${branch} — ${dbFiles.length} files`);
+        return {
+          success: true,
+          result: {
+            status: 'success', commitSha: commitData.sha, filesCount: dbFiles.length,
+            url: `https://github.com/${owner}/${repoName}/tree/${branch}`,
+          },
         };
-        logger.info(`[AI Tool] GitHub push: ${owner}/${repoName}#${branch} — ${files.length} files`);
-        return { success: true, result: actionResult };
       }
 
       case 'cloudflare_deploy': {
@@ -376,12 +237,12 @@ async function executeDeployTool(
         const accountId = connection.accountId;
         if (!accountId) return { success: false, result: null, error: 'Cloudflare account ID not found.' };
 
-        // Snapshot latest files from sandbox
-        const sbFiles = await sandboxService.snapshotFiles(projectId).catch(() => []);
-        if (sbFiles.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
+        const dbFiles = await db.query.projectFiles.findMany({
+          where: eq(projectFiles.projectId, projectId),
+        });
+        if (dbFiles.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
 
         const cfHeaders = { Authorization: `Bearer ${cfToken}`, 'Content-Type': 'application/json' };
-
         const checkRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${project_name}`, { headers: cfHeaders });
         if (!checkRes.ok) {
           const createRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`, {
@@ -394,7 +255,7 @@ async function executeDeployTool(
         }
 
         const formData = new FormData();
-        for (const file of sbFiles) {
+        for (const file of dbFiles) {
           formData.append(file.path, new Blob([file.content || '']), file.path);
         }
         const deployRes = await fetch(
@@ -408,8 +269,8 @@ async function executeDeployTool(
         const deployData = await deployRes.json() as any;
         const deployUrl = deployData.result?.url || `https://${project_name}.pages.dev`;
 
-        logger.info(`[AI Tool] Cloudflare deploy: ${project_name} — ${sbFiles.length} files → ${deployUrl}`);
-        return { success: true, result: { status: 'success', url: deployUrl, filesCount: sbFiles.length } };
+        logger.info(`[AI Tool] Cloudflare deploy: ${project_name} — ${dbFiles.length} files → ${deployUrl}`);
+        return { success: true, result: { status: 'success', url: deployUrl, filesCount: dbFiles.length } };
       }
 
       case 'vercel_deploy': {
@@ -420,10 +281,12 @@ async function executeDeployTool(
         if (!connection?.accessToken) return { success: false, result: null, error: 'Vercel account not connected.' };
 
         const vToken = decrypt(connection.accessToken);
-        const sbFiles = await sandboxService.snapshotFiles(projectId).catch(() => []);
-        if (sbFiles.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
+        const dbFiles = await db.query.projectFiles.findMany({
+          where: eq(projectFiles.projectId, projectId),
+        });
+        if (dbFiles.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
 
-        const vercelFiles = sbFiles.map(f => ({ file: f.path, data: f.content || '' }));
+        const vercelFiles = dbFiles.map(f => ({ file: f.path, data: f.content || '' }));
         const deployRes = await fetch('https://api.vercel.com/v13/deployments', {
           method: 'POST',
           headers: { Authorization: `Bearer ${vToken}`, 'Content-Type': 'application/json' },
@@ -434,16 +297,17 @@ async function executeDeployTool(
           throw new Error(`Vercel deploy failed: ${err.error?.message || JSON.stringify(err)}`);
         }
         const deployData = await deployRes.json() as any;
-        const deployUrl = `https://${deployData.url}`;
-        return { success: true, result: { status: 'success', url: deployUrl, filesCount: sbFiles.length } };
+        return { success: true, result: { status: 'success', url: `https://${deployData.url}`, filesCount: dbFiles.length } };
       }
 
       case 'export_project': {
-        const sbFiles = await sandboxService.snapshotFiles(projectId).catch(() => []);
-        const totalSize = sbFiles.reduce((sum, f) => sum + (f.content?.length || 0), 0);
+        const dbFiles = await db.query.projectFiles.findMany({
+          where: eq(projectFiles.projectId, projectId),
+        });
+        const totalSize = dbFiles.reduce((sum, f) => sum + (f.content?.length || 0), 0);
         return {
           success: true,
-          result: { status: 'success', filesCount: sbFiles.length, totalSizeBytes: totalSize,
+          result: { status: 'success', filesCount: dbFiles.length, totalSizeBytes: totalSize,
             message: 'Project export ready. Download from the Ship panel.' },
         };
       }
@@ -457,15 +321,13 @@ async function executeDeployTool(
   }
 }
 
-// ─── Build System Prompt (NEW — sandbox-aware) ──────────────
+// ─── Build System Prompt (Phase 3 — single-pass file output) ──
 function buildSystemPrompt(
-  fileList: { path: string; isDir: boolean }[],
+  fileList: { path: string; content?: string }[],
   assets: { filename: string; cdnUrl: string; mimeType: string }[],
   projectName: string,
-  previewUrl: string | null,
 ): string {
   const fileTree = fileList
-    .filter(f => !f.isDir)
     .map(f => `  ${f.path}`)
     .join('\n') || '  (empty project)';
 
@@ -473,45 +335,191 @@ function buildSystemPrompt(
     .map(a => `- ${a.filename} (${a.mimeType}) → ${a.cdnUrl}`)
     .join('\n');
 
-  return `You are the AI coding assistant for ${APP_NAME} Studio.
-You have FULL ACCESS to the user's project "${projectName}" as a real Linux filesystem.
+  // Include existing file contents for context (truncated for large files)
+  const existingFiles = fileList
+    .filter(f => f.content && f.content.length > 0)
+    .map(f => {
+      const content = f.content!.length > 8000 ? f.content!.slice(0, 8000) + '\n... (truncated)' : f.content;
+      return `### ${f.path}\n\`\`\`\n${content}\n\`\`\``;
+    })
+    .join('\n\n');
 
-## TOOLS AVAILABLE
-You have tools to interact with the project sandbox:
-- **run_command**: Run any bash command (grep, sed, cat, rm, mkdir, npm, etc.)
-- **write_file**: Create or overwrite a file (use for new files or full rewrites)
-- **read_file**: Read a file's contents
-- **list_files**: List directory contents
+  return `You are the AI coding assistant for ${APP_NAME}.
+You are building the project "${projectName}".
 
-And deployment tools:
-- **github_push**: Push to GitHub
-- **cloudflare_deploy**: Deploy to Cloudflare Pages
-- **vercel_deploy**: Deploy to Vercel
-- **export_project**: Export for download
-- **list_connections**: Check connected services
+## OUTPUT FORMAT — CRITICAL
+You output files using XML action tags. The frontend parses these in real-time.
+
+To create or update a file, use this EXACT format:
+<boltAction type="file" filePath="path/to/file.ext">
+file content here
+</boltAction>
+
+To run a shell command (npm install, etc.), use:
+<boltAction type="shell">
+command here
+</boltAction>
+
+Rules:
+1. Output a BRIEF explanation (1-2 sentences max) before the file blocks.
+2. Output ALL files needed in a single response. Do NOT stop to ask — just build it.
+3. File paths are relative to project root (e.g., "index.html", "src/app.js", "styles/main.css").
+4. When modifying an existing project, output ONLY the files that need to change. Do NOT re-output unchanged files.
+5. For web projects, always use Tailwind CSS via CDN unless told otherwise.
+6. Write production-quality, clean, semantic HTML5.
+7. NEVER wrap code in markdown code blocks (\`\`\`). Use <boltAction> tags ONLY.
+8. Keep explanations MINIMAL — the user sees file changes, not your text. Maximum 2 short sentences.
+9. Reference uploaded assets using their exact CDN URLs.
+10. When building from scratch, include index.html as the entry point.
 
 ## CURRENT PROJECT FILES
 ${fileTree}
 
-${previewUrl ? `## LIVE PREVIEW\nA dev server is running at: ${previewUrl}\nChanges to files are reflected when the user refreshes the preview.\n` : ''}
+${existingFiles ? `## EXISTING FILE CONTENTS\n${existingFiles}\n` : ''}
 ## UPLOADED ASSETS (${assets.length})
 ${assetList || 'None yet.'}
-When referencing assets in code, use their CDN URLs directly.
-
-## WORKFLOW RULES
-1. **ALWAYS read before editing** — use read_file or run_command with cat/grep to understand what exists before making changes.
-2. **Prefer surgical edits** — use run_command with sed for small changes instead of rewriting entire files.
-3. **Use write_file for new files** — or when you need to completely rewrite a file.
-4. **Delete with rm** — use run_command with rm to delete files when asked.
-5. **Test your changes** — after modifying code, use cat or read_file to verify the changes look correct.
-6. **Explain what you did** — after making changes, briefly describe what was changed and why.
 
 ## CODE QUALITY
-- For web projects, index.html is the entry point.
-- Use Tailwind CSS via CDN (<script src="https://cdn.tailwindcss.com"></script>) unless the user specifies otherwise.
-- Write production-quality, semantic HTML5 with accessibility.
+- Use Tailwind CSS via CDN: <script src="https://cdn.tailwindcss.com"></script>
 - Write clean, well-structured code in any language.
-- Reference uploaded assets using their exact CDN URLs.`;
+- Use modern JavaScript (ES2020+), semantic HTML5, accessibility best practices.
+- For React/Vue/Svelte projects, include proper package.json and build setup.`;
+}
+
+// ─── Stream Parser: Extract <boltAction> tags from streaming text ──
+interface ParseState {
+  buffer: string;
+  insideAction: boolean;
+  currentAction: { type: string; filePath?: string } | null;
+  actionContent: string;
+}
+
+function createParseState(): ParseState {
+  return { buffer: '', insideAction: false, currentAction: null, actionContent: '' };
+}
+
+/**
+ * Process a chunk of text from the AI stream.
+ * Emits events as structured actions are detected.
+ * Returns text that is NOT inside action blocks (= explanation text for the user).
+ */
+function processChunk(
+  state: ParseState,
+  chunk: string,
+  emit: (data: any) => void,
+): string {
+  state.buffer += chunk;
+  let userText = '';
+
+  while (state.buffer.length > 0) {
+    if (!state.insideAction) {
+      // Look for opening <boltAction tag
+      const openIdx = state.buffer.indexOf('<boltAction');
+      if (openIdx === -1) {
+        // No tag found — check if buffer might contain a partial tag
+        const partialIdx = state.buffer.lastIndexOf('<');
+        if (partialIdx !== -1 && partialIdx > state.buffer.length - 60) {
+          // Keep potential partial tag in buffer
+          userText += state.buffer.slice(0, partialIdx);
+          state.buffer = state.buffer.slice(partialIdx);
+          break;
+        }
+        // No partial tag — all is user text
+        userText += state.buffer;
+        state.buffer = '';
+        break;
+      }
+
+      // Text before the tag is user explanation text
+      userText += state.buffer.slice(0, openIdx);
+      state.buffer = state.buffer.slice(openIdx);
+
+      // Find the end of the opening tag (>)
+      const closeAngle = state.buffer.indexOf('>');
+      if (closeAngle === -1) {
+        // Incomplete opening tag — wait for more data
+        break;
+      }
+
+      // Parse the opening tag
+      const tagStr = state.buffer.slice(0, closeAngle + 1);
+      state.buffer = state.buffer.slice(closeAngle + 1);
+
+      // Extract attributes
+      const typeMatch = tagStr.match(/type="([^"]+)"/);
+      const filePathMatch = tagStr.match(/filePath="([^"]+)"/);
+
+      const actionType = typeMatch?.[1] || 'file';
+      const filePath = filePathMatch?.[1];
+
+      state.currentAction = { type: actionType, filePath };
+      state.actionContent = '';
+      state.insideAction = true;
+
+      // Emit file_start or shell_start
+      if (actionType === 'file' && filePath) {
+        emit({ type: 'file_start', path: filePath });
+      } else if (actionType === 'shell') {
+        emit({ type: 'shell_start' });
+      }
+    } else {
+      // Inside an action — look for closing </boltAction>
+      const closeIdx = state.buffer.indexOf('</boltAction>');
+      if (closeIdx === -1) {
+        // Check for partial closing tag
+        const partialClose = state.buffer.lastIndexOf('</');
+        if (partialClose !== -1 && partialClose > state.buffer.length - 20) {
+          // Potential partial close tag — emit content up to it, keep the rest
+          const content = state.buffer.slice(0, partialClose);
+          state.actionContent += content;
+
+          if (state.currentAction?.type === 'file') {
+            emit({ type: 'file_content', content });
+          }
+
+          state.buffer = state.buffer.slice(partialClose);
+          break;
+        }
+
+        // No close tag — emit all as content and continue waiting
+        state.actionContent += state.buffer;
+
+        if (state.currentAction?.type === 'file') {
+          emit({ type: 'file_content', content: state.buffer });
+        }
+
+        state.buffer = '';
+        break;
+      }
+
+      // Found close tag — emit final content + file_end
+      const finalContent = state.buffer.slice(0, closeIdx);
+      state.actionContent += finalContent;
+      state.buffer = state.buffer.slice(closeIdx + '</boltAction>'.length);
+
+      if (state.currentAction?.type === 'file' && state.currentAction.filePath) {
+        if (finalContent) {
+          emit({ type: 'file_content', content: finalContent });
+        }
+        emit({
+          type: 'file_end',
+          path: state.currentAction.filePath,
+          fullContent: state.actionContent,
+        });
+      } else if (state.currentAction?.type === 'shell') {
+        emit({
+          type: 'shell_command',
+          command: state.actionContent.trim(),
+        });
+      }
+
+      state.insideAction = false;
+      state.currentAction = null;
+      state.actionContent = '';
+    }
+  }
+
+  return userText;
 }
 
 // ─── Send Message Schema ─────────────────────────────────────
@@ -524,13 +532,15 @@ const sendMessageSchema = z.object({
     mimeType: z.string(),
     url: z.string(),
   })).optional().default([]),
+  // Phase 3: mode flag — 'build' (default) or 'deploy'
+  mode: z.enum(['build', 'deploy']).optional().default('build'),
 });
 
-// ─── Stream Chat (SSE) — Tool-Calling Loop ──────────────────
+// ─── Stream Chat (SSE) — Single-Pass Structured Output ───────
 aiRoutes.post('/chat/stream', async (c) => {
   const session = c.get('session');
   const body = await c.req.json();
-  const { projectId, conversationId, message } = sendMessageSchema.parse(body);
+  const { projectId, conversationId, message, attachments, mode } = sendMessageSchema.parse(body);
 
   const db = getDb();
 
@@ -582,59 +592,101 @@ aiRoutes.post('/chat/stream', async (c) => {
     conversationId: conversation.id,
     role: 'user',
     content: message,
-    attachments: [],
+    attachments: attachments || [],
     tokensUsed: 0,
   });
 
-  // Ensure sandbox is running for this project
-  let sandboxInfo: any = null;
-  let previewUrl: string | null = null;
-  try {
-    sandboxInfo = await sandboxService.getOrCreateSandbox(projectId);
-    previewUrl = sandboxInfo.previewUrl;
-
-    // If sandbox just created and project has DB files, restore them
-    const sbFiles = await sandboxService.listFiles(projectId, '.').catch(() => []);
-    const hasProjectFiles = sbFiles.some(f => !f.isDir && f.path !== 'package.json' && f.path !== 'package-lock.json');
-    if (!hasProjectFiles && project.files && project.files.length > 0) {
-      await sandboxService.restoreFilesFromDB(projectId, project.files.map((f: any) => ({
-        path: f.path, content: f.content || '',
-      })));
-    }
-
-    // Start dev server if not already running
-    previewUrl = await sandboxService.startDevServer(projectId).catch(() => previewUrl);
-  } catch (err: any) {
-    logger.error(`[AI Stream] Sandbox init failed: ${err.message}`);
-    // Continue without sandbox — the AI tools will just fail gracefully
-  }
-
-  // Get file listing from sandbox for context
-  let fileList: { path: string; isDir: boolean }[] = [];
-  try {
-    fileList = await sandboxService.listFiles(projectId, '.');
-  } catch {
-    // Fallback to DB files
-    fileList = (project.files || []).map((f: any) => ({ path: f.path, isDir: false }));
-  }
+  // Build file list with content for the system prompt
+  const fileList = (project.files || []).map((f: any) => ({
+    path: f.path,
+    content: f.content || '',
+  }));
 
   const systemPrompt = buildSystemPrompt(
     fileList,
     (project.assets || []).map((a: any) => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
     project.name,
-    previewUrl,
   );
 
-  // Get conversation history
+  // Build conversation history
   const previousMessages = (conversation.messages || []).map((m: any) => ({
     role: m.role as 'user' | 'assistant',
     content: m.content,
   }));
 
-  const apiMessages = [...previousMessages, { role: 'user' as const, content: message }];
+  // Build the user message content (with attachments if any)
+  let userContent: any = message;
+  if (attachments && attachments.length > 0) {
+    const parts: any[] = [];
+    for (const att of attachments) {
+      if (att.mimeType.startsWith('image/')) {
+        parts.push({
+          type: 'image',
+          source: { type: 'url', url: att.url },
+        });
+      } else {
+        // Non-image attachments: include as text reference
+        parts.push({
+          type: 'text',
+          text: `[Attached file: ${att.filename} (${att.mimeType}) — ${att.url}]`,
+        });
+      }
+    }
+    parts.push({ type: 'text', text: message });
+    userContent = parts;
+  }
+
+  const apiMessages = [...previousMessages, { role: 'user' as const, content: userContent }];
   const convId = conversation.id;
 
-  // Create SSE stream
+  // ─── DEPLOY MODE: use tool-calling for deploy operations only ──
+  if (mode === 'deploy') {
+    // Deploy mode: single Anthropic call with deploy tools
+    const deploySystemPrompt = `You are the deployment assistant for ${APP_NAME}.
+The user wants to deploy or ship their project "${project.name}".
+Use the available tools to help them deploy.`;
+
+    const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': getAnthropicKey(),
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: AI_MODEL,
+        max_tokens: 2048,
+        system: deploySystemPrompt,
+        messages: [{ role: 'user', content: message }],
+        tools: DEPLOY_TOOLS,
+      }),
+    });
+
+    if (!anthropicResponse.ok) {
+      throw new AppError(502, 'AI_ERROR', 'AI service returned an error.');
+    }
+
+    const anthropicData = await anthropicResponse.json() as any;
+    const toolUseBlocks = anthropicData.content?.filter((b: any) => b.type === 'tool_use') || [];
+    const textBlocks = anthropicData.content?.filter((b: any) => b.type === 'text') || [];
+    const replyText = textBlocks.map((b: any) => b.text).join('');
+
+    let deployResult = null;
+    for (const block of toolUseBlocks) {
+      deployResult = await executeDeployTool(block.name, block.input, session.userId, projectId);
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        conversationId: convId,
+        text: replyText,
+        deployResult,
+      },
+    });
+  }
+
+  // ─── BUILD MODE: Single-pass structured output streaming ───
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -643,211 +695,165 @@ aiRoutes.post('/chat/stream', async (c) => {
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch { /* controller closed */ }
       };
 
-      console.log(`[AI Stream] Starting — conv=${convId}, project=${projectId}, sandbox=${sandboxInfo?.sandboxId || 'none'}`);
+      logger.info(`[AI Stream Phase3] Starting — conv=${convId}, project=${projectId}, files=${fileList.length}`);
 
       emit({
         type: 'stream_start',
         conversationId: convId,
-        sandboxUrl: previewUrl,
       });
 
-      let fullTextContent = '';
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
-      let allFilesChanged: string[] = [];
-      let maxToolRounds = 10; // Allow more rounds for complex tasks
-      let currentMessages = [...apiMessages];
+      const filesWritten: string[] = [];
 
       try {
-        while (maxToolRounds > 0) {
-          console.log(`[AI Stream] Calling Anthropic — round=${11 - maxToolRounds}, msgCount=${currentMessages.length}`);
+        // ONE call to Anthropic — no tools, just text generation
+        const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': getAnthropicKey(),
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: AI_MODEL,
+            max_tokens: AI_MAX_TOKENS,
+            stream: true,
+            system: systemPrompt,
+            messages: apiMessages,
+            // NO tools — pure text generation with structured output
+          }),
+        });
 
-          // Make streaming request to Anthropic
-          const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': getAnthropicKey(),
-              'anthropic-version': '2023-06-01',
-            },
-            body: JSON.stringify({
-              model: AI_MODEL,
-              max_tokens: AI_MAX_TOKENS,
-              stream: true,
-              system: systemPrompt,
-              messages: currentMessages,
-              tools: ALL_TOOLS,
-            }),
+        if (!anthropicResponse.ok || !anthropicResponse.body) {
+          const errText = await anthropicResponse.text().catch(() => '');
+          logger.error('[AI Stream Phase3] Anthropic error:', anthropicResponse.status, errText);
+          emit({ type: 'error', message: `AI service error (${anthropicResponse.status}): ${errText.slice(0, 200)}` });
+          controller.close();
+          return;
+        }
+
+        // Parse the Anthropic SSE stream
+        const reader = anthropicResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let sseBuffer = '';
+        const parseState = createParseState();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          sseBuffer += decoder.decode(value, { stream: true });
+          const lines = sseBuffer.split('\n');
+          sseBuffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') continue;
+
+            try {
+              const evt = JSON.parse(data);
+
+              if (evt.type === 'message_start' && evt.message?.usage) {
+                totalInputTokens += evt.message.usage.input_tokens || 0;
+              }
+
+              if (evt.type === 'message_delta' && evt.usage) {
+                totalOutputTokens += evt.usage.output_tokens || 0;
+              }
+
+              if (evt.type === 'content_block_delta' && evt.delta?.text) {
+                const rawToken = evt.delta.text;
+
+                // Process through the structured output parser
+                const userText = processChunk(parseState, rawToken, (actionEvent) => {
+                  // Handle parsed action events
+                  switch (actionEvent.type) {
+                    case 'file_start':
+                      emit({ type: 'file_start', path: actionEvent.path });
+                      break;
+
+                    case 'file_content':
+                      emit({ type: 'file_content', content: actionEvent.content });
+                      break;
+
+                    case 'file_end':
+                      filesWritten.push(actionEvent.path);
+                      emit({
+                        type: 'file_end',
+                        path: actionEvent.path,
+                      });
+
+                      // Persist file to database (fire and forget — don't block stream)
+                      const filePath = actionEvent.path;
+                      const fileContent = actionEvent.fullContent;
+                      (async () => {
+                        try {
+                          const existing = await db.query.projectFiles.findFirst({
+                            where: and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, filePath)),
+                          });
+                          const contentHash = crypto.createHash('sha256').update(fileContent).digest('hex');
+                          const sizeBytes = Buffer.byteLength(fileContent, 'utf-8');
+                          if (existing) {
+                            await db.update(projectFiles).set({
+                              content: fileContent, contentHash, sizeBytes, updatedAt: new Date(),
+                            }).where(eq(projectFiles.id, existing.id));
+                          } else {
+                            await db.insert(projectFiles).values({
+                              projectId, path: filePath, content: fileContent,
+                              contentHash, mimeType: 'text/plain', sizeBytes,
+                            });
+                          }
+                        } catch (dbErr: any) {
+                          logger.error(`[AI Stream Phase3] DB persist failed for ${filePath}: ${dbErr.message}`);
+                        }
+                      })();
+                      break;
+
+                    case 'shell_start':
+                      emit({ type: 'shell_start' });
+                      break;
+
+                    case 'shell_command':
+                      emit({ type: 'shell_command', command: actionEvent.command });
+                      break;
+                  }
+                });
+
+                // Emit user-facing text tokens (the brief explanation, not file contents)
+                if (userText) {
+                  emit({ type: 'text', token: userText });
+                }
+              }
+            } catch { /* skip malformed SSE data */ }
+          }
+        }
+
+        // Flush any remaining buffer in the parser
+        if (parseState.buffer) {
+          const remaining = processChunk(parseState, '', (actionEvent) => {
+            if (actionEvent.type === 'file_end') {
+              filesWritten.push(actionEvent.path);
+              emit({ type: 'file_end', path: actionEvent.path });
+            }
           });
-
-          if (!anthropicResponse.ok || !anthropicResponse.body) {
-            const errText = await anthropicResponse.text().catch(() => '');
-            console.error('[AI Stream] Anthropic error:', anthropicResponse.status, errText);
-            emit({ type: 'error', message: `AI service error (${anthropicResponse.status}): ${errText.slice(0, 200)}` });
-            break;
+          if (remaining) {
+            emit({ type: 'text', token: remaining });
           }
-
-          // Parse the stream
-          const reader = anthropicResponse.body.getReader();
-          const decoder = new TextDecoder();
-          let sseBuffer = '';
-          let stopReason = '';
-          let streamTextContent = '';
-          let contentBlocks: any[] = [];
-          let currentBlockType = '';
-          let toolUseId = '';
-          let toolUseName = '';
-          let toolInputJson = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            sseBuffer += decoder.decode(value, { stream: true });
-            const lines = sseBuffer.split('\n');
-            sseBuffer = lines.pop() || '';
-
-            for (const line of lines) {
-              if (!line.startsWith('data: ')) continue;
-              const data = line.slice(6).trim();
-              if (data === '[DONE]') continue;
-
-              try {
-                const evt = JSON.parse(data);
-
-                if (evt.type === 'message_start' && evt.message?.usage) {
-                  totalInputTokens += evt.message.usage.input_tokens || 0;
-                }
-
-                if (evt.type === 'message_delta') {
-                  if (evt.usage) totalOutputTokens += evt.usage.output_tokens || 0;
-                  if (evt.delta?.stop_reason) stopReason = evt.delta.stop_reason;
-                }
-
-                if (evt.type === 'content_block_start') {
-                  if (evt.content_block?.type === 'text') {
-                    currentBlockType = 'text';
-                  } else if (evt.content_block?.type === 'tool_use') {
-                    currentBlockType = 'tool_use';
-                    toolUseId = evt.content_block.id || '';
-                    toolUseName = evt.content_block.name || '';
-                    toolInputJson = '';
-                  }
-                }
-
-                if (evt.type === 'content_block_delta') {
-                  if (currentBlockType === 'text' && evt.delta?.text) {
-                    const token = evt.delta.text;
-                    streamTextContent += token;
-                    // Stream text tokens to frontend immediately
-                    emit({ type: 'text', token });
-                  } else if (currentBlockType === 'tool_use' && evt.delta?.partial_json) {
-                    toolInputJson += evt.delta.partial_json;
-                  }
-                }
-
-                if (evt.type === 'content_block_stop') {
-                  if (currentBlockType === 'text') {
-                    contentBlocks.push({ type: 'text', text: streamTextContent });
-                  } else if (currentBlockType === 'tool_use') {
-                    let parsedInput = {};
-                    try { parsedInput = JSON.parse(toolInputJson); } catch {}
-                    contentBlocks.push({ type: 'tool_use', id: toolUseId, name: toolUseName, input: parsedInput });
-                  }
-                  currentBlockType = '';
-                }
-              } catch { /* skip malformed SSE data */ }
-            }
-          }
-
-          fullTextContent += streamTextContent;
-
-          // Check if we stopped for tool_use
-          if (stopReason === 'tool_use') {
-            const toolUseBlocks = contentBlocks.filter(b => b.type === 'tool_use');
-            if (toolUseBlocks.length === 0) break;
-
-            // Execute each tool and send events to frontend
-            const toolResults: any[] = [];
-            for (const toolBlock of toolUseBlocks) {
-              const isSandboxTool = SANDBOX_TOOLS.some(t => t.name === toolBlock.name);
-
-              // Emit tool_call event to frontend
-              emit({
-                type: 'tool_call',
-                tool: toolBlock.name,
-                input: toolBlock.name === 'write_file'
-                  ? { path: toolBlock.input.path, contentLength: toolBlock.input.content?.length || 0 }
-                  : toolBlock.input,
-              });
-
-              // Execute the tool
-              let toolResult: any;
-              if (isSandboxTool) {
-                toolResult = await executeSandboxTool(toolBlock.name, toolBlock.input, projectId);
-              } else {
-                toolResult = await executeDeployTool(toolBlock.name, toolBlock.input, session.userId, projectId);
-              }
-
-              // Emit tool_result event to frontend
-              emit({
-                type: 'tool_result',
-                tool: toolBlock.name,
-                success: toolResult.success,
-                output: typeof toolResult.result === 'string'
-                  ? toolResult.result.slice(0, 2000)
-                  : JSON.stringify(toolResult.result)?.slice(0, 2000),
-                exitCode: toolResult.result?.exitCode,
-                error: toolResult.error,
-              });
-
-              // Track file changes
-              if (toolResult.filesChanged) {
-                for (const f of toolResult.filesChanged) {
-                  if (!allFilesChanged.includes(f)) {
-                    allFilesChanged.push(f);
-                    emit({ type: 'file_changed', path: f, action: toolBlock.name === 'write_file' ? 'create' : 'edit' });
-                  }
-                }
-              }
-
-              // Build tool_result message for Anthropic
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: toolBlock.id,
-                content: toolResult.success
-                  ? JSON.stringify(toolResult.result)
-                  : JSON.stringify({ error: toolResult.error }),
-                is_error: !toolResult.success,
-              });
-            }
-
-            // Continue conversation with tool results
-            currentMessages = [
-              ...currentMessages,
-              { role: 'assistant' as const, content: contentBlocks as any },
-              { role: 'user' as const, content: toolResults as any },
-            ];
-
-            // Reset for next round
-            maxToolRounds--;
-            continue;
-          }
-
-          // No tool use — stream is complete
-          break;
         }
 
         const tokensUsed = totalInputTokens + totalOutputTokens;
 
-        // Save assistant message to DB
+        // Save assistant message to DB (just the explanation text, not file contents)
+        const fullText = ''; // We streamed text tokens directly; reconstruct isn't needed for DB
         await db.insert(aiMessages).values({
           conversationId: convId,
           role: 'assistant',
-          content: fullTextContent,
+          content: `[Generated ${filesWritten.length} file(s): ${filesWritten.join(', ')}]`,
           attachments: [],
           tokensUsed,
-          appliedFiles: allFilesChanged.length > 0,
+          appliedFiles: filesWritten.length > 0,
         });
 
         // Update conversation stats
@@ -866,17 +872,17 @@ aiRoutes.post('/chat/stream', async (c) => {
           metadata: { conversationId: convId, model: AI_MODEL },
         });
 
-        console.log(`[AI Stream] Done — conv=${convId}, tokens=${tokensUsed}, filesChanged=${allFilesChanged.length}`);
+        logger.info(`[AI Stream Phase3] Done — conv=${convId}, tokens=${tokensUsed}, files=${filesWritten.length}`);
 
         emit({
           type: 'stream_end',
           conversationId: convId,
-          filesChanged: allFilesChanged,
+          filesChanged: filesWritten,
           tokensUsed,
         });
 
       } catch (err: any) {
-        console.error('[AI Stream] Error:', err);
+        logger.error('[AI Stream Phase3] Error:', err);
         emit({ type: 'error', message: err.message || 'Stream error' });
       } finally {
         controller.close();
@@ -893,7 +899,7 @@ aiRoutes.post('/chat/stream', async (c) => {
     'http://localhost:3000',
     'http://localhost:3001',
   ];
-  const corsOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[2];
+  const corsOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
 
   return new Response(stream, {
     headers: {
@@ -922,7 +928,6 @@ aiRoutes.post('/chat', async (c) => {
   });
   if (!project) throw new AppError(404, 'PROJECT_NOT_FOUND', 'Project not found.');
 
-  // Get or create conversation
   let conversation: any;
   if (conversationId) {
     conversation = await db.query.aiConversations.findFirst({
@@ -950,13 +955,11 @@ aiRoutes.post('/chat', async (c) => {
     tokensUsed: 0,
   });
 
-  // Simple non-streaming response (for fallback)
-  const fileList = (project.files || []).map((f: any) => ({ path: f.path, isDir: false }));
+  const fileList = (project.files || []).map((f: any) => ({ path: f.path, content: f.content || '' }));
   const systemPrompt = buildSystemPrompt(
     fileList,
     (project.assets || []).map((a: any) => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
     project.name,
-    null,
   );
 
   const previousMessages = (conversation.messages || []).map((m: any) => ({
@@ -977,7 +980,6 @@ aiRoutes.post('/chat', async (c) => {
       max_tokens: AI_MAX_TOKENS,
       system: systemPrompt,
       messages: apiMessages2,
-      tools: ALL_TOOLS,
     }),
   });
 

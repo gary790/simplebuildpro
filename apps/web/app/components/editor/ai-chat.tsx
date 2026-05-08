@@ -1,34 +1,24 @@
 // ============================================================
-// SimpleBuild Pro — AI Chat Panel (Phase 2: Clean UX)
-// AI works silently in the sandbox. User sees only:
-//   1. A compact "Working..." progress bar while executing
-//   2. The AI's text response
-//   3. A small clickable file list at the end
-// No verbose tool dumps. No command output in chat.
+// SimpleBuild Pro — AI Chat Panel (Phase 3: Single-Pass Speed)
+// ONE AI call. Files stream in real-time. Written to WebContainer
+// instantly. User sees: brief text + compact file chips. That's it.
+// + button for attaching images/files.
 // ============================================================
 
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useEditorStore, useChatStore } from '@/lib/store';
-import { aiApi, sandboxApi, type AIStreamEvent } from '@/lib/api-client';
+import { aiApi, assetsApi, type AIStreamEvent } from '@/lib/api-client';
+import * as wc from '@/lib/webcontainer';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import {
   Send, Bot, User, Loader2, Sparkles, Copy, Check,
-  RotateCcw, FileCode, ArrowRight, AlertCircle,
-  ChevronDown, ChevronRight, Terminal,
+  RotateCcw, FileCode, ArrowRight, Plus, Paperclip,
+  X, Image as ImageIcon, File as FileIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
-
-// ─── Internal tracking (not shown to user) ───────────────────
-interface ToolCallEvent {
-  toolName: string;
-  toolCallId: string;
-  status: 'running' | 'success' | 'error';
-  input?: Record<string, any>;
-  error?: string;
-}
 
 // ─── Chat Message Types ──────────────────────────────────────
 interface ChatMessage {
@@ -37,135 +27,57 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   isStreaming?: boolean;
-  // Internal — tracked but mostly hidden
-  toolCalls?: ToolCallEvent[];
-  filesChanged?: string[];
-  hasError?: boolean;
-  errorDetail?: string;
+  filesWritten?: string[];
+  shellCommands?: string[];
+  currentFile?: string | null; // file currently being streamed
+  attachments?: { filename: string; mimeType: string; url: string }[];
 }
 
-// ─── Compact "Working" Indicator ─────────────────────────────
-// Shows ONE line: "Working... 4 steps done" with a subtle progress bar
-function WorkingIndicator({ toolCalls }: { toolCalls: ToolCallEvent[] }) {
-  const [showDetails, setShowDetails] = useState(false);
-  const done = toolCalls.filter(tc => tc.status !== 'running').length;
-  const total = toolCalls.length;
-  const hasRunning = toolCalls.some(tc => tc.status === 'running');
-  const hasError = toolCalls.some(tc => tc.status === 'error');
-  const currentTool = toolCalls.find(tc => tc.status === 'running');
-
-  // Friendly label for what's happening right now
-  const currentLabel = currentTool
-    ? currentTool.toolName === 'write_file' ? 'Writing files'
-      : currentTool.toolName === 'run_command' ? 'Running command'
-      : currentTool.toolName === 'read_file' ? 'Reading files'
-      : currentTool.toolName === 'list_files' ? 'Scanning project'
-      : 'Working'
-    : 'Working';
-
-  return (
-    <div className="select-none">
-      {/* Main compact line */}
-      <button
-        onClick={() => setShowDetails(!showDetails)}
-        className={clsx(
-          'flex items-center gap-2 w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors',
-          hasError
-            ? 'bg-red-50 text-red-700'
-            : hasRunning
-              ? 'bg-slate-100 text-slate-600'
-              : 'bg-slate-50 text-slate-500',
-        )}
-      >
-        {hasRunning ? (
-          <Loader2 size={12} className="animate-spin text-brand-500 shrink-0" />
-        ) : hasError ? (
-          <AlertCircle size={12} className="text-red-500 shrink-0" />
-        ) : (
-          <Check size={12} className="text-green-500 shrink-0" />
-        )}
-
-        <span className="truncate">
-          {hasRunning
-            ? `${currentLabel}...`
-            : hasError
-              ? `Completed with errors (${done}/${total} steps)`
-              : `Done (${total} step${total !== 1 ? 's' : ''})`
-          }
-        </span>
-
-        {/* Mini progress dots */}
-        {total > 1 && (
-          <span className="ml-auto flex items-center gap-0.5 shrink-0">
-            {toolCalls.map((tc, i) => (
-              <span
-                key={i}
-                className={clsx(
-                  'w-1.5 h-1.5 rounded-full transition-colors',
-                  tc.status === 'running' && 'bg-brand-400 animate-pulse',
-                  tc.status === 'success' && 'bg-green-400',
-                  tc.status === 'error' && 'bg-red-400',
-                )}
-              />
-            ))}
-          </span>
-        )}
-
-        {/* Expand toggle */}
-        {!hasRunning && (
-          <span className="shrink-0 text-slate-400">
-            {showDetails ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          </span>
-        )}
-      </button>
-
-      {/* Expandable details — only shown on click, after completion */}
-      {showDetails && !hasRunning && (
-        <div className="mt-1 ml-1 space-y-0.5">
-          {toolCalls.map((tc, i) => {
-            const label = tc.toolName === 'write_file' ? `Write ${tc.input?.path?.replace(/^\/home\/user\/project\//, '') || 'file'}`
-              : tc.toolName === 'run_command' ? `$ ${(tc.input?.command || '').slice(0, 50)}${(tc.input?.command || '').length > 50 ? '...' : ''}`
-              : tc.toolName === 'read_file' ? `Read ${tc.input?.path?.replace(/^\/home\/user\/project\//, '') || 'file'}`
-              : tc.toolName === 'list_files' ? 'List files'
-              : tc.toolName;
-
-            return (
-              <div key={i} className="flex items-center gap-1.5 text-2xs text-slate-400 font-mono">
-                <span className={clsx(
-                  'w-1 h-1 rounded-full shrink-0',
-                  tc.status === 'success' ? 'bg-green-400' : 'bg-red-400',
-                )} />
-                <span className="truncate">{label}</span>
-                {tc.status === 'error' && tc.error && (
-                  <span className="text-red-400 truncate ml-1">— {tc.error.slice(0, 40)}</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
+// ─── Attachment preview (before sending) ─────────────────────
+interface PendingAttachment {
+  file: File;
+  previewUrl?: string;
 }
 
 // ─── File Chip (clickable, opens in editor) ──────────────────
 function FileChip({ path }: { path: string }) {
   const { openTab, setActiveFile } = useEditorStore.getState();
-  const displayPath = path.replace(/^\/home\/user\/project\//, '');
 
   return (
     <button
-      onClick={() => { openTab(displayPath); setActiveFile(displayPath); }}
+      onClick={() => { openTab(path); setActiveFile(path); }}
       className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 hover:bg-brand-50 hover:text-brand-700 rounded text-2xs text-slate-600 font-mono transition-colors"
     >
       <FileCode size={9} className="text-brand-500" />
-      {displayPath}
+      {path}
     </button>
   );
 }
 
+// ─── Writing Indicator (shows during file streaming) ─────────
+function WritingIndicator({ currentFile, filesWritten }: { currentFile: string | null; filesWritten: string[] }) {
+  if (!currentFile && filesWritten.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-100 text-xs text-slate-600">
+      <Loader2 size={12} className="animate-spin text-brand-500 shrink-0" />
+      <span className="truncate">
+        {currentFile
+          ? `Writing ${currentFile}...`
+          : `Done — ${filesWritten.length} file${filesWritten.length !== 1 ? 's' : ''}`
+        }
+      </span>
+      {filesWritten.length > 0 && currentFile && (
+        <span className="ml-auto text-2xs text-slate-400 shrink-0">
+          {filesWritten.length} done
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function AiChat() {
-  const { project, updateFile, openTab, setActiveFile, setSandboxUrl } = useEditorStore();
+  const { project, updateFile, openTab, setActiveFile, setStreamingFile } = useEditorStore();
   const {
     conversationId, isLoading,
     setConversationId, setLoading,
@@ -174,8 +86,10 @@ export function AiChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -187,35 +101,64 @@ export function AiChat() {
     setTimeout(() => inputRef.current?.focus(), 100);
   }, []);
 
-  // ─── Refresh files from sandbox into editor store ──────
-  const refreshFilesFromSandbox = useCallback(async (changedPaths?: string[]) => {
-    if (!project?.id) return;
-    try {
-      const { files: fileList } = await sandboxApi.listFiles(project.id);
-      for (const f of fileList) {
-        if (f.type === 'file') {
-          const relativePath = f.path.replace(/^\/home\/user\/project\//, '');
-          if (!changedPaths || changedPaths.some(cp => cp.includes(relativePath) || relativePath.includes(cp.replace(/^\/home\/user\/project\//, '')))) {
-            try {
-              const { content } = await sandboxApi.readFile(project.id, f.path);
-              updateFile(relativePath, content);
-            } catch {
-              // skip unreadable files
-            }
-          }
-        }
+  // ─── Handle file attachment ────────────────────────────
+  const handleAttachFiles = useCallback((fileList: FileList | null) => {
+    if (!fileList) return;
+    const newAttachments: PendingAttachment[] = [];
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const att: PendingAttachment = { file };
+      if (file.type.startsWith('image/')) {
+        att.previewUrl = URL.createObjectURL(file);
       }
-    } catch (err) {
-      console.warn('[AiChat] Failed to refresh files from sandbox:', err);
+      newAttachments.push(att);
     }
-  }, [project?.id, updateFile]);
+    setPendingAttachments(prev => [...prev, ...newAttachments]);
+  }, []);
 
+  const removeAttachment = useCallback((index: number) => {
+    setPendingAttachments(prev => {
+      const next = [...prev];
+      if (next[index]?.previewUrl) {
+        URL.revokeObjectURL(next[index].previewUrl!);
+      }
+      next.splice(index, 1);
+      return next;
+    });
+  }, []);
+
+  // ─── Upload attachments and get URLs ───────────────────
+  const uploadAttachments = useCallback(async (): Promise<{ filename: string; mimeType: string; url: string }[]> => {
+    if (!project?.id || pendingAttachments.length === 0) return [];
+
+    const uploaded: { filename: string; mimeType: string; url: string }[] = [];
+    for (const att of pendingAttachments) {
+      try {
+        const asset = await assetsApi.upload(project.id, att.file);
+        uploaded.push({
+          filename: att.file.name,
+          mimeType: att.file.type,
+          url: asset.cdnUrl,
+        });
+      } catch (err: any) {
+        console.warn('[AiChat] Failed to upload attachment:', err.message);
+        toast('error', 'Upload failed', `Could not upload ${att.file.name}`);
+      }
+    }
+    return uploaded;
+  }, [project?.id, pendingAttachments]);
+
+  // ─── Send message ──────────────────────────────────────
   const handleSend = useCallback(async () => {
     if (!input.trim() || !project?.id || isLoading) return;
 
     const userMsg = input.trim();
     setInput('');
     setLoading(true);
+
+    // Upload any pending attachments first
+    const attachments = await uploadAttachments();
+    setPendingAttachments([]);
 
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
@@ -227,6 +170,7 @@ export function AiChat() {
         role: 'user',
         content: userMsg,
         timestamp: new Date().toISOString(),
+        attachments: attachments.length > 0 ? attachments : undefined,
       },
       {
         id: assistantMsgId,
@@ -234,12 +178,15 @@ export function AiChat() {
         content: '',
         timestamp: new Date().toISOString(),
         isStreaming: true,
-        toolCalls: [],
-        filesChanged: [],
+        filesWritten: [],
+        shellCommands: [],
+        currentFile: null,
       },
     ]);
 
-    const allFilesChanged: string[] = [];
+    // Track file content accumulation for WebContainer writes
+    let currentFilePath: string | null = null;
+    let currentFileContent = '';
 
     try {
       await aiApi.streamMessage(
@@ -247,12 +194,12 @@ export function AiChat() {
           projectId: project.id,
           conversationId: conversationId || undefined,
           message: userMsg,
+          attachments: attachments.length > 0 ? attachments : undefined,
         },
         (event: AIStreamEvent) => {
           switch (event.type) {
             case 'stream_start':
               if (event.conversationId) setConversationId(event.conversationId);
-              if (event.sandboxUrl) setSandboxUrl(event.sandboxUrl);
               break;
 
             case 'text':
@@ -265,68 +212,68 @@ export function AiChat() {
               }
               break;
 
-            case 'tool_call':
-              // Silently track — only the compact WorkingIndicator sees this
-              setMessages(prev => prev.map(m =>
-                m.id === assistantMsgId
-                  ? {
-                      ...m,
-                      toolCalls: [
-                        ...(m.toolCalls || []),
-                        {
-                          toolName: event.toolName || '',
-                          toolCallId: event.toolCallId || '',
-                          status: 'running' as const,
-                          input: event.input,
-                        },
-                      ],
-                    }
-                  : m
-              ));
-              break;
-
-            case 'tool_result':
-              setMessages(prev => prev.map(m => {
-                if (m.id !== assistantMsgId) return m;
-                const toolCalls = [...(m.toolCalls || [])];
-                const idx = toolCalls.findLastIndex(
-                  tc => tc.toolCallId === event.toolCallId && tc.status === 'running'
-                );
-                if (idx !== -1) {
-                  toolCalls[idx] = {
-                    ...toolCalls[idx],
-                    status: event.success ? 'success' : 'error',
-                    error: event.error,
-                  };
-                }
-                const newFilesChanged = [
-                  ...(m.filesChanged || []),
-                  ...(event.filesChanged || []),
-                ];
-                return {
-                  ...m,
-                  toolCalls,
-                  filesChanged: newFilesChanged,
-                  hasError: !event.success ? true : m.hasError,
-                  errorDetail: event.error || m.errorDetail,
-                };
-              }));
-              if (event.filesChanged) {
-                allFilesChanged.push(...event.filesChanged);
+            case 'file_start':
+              if (event.path) {
+                currentFilePath = event.path;
+                currentFileContent = '';
+                setStreamingFile(event.path);
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantMsgId
+                    ? { ...m, currentFile: event.path }
+                    : m
+                ));
               }
               break;
 
-            case 'file_changed':
+            case 'file_content':
+              if (event.content && currentFilePath) {
+                currentFileContent += event.content;
+              }
+              break;
+
+            case 'file_end':
               if (event.path) {
-                const relativePath = event.path.replace(/^\/home\/user\/project\//, '');
+                // Write to editor store
+                updateFile(event.path, currentFileContent);
+
+                // Write to WebContainer (fire-and-forget)
+                if (wc.getInstance()) {
+                  wc.writeFile(event.path, currentFileContent).catch(err => {
+                    console.warn('[AiChat] WebContainer write failed:', err);
+                  });
+                }
+
+                // Update message state
                 setMessages(prev => prev.map(m =>
                   m.id === assistantMsgId
-                    ? { ...m, filesChanged: [...(m.filesChanged || []), event.path!] }
+                    ? {
+                        ...m,
+                        filesWritten: [...(m.filesWritten || []), event.path!],
+                        currentFile: null,
+                      }
                     : m
                 ));
-                allFilesChanged.push(event.path);
-                if (event.action === 'deleted') {
-                  useEditorStore.getState().deleteFile(relativePath);
+
+                currentFilePath = null;
+                currentFileContent = '';
+                setStreamingFile(null);
+              }
+              break;
+
+            case 'shell_command':
+              if (event.command) {
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantMsgId
+                    ? { ...m, shellCommands: [...(m.shellCommands || []), event.command!] }
+                    : m
+                ));
+
+                // Run in WebContainer (fire-and-forget)
+                if (wc.getInstance()) {
+                  const parts = event.command.split(' ');
+                  wc.runCommand(parts[0], parts.slice(1)).catch(err => {
+                    console.warn('[AiChat] WebContainer command failed:', err);
+                  });
                 }
               }
               break;
@@ -334,31 +281,30 @@ export function AiChat() {
             case 'stream_end':
               setMessages(prev => prev.map(m =>
                 m.id === assistantMsgId
-                  ? { ...m, isStreaming: false }
+                  ? { ...m, isStreaming: false, currentFile: null }
                   : m
               ));
               setLoading(false);
+              setStreamingFile(null);
               if (event.conversationId) setConversationId(event.conversationId);
 
-              if (allFilesChanged.length > 0) {
-                refreshFilesFromSandbox(allFilesChanged).then(() => {
-                  const htmlFile = allFilesChanged.find(p => p.endsWith('.html'));
-                  if (htmlFile) {
-                    const rel = htmlFile.replace(/^\/home\/user\/project\//, '');
-                    openTab(rel);
-                    setActiveFile(rel);
-                  }
-                });
+              // Open first created file in editor
+              if (event.filesChanged && event.filesChanged.length > 0) {
+                const htmlFile = event.filesChanged.find(p => p.endsWith('.html'));
+                const firstFile = htmlFile || event.filesChanged[0];
+                openTab(firstFile);
+                setActiveFile(firstFile);
               }
               break;
 
             case 'error':
               setMessages(prev => prev.map(m =>
                 m.id === assistantMsgId
-                  ? { ...m, isStreaming: false, content: `Error: ${event.message}` }
+                  ? { ...m, isStreaming: false, content: `Error: ${event.message}`, currentFile: null }
                   : m
               ));
               setLoading(false);
+              setStreamingFile(null);
               toast('error', 'AI Error', event.message || 'Something went wrong');
               break;
           }
@@ -367,13 +313,14 @@ export function AiChat() {
     } catch (err: any) {
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId
-          ? { ...m, isStreaming: false, content: `Error: ${err.message}` }
+          ? { ...m, isStreaming: false, content: `Error: ${err.message}`, currentFile: null }
           : m
       ));
       setLoading(false);
+      setStreamingFile(null);
       toast('error', 'AI Error', err.message);
     }
-  }, [input, project?.id, conversationId, isLoading, updateFile, openTab, setActiveFile, setConversationId, setLoading, setSandboxUrl, refreshFilesFromSandbox]);
+  }, [input, project?.id, conversationId, isLoading, updateFile, openTab, setActiveFile, setConversationId, setLoading, setStreamingFile, uploadAttachments]);
 
   const handleCopy = (id: string, content: string) => {
     navigator.clipboard.writeText(content);
@@ -400,10 +347,10 @@ export function AiChat() {
         <div className="flex items-center gap-2">
           <Sparkles size={14} className="text-brand-600" />
           <span className="text-sm font-semibold text-slate-700">AI Assistant</span>
-          {useEditorStore.getState().sandboxStatus === 'running' && (
+          {useEditorStore.getState().webcontainerReady && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-2xs bg-green-100 text-green-700 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 animate-pulse" />
-              Live
+              Ready
             </span>
           )}
         </div>
@@ -425,14 +372,14 @@ export function AiChat() {
             </div>
             <h3 className="text-sm font-semibold text-slate-900 mb-1">Studio AI</h3>
             <p className="text-xs text-slate-500 max-w-[260px] leading-relaxed">
-              Describe what you want to build. I'll handle everything behind the scenes.
+              Describe what you want to build. Files appear instantly.
             </p>
             <div className="mt-4 space-y-1.5">
               {[
-                'Build a landing page for my business',
-                'Create a React app with a todo list',
-                'Set up an Express API with a database',
-                'Build a full-stack app with authentication',
+                'Build a landing page for my SaaS',
+                'Create a portfolio with dark mode',
+                'Make a pricing page with Stripe checkout',
+                'Build a dashboard with charts',
               ].map((suggestion) => (
                 <button
                   key={suggestion}
@@ -465,29 +412,41 @@ export function AiChat() {
             >
               {msg.role === 'assistant' ? (
                 <div className="space-y-2">
-                  {/* AI's text response */}
+                  {/* AI's brief text response */}
                   {msg.content && (
                     <div className="whitespace-pre-wrap break-words text-xs">
                       {msg.content}
                     </div>
                   )}
 
-                  {/* Compact working indicator — ONE line, not a dump */}
-                  {msg.toolCalls && msg.toolCalls.length > 0 && (
-                    <WorkingIndicator toolCalls={msg.toolCalls} />
+                  {/* Writing indicator (during streaming) */}
+                  {msg.isStreaming && (msg.currentFile || (msg.filesWritten && msg.filesWritten.length > 0)) && (
+                    <WritingIndicator
+                      currentFile={msg.currentFile || null}
+                      filesWritten={msg.filesWritten || []}
+                    />
                   )}
 
-                  {/* Files changed — compact chips at the end (only after done) */}
-                  {!msg.isStreaming && msg.filesChanged && msg.filesChanged.length > 0 && (
+                  {/* Files written — compact chips (after done) */}
+                  {!msg.isStreaming && msg.filesWritten && msg.filesWritten.length > 0 && (
                     <div className="flex flex-wrap gap-1 pt-0.5">
-                      {[...new Set(msg.filesChanged)].map((f) => (
+                      {msg.filesWritten.map((f) => (
                         <FileChip key={f} path={f} />
                       ))}
                     </div>
                   )}
 
-                  {/* Initial thinking state — before any text or tools */}
-                  {msg.isStreaming && !msg.content && (!msg.toolCalls || msg.toolCalls.length === 0) && (
+                  {/* Shell commands (compact display) */}
+                  {!msg.isStreaming && msg.shellCommands && msg.shellCommands.length > 0 && (
+                    <div className="text-2xs text-slate-400 font-mono">
+                      {msg.shellCommands.map((cmd, i) => (
+                        <div key={i} className="truncate">$ {cmd}</div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Initial thinking state */}
+                  {msg.isStreaming && !msg.content && (!msg.filesWritten || msg.filesWritten.length === 0) && !msg.currentFile && (
                     <span className="inline-flex items-center gap-1.5 text-slate-400 text-xs">
                       <Loader2 size={12} className="animate-spin" /> Thinking...
                     </span>
@@ -505,8 +464,21 @@ export function AiChat() {
                   )}
                 </div>
               ) : (
-                <div className="whitespace-pre-wrap break-words">
-                  {msg.content}
+                <div>
+                  <div className="whitespace-pre-wrap break-words">
+                    {msg.content}
+                  </div>
+                  {/* Show attachment thumbnails on user messages */}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {msg.attachments.map((att, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white/20 rounded text-2xs">
+                          {att.mimeType.startsWith('image/') ? <ImageIcon size={9} /> : <FileIcon size={9} />}
+                          {att.filename}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -522,9 +494,58 @@ export function AiChat() {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Pending Attachments Preview */}
+      {pendingAttachments.length > 0 && (
+        <div className="px-3 pt-2 flex flex-wrap gap-2 bg-white border-t border-slate-100">
+          {pendingAttachments.map((att, idx) => (
+            <div key={idx} className="relative group">
+              {att.previewUrl ? (
+                <img
+                  src={att.previewUrl}
+                  alt={att.file.name}
+                  className="w-12 h-12 rounded-lg object-cover border border-slate-200"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center">
+                  <FileIcon size={14} className="text-slate-400" />
+                </div>
+              )}
+              <button
+                onClick={() => removeAttachment(idx)}
+                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X size={8} />
+              </button>
+              <p className="text-2xs text-slate-400 truncate max-w-[48px] mt-0.5 text-center">
+                {att.file.name}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Input */}
       <div className="border-t border-slate-200 p-3 bg-white shrink-0">
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*,video/*,.pdf,.doc,.docx,.txt,.json,.csv"
+          className="hidden"
+          onChange={(e) => handleAttachFiles(e.target.files)}
+        />
+
         <div className="flex items-end gap-2">
+          {/* + Attachment button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="shrink-0 p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+            title="Attach files"
+          >
+            <Plus size={16} />
+          </button>
+
           <textarea
             ref={inputRef}
             value={input}
@@ -550,7 +571,7 @@ export function AiChat() {
           </Button>
         </div>
         <p className="text-2xs text-slate-400 mt-1.5 text-center">
-          Shift+Enter for new line
+          Shift+Enter for new line · Click + to attach files
         </p>
       </div>
     </div>

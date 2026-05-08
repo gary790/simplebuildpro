@@ -1,7 +1,7 @@
 // ============================================================
-// SimpleBuild Pro — API Client
+// SimpleBuild Pro — API Client (Phase 3: Single-Pass Streaming)
 // Typed HTTP client for frontend → API communication
-// Real endpoints — no mocks, no fakes
+// New SSE protocol: file_start/file_content/file_end
 // ============================================================
 
 import type {
@@ -68,7 +68,6 @@ async function apiFetch<T>(
     if (refreshed) {
       return apiFetch<T>(path, options, false);
     }
-    // Refresh failed — clear and redirect to login
     clearTokens();
     if (typeof window !== 'undefined') {
       window.location.href = '/login';
@@ -286,7 +285,7 @@ export const assetsApi = {
     apiFetch<{ message: string }>(`/api/v1/assets/${projectId}/${assetId}`, { method: 'DELETE' }),
 };
 
-// ─── Sandbox API ────────────────────────────────────────────
+// ─── Sandbox API (kept for backward compat / fallback) ──────
 export const sandboxApi = {
   start: (projectId: string) =>
     apiFetch<{ sandboxId: string; sandboxUrl: string; status: string }>(
@@ -334,34 +333,30 @@ export const sandboxApi = {
     ),
 };
 
-// ─── AI Chat API — Sandbox Tool-Calling Protocol ──────────────
+// ─── AI Chat API — Phase 3 Single-Pass Streaming Protocol ───
 export interface AIStreamEvent {
   type:
     | 'stream_start'
     | 'text'
-    | 'tool_call'
-    | 'tool_result'
-    | 'file_changed'
+    | 'file_start'
+    | 'file_content'
+    | 'file_end'
+    | 'shell_start'
+    | 'shell_command'
     | 'stream_end'
     | 'error';
   // stream_start
   conversationId?: string;
-  sandboxUrl?: string;
   // text
   token?: string;
-  // tool_call
-  toolName?: string;
-  toolCallId?: string;
-  input?: Record<string, any>;
-  // tool_result
-  success?: boolean;
-  result?: any;
-  error?: string;
-  filesChanged?: string[];
-  // file_changed
+  // file_start / file_end
   path?: string;
-  action?: 'created' | 'modified' | 'deleted';
+  // file_content
+  content?: string;
+  // shell_command
+  command?: string;
   // stream_end
+  filesChanged?: string[];
   tokensUsed?: number;
   // error
   message?: string;
@@ -377,22 +372,29 @@ export const aiApi = {
     ),
 
   /**
-   * Stream AI response with sandbox tool-calling protocol.
-   * The AI uses Anthropic tool_use to execute commands in an E2B sandbox:
-   * - stream_start: {conversationId, sandboxUrl}
-   * - text: {token} (AI thinking/response text)
-   * - tool_call: {toolName, toolCallId, input} (AI calling a sandbox tool)
-   * - tool_result: {toolCallId, success, result, error, filesChanged}
-   * - file_changed: {path, action} (file created/modified/deleted in sandbox)
+   * Stream AI response with Phase 3 single-pass protocol.
+   * ONE Anthropic call. Files streamed via structured tags.
+   * SSE events:
+   * - stream_start: {conversationId}
+   * - text: {token} — brief AI explanation (1-2 sentences)
+   * - file_start: {path} — a new file is being written
+   * - file_content: {content} — streaming file content chunk
+   * - file_end: {path} — file complete, write to WebContainer
+   * - shell_command: {command} — run in WebContainer terminal
    * - stream_end: {conversationId, filesChanged, tokensUsed}
    * - error: {message}
    */
   streamMessage: async (
-    data: { projectId: string; conversationId?: string; message: string },
+    data: {
+      projectId: string;
+      conversationId?: string;
+      message: string;
+      attachments?: { filename: string; mimeType: string; url: string }[];
+      mode?: 'build' | 'deploy';
+    },
     onEvent: AIStreamCallback,
   ) => {
     const url = `${API_BASE}/api/v1/ai/chat/stream`;
-    console.log('[AI Stream] Starting fetch to:', url);
 
     let res: Response;
     try {
@@ -405,16 +407,12 @@ export const aiApi = {
         body: JSON.stringify(data),
       });
     } catch (fetchErr: any) {
-      console.error('[AI Stream] Fetch failed:', fetchErr);
       onEvent({ type: 'error', message: `Network error: ${fetchErr.message}` });
       return;
     }
 
-    console.log('[AI Stream] Response status:', res.status, 'ok:', res.ok, 'body:', !!res.body);
-
     if (!res.ok) {
       const errJson = await res.json().catch(() => null);
-      console.error('[AI Stream] API error:', res.status, errJson);
       onEvent({
         type: 'error',
         message: errJson?.error?.message || `AI service error (${res.status})`,
@@ -423,7 +421,6 @@ export const aiApi = {
     }
 
     if (!res.body) {
-      console.error('[AI Stream] No response body');
       onEvent({ type: 'error', message: 'No response body from AI service' });
       return;
     }
@@ -431,15 +428,11 @@ export const aiApi = {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let eventCount = 0;
 
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-          console.log('[AI Stream] Stream done, total events:', eventCount);
-          break;
-        }
+        if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
@@ -452,19 +445,14 @@ export const aiApi = {
             if (!eventData || eventData === '[DONE]') continue;
             try {
               const event: AIStreamEvent = JSON.parse(eventData);
-              eventCount++;
-              if (eventCount <= 3 || event.type === 'stream_end' || event.type === 'error') {
-                console.log('[AI Stream] Event:', event.type, event);
-              }
               onEvent(event);
-            } catch (parseErr) {
-              console.warn('[AI Stream] Parse error for line:', eventData.slice(0, 100));
+            } catch {
+              // skip malformed
             }
           }
         }
       }
     } catch (readErr: any) {
-      console.error('[AI Stream] Read error:', readErr);
       onEvent({ type: 'error', message: `Stream read error: ${readErr.message}` });
       return;
     }
@@ -478,14 +466,11 @@ export const aiApi = {
           if (!eventData || eventData === '[DONE]') continue;
           try {
             const event: AIStreamEvent = JSON.parse(eventData);
-            eventCount++;
             onEvent(event);
           } catch { /* skip */ }
         }
       }
     }
-
-    console.log('[AI Stream] Complete, total events processed:', eventCount);
   },
 
   getConversations: (projectId: string) =>

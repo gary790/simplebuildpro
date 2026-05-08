@@ -1,17 +1,19 @@
 // ============================================================
-// SimpleBuild Pro — Preview Panel (Phase 2: Sandbox Architecture)
-// Uses sandbox URL for live preview when available,
-// falls back to client-side blob preview for offline mode
+// SimpleBuild Pro — Preview Panel (Phase 3: WebContainer)
+// Priority: WebContainer iframe (instant, zero latency)
+// Fallback: Client-side blob preview (for non-WebContainer browsers)
+// Legacy: E2B sandbox URL (kept for backward compat)
 // ============================================================
 
 'use client';
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useEditorStore } from '@/lib/store';
+import * as wc from '@/lib/webcontainer';
 import { Button } from '@/components/ui/button';
 import {
   RefreshCw, ExternalLink, Maximize2, Minimize2,
-  Monitor, Smartphone, Tablet, Eye, Loader2, Server,
+  Monitor, Smartphone, Tablet, Loader2, Zap,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -24,81 +26,60 @@ const deviceWidths: Record<DeviceMode, string> = {
 };
 
 export function PreviewPanel() {
-  const { files, sandboxUrl, sandboxStatus } = useEditorStore();
+  const { files, webcontainerReady, webcontainerUrl, sandboxUrl, sandboxStatus } = useEditorStore();
 
   const [device, setDevice] = useState<DeviceMode>('desktop');
   const [fullscreen, setFullscreen] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const hasIndex = files.has('index.html') || files.has('index.htm');
 
-  // Determine if we should use sandbox URL or fallback to blob preview
-  const useSandbox = !!sandboxUrl && sandboxStatus === 'running';
+  // Priority: WebContainer URL > Sandbox URL > Blob fallback
+  const useWebcontainer = webcontainerReady && !!webcontainerUrl;
+  const useSandbox = !useWebcontainer && !!sandboxUrl && sandboxStatus === 'running';
+  const useBlobPreview = !useWebcontainer && !useSandbox && hasIndex;
 
-  // Build the fallback preview HTML by combining project files (offline mode)
+  // Active preview URL (WebContainer or Sandbox)
+  const previewUrl = useWebcontainer ? webcontainerUrl : useSandbox ? sandboxUrl : null;
+
+  // Build fallback blob preview HTML
   const previewHtml = useMemo(() => {
-    if (useSandbox) return null; // Don't build blob when sandbox is available
+    if (!useBlobPreview) return null;
 
     const indexHtml = files.get('index.html') || files.get('index.htm') || '';
     if (!indexHtml) return null;
 
     let html = indexHtml;
 
-    // Inline CSS files referenced via <link> tags
-    const cssFiles = Array.from(files.entries()).filter(([path]) =>
-      path.endsWith('.css')
-    );
+    // Inline CSS files
+    const cssFiles = Array.from(files.entries()).filter(([path]) => path.endsWith('.css'));
     for (const [path, content] of cssFiles) {
       const linkRegex = new RegExp(
-        `<link[^>]*href=["']${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`,
+        `<link[^>]*href=["'](?:\\.?\\/?)${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split('/').pop()!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`,
         'gi'
       );
-      if (linkRegex.test(html)) {
-        html = html.replace(linkRegex, `<style>/* ${path} */\n${content}\n</style>`);
-      } else {
-        const basename = path.split('/').pop() || path;
-        const linkRegex2 = new RegExp(
-          `<link[^>]*href=["'](\\.?\\/?)${basename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`,
-          'gi'
-        );
-        if (linkRegex2.test(html)) {
-          html = html.replace(linkRegex2, `<style>/* ${path} */\n${content}\n</style>`);
-        }
-      }
+      html = html.replace(linkRegex, `<style>/* ${path} */\n${content}\n</style>`);
     }
 
-    // Inline JS files referenced via <script src="...">
-    const jsFiles = Array.from(files.entries()).filter(([path]) =>
-      path.endsWith('.js') || path.endsWith('.mjs')
-    );
+    // Inline JS files
+    const jsFiles = Array.from(files.entries()).filter(([path]) => path.endsWith('.js') || path.endsWith('.mjs'));
     for (const [path, content] of jsFiles) {
       const scriptRegex = new RegExp(
-        `<script[^>]*src=["']${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>\\s*</script>`,
+        `<script[^>]*src=["'](?:\\.?\\/?)${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split('/').pop()!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>\\s*</script>`,
         'gi'
       );
-      if (scriptRegex.test(html)) {
-        html = html.replace(scriptRegex, `<script>/* ${path} */\n${content}\n</script>`);
-      } else {
-        const basename = path.split('/').pop() || path;
-        const scriptRegex2 = new RegExp(
-          `<script[^>]*src=["'](\\.?\\/?)${basename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>\\s*</script>`,
-          'gi'
-        );
-        if (scriptRegex2.test(html)) {
-          html = html.replace(scriptRegex2, `<script>/* ${path} */\n${content}\n</script>`);
-        }
-      }
+      html = html.replace(scriptRegex, `<script>/* ${path} */\n${content}\n</script>`);
     }
 
     return html;
-  }, [files, useSandbox]);
+  }, [files, useBlobPreview]);
 
-  // Auto-refresh fallback preview with debounce when files change
+  // Auto-refresh blob preview with debounce
   useEffect(() => {
-    if (useSandbox || !autoRefresh || !previewHtml || !iframeRef.current) return;
+    if (!useBlobPreview || !autoRefresh || !previewHtml || !iframeRef.current) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -113,11 +94,10 @@ export function PreviewPanel() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [previewHtml, autoRefresh, useSandbox]);
+  }, [previewHtml, autoRefresh, useBlobPreview]);
 
   const refreshPreview = useCallback(() => {
-    if (useSandbox) {
-      // Force iframe reload by changing key
+    if (previewUrl) {
       setRefreshKey(k => k + 1);
     } else if (iframeRef.current && previewHtml) {
       const blob = new Blob([previewHtml], { type: 'text/html' });
@@ -125,20 +105,21 @@ export function PreviewPanel() {
       iframeRef.current.src = url;
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     }
-  }, [previewHtml, useSandbox]);
+  }, [previewHtml, previewUrl]);
 
   const openInNewTab = useCallback(() => {
-    if (useSandbox && sandboxUrl) {
-      window.open(sandboxUrl, '_blank');
+    if (previewUrl) {
+      window.open(previewUrl, '_blank');
     } else if (previewHtml) {
       const blob = new Blob([previewHtml], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 30000);
     }
-  }, [previewHtml, useSandbox, sandboxUrl]);
+  }, [previewHtml, previewUrl]);
 
-  const hasPreview = useSandbox || (hasIndex && previewHtml);
+  const hasPreview = !!previewUrl || useBlobPreview;
+  const isBooting = !webcontainerReady && sandboxStatus !== 'running' && sandboxStatus !== 'error';
 
   return (
     <div className={clsx(
@@ -149,14 +130,19 @@ export function PreviewPanel() {
       <div className="flex items-center justify-between px-3 h-9 border-b border-slate-200 bg-slate-50 shrink-0">
         <span className="text-xs font-semibold text-slate-600">
           Preview
-          {useSandbox && (
+          {useWebcontainer && (
             <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-2xs bg-green-100 text-green-700 font-medium">
-              <Server size={9} className="mr-0.5" />
+              <Zap size={9} className="mr-0.5" />
+              Instant
+            </span>
+          )}
+          {useSandbox && (
+            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-2xs bg-blue-100 text-blue-700 font-medium">
               Sandbox
             </span>
           )}
-          {!useSandbox && hasIndex && (
-            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-2xs bg-blue-100 text-blue-700 font-medium">
+          {useBlobPreview && (
+            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-2xs bg-slate-100 text-slate-600 font-medium">
               Local
             </span>
           )}
@@ -184,7 +170,6 @@ export function PreviewPanel() {
             </div>
           )}
 
-          {/* Controls */}
           {hasPreview && (
             <>
               <button onClick={refreshPreview} className="p-1 rounded hover:bg-slate-200 text-slate-500 transition-colors" title="Refresh">
@@ -193,18 +178,6 @@ export function PreviewPanel() {
               <button onClick={openInNewTab} className="p-1 rounded hover:bg-slate-200 text-slate-500 transition-colors" title="Open in new tab">
                 <ExternalLink size={12} />
               </button>
-              {!useSandbox && (
-                <button
-                  onClick={() => setAutoRefresh(!autoRefresh)}
-                  className={clsx(
-                    'p-1 rounded transition-colors',
-                    autoRefresh ? 'bg-green-100 text-green-600' : 'text-slate-400 hover:bg-slate-200',
-                  )}
-                  title={autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
-                >
-                  <Eye size={12} />
-                </button>
-              )}
             </>
           )}
           <button
@@ -218,37 +191,37 @@ export function PreviewPanel() {
 
       {/* Preview Content */}
       <div className="flex-1 bg-[#f0f0f0] flex items-center justify-center overflow-hidden">
-        {/* Sandbox creating state */}
-        {sandboxStatus === 'creating' && (
+        {/* Booting state */}
+        {isBooting && !hasIndex && (
           <div className="flex flex-col items-center gap-3 text-center px-6">
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center">
-              <Loader2 size={20} className="text-amber-500 animate-spin" />
+            <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center">
+              <Loader2 size={20} className="text-brand-500 animate-spin" />
             </div>
-            <p className="text-sm font-medium text-slate-700">Starting sandbox...</p>
+            <p className="text-sm font-medium text-slate-700">Getting ready...</p>
             <p className="text-xs text-slate-500">
-              Spinning up a Linux container for your project. This takes a few seconds.
+              Setting up your development environment
             </p>
           </div>
         )}
 
-        {/* Sandbox running — show iframe with sandbox URL */}
-        {useSandbox && sandboxUrl && (
+        {/* WebContainer or Sandbox iframe */}
+        {previewUrl && (
           <div
             className="h-full bg-white shadow-lg transition-all duration-200"
             style={{ width: deviceWidths[device], maxWidth: '100%' }}
           >
             <iframe
               key={refreshKey}
-              src={sandboxUrl}
+              src={previewUrl}
               className="w-full h-full border-0"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-              title="Sandbox Preview"
+              title="Preview"
             />
           </div>
         )}
 
-        {/* Fallback: client-side blob preview (no sandbox) */}
-        {!useSandbox && sandboxStatus !== 'creating' && hasIndex && previewHtml && (
+        {/* Blob fallback */}
+        {useBlobPreview && previewHtml && (
           <div
             className="h-full bg-white shadow-lg transition-all duration-200"
             style={{ width: deviceWidths[device], maxWidth: '100%' }}
@@ -263,22 +236,13 @@ export function PreviewPanel() {
         )}
 
         {/* No preview available */}
-        {!useSandbox && sandboxStatus !== 'creating' && !hasIndex && (
+        {!previewUrl && !useBlobPreview && !isBooting && (
           <div className="flex flex-col items-center gap-3 text-center px-6">
             <div className="w-12 h-12 rounded-2xl bg-slate-200 flex items-center justify-center">
               <Monitor size={20} className="text-slate-400" />
             </div>
             <p className="text-xs text-slate-500">
-              Ask the AI to build something — the preview will appear here automatically
-            </p>
-          </div>
-        )}
-
-        {/* Has index but no preview html yet */}
-        {!useSandbox && sandboxStatus !== 'creating' && hasIndex && !previewHtml && (
-          <div className="flex flex-col items-center gap-3 text-center px-6">
-            <p className="text-xs text-slate-500">
-              Waiting for content...
+              Ask the AI to build something — the preview will appear here instantly
             </p>
           </div>
         )}

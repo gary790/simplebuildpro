@@ -9,7 +9,8 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEditorStore, useAuthStore, useChatStore } from '@/lib/store';
-import { projectsApi, filesApi, buildApi, deployApi, sandboxApi } from '@/lib/api-client';
+import { projectsApi, filesApi, buildApi, deployApi } from '@/lib/api-client';
+import * as wc from '@/lib/webcontainer';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -63,6 +64,8 @@ export default function EditorPage() {
     assets, setAssets,
     terminalLogs, addTerminalLog, clearTerminalLogs,
     sandboxUrl, setSandboxUrl, sandboxStatus, setSandboxStatus,
+    webcontainerReady, setWebcontainerReady,
+    webcontainerUrl, setWebcontainerUrl,
   } = useEditorStore();
 
   const { clearMessages: clearChat } = useChatStore();
@@ -141,17 +144,34 @@ export default function EditorPage() {
           setActiveFile(indexFile);
         }
 
-        // ─── Start sandbox in background ─────────────────
-        setSandboxStatus('creating');
-        try {
-          const sandboxResult = await sandboxApi.start(projectId);
-          setSandboxUrl(sandboxResult.sandboxUrl || null);
-          setSandboxStatus('running');
-          console.log('[Editor] Sandbox started:', sandboxResult.sandboxUrl);
-        } catch (sandboxErr: any) {
-          console.warn('[Editor] Sandbox failed to start (falling back to local preview):', sandboxErr.message);
-          setSandboxStatus('error');
-          // Don't block the editor — just fall back to local preview
+        // ─── Boot WebContainer in background ─────────────
+        if (wc.isSupported()) {
+          setWebcontainerReady(false);
+          setSandboxStatus('creating'); // reuse status for UI compat
+          try {
+            await wc.boot();
+            // Mount project files into WebContainer
+            await wc.mountFiles(fileMap);
+            setWebcontainerReady(true);
+            setSandboxStatus('running');
+            console.log('[Editor] WebContainer booted, files mounted');
+
+            // Start dev server if project has package.json
+            const devUrl = await wc.startDevServer((output) => {
+              addTerminalLog(output.replace(/\n$/, ''));
+            });
+            if (devUrl) {
+              setWebcontainerUrl(devUrl);
+              console.log('[Editor] Dev server ready:', devUrl);
+            }
+          } catch (wcErr: any) {
+            console.warn('[Editor] WebContainer failed:', wcErr.message);
+            setSandboxStatus('error');
+            // Editor still works — just no instant preview
+          }
+        } else {
+          console.warn('[Editor] WebContainer not supported (no SharedArrayBuffer)');
+          setSandboxStatus('idle');
         }
       } catch (err: any) {
         toast('error', 'Failed to load project', err.message);
@@ -165,11 +185,13 @@ export default function EditorPage() {
     clearChat();
 
     return () => {
-      // Stop sandbox on unmount (fire-and-forget)
-      sandboxApi.stop(projectId).catch(() => {});
+      // Teardown WebContainer on unmount
+      wc.teardown();
       setProject(null);
       setFiles(new Map());
       setSandboxUrl(null);
+      setWebcontainerUrl(null);
+      setWebcontainerReady(false);
       setSandboxStatus('idle');
     };
   }, [projectId]);
@@ -739,17 +761,17 @@ export default function EditorPage() {
           )}
         </div>
         <div className="flex items-center gap-3">
-          {/* Sandbox status */}
+          {/* WebContainer / Runtime status */}
           <span className={clsx(
-            sandboxStatus === 'running' ? 'text-green-200' :
+            webcontainerReady ? 'text-green-200' :
             sandboxStatus === 'creating' ? 'text-amber-200' :
             sandboxStatus === 'error' ? 'text-red-200' :
             'text-white/50',
           )}>
-            {sandboxStatus === 'running' && '● Sandbox'}
-            {sandboxStatus === 'creating' && '◌ Starting...'}
-            {sandboxStatus === 'error' && '✕ Sandbox err'}
-            {sandboxStatus === 'idle' && '○ No sandbox'}
+            {webcontainerReady && '⚡ Instant'}
+            {!webcontainerReady && sandboxStatus === 'creating' && '◌ Booting...'}
+            {!webcontainerReady && sandboxStatus === 'error' && '✕ Runtime err'}
+            {!webcontainerReady && sandboxStatus === 'idle' && '○ Local'}
           </span>
           {buildStatus !== 'idle' && (
             <span className={clsx(
