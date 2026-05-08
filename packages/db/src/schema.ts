@@ -365,10 +365,61 @@ export const passwordResetTokens = pgTable('password_reset_tokens', {
   userIdx: index('prt_user_idx').on(table.userId),
 }));
 
+// ─── User Connections (Integrations) ────────────────────────
+export const userConnections = pgTable('user_connections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider: varchar('provider', { length: 32 }).notNull(), // 'github_repo', 'cloudflare', 'vercel', 'netlify', 'supabase'
+  displayName: varchar('display_name', { length: 255 }),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
+  accountId: varchar('account_id', { length: 255 }),
+  metadata: jsonb('metadata').notNull().default('{}'),
+  connectedAt: timestamp('connected_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index('user_connections_user_idx').on(table.userId),
+  providerIdx: uniqueIndex('user_connections_provider_unique').on(table.userId, table.provider),
+}));
+
+// ─── Project Integrations ───────────────────────────────────
+export const projectIntegrations = pgTable('project_integrations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  provider: varchar('provider', { length: 32 }).notNull(),
+  connectionId: uuid('connection_id').references(() => userConnections.id, { onDelete: 'set null' }),
+  config: jsonb('config').notNull().default('{}'),
+  lastActionAt: timestamp('last_action_at', { withTimezone: true }),
+  lastActionResult: jsonb('last_action_result'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index('project_integrations_project_idx').on(table.projectId),
+  providerIdx: uniqueIndex('project_integrations_provider_unique').on(table.projectId, table.provider),
+  connectionIdx: index('project_integrations_connection_idx').on(table.connectionId),
+}));
+
+// ─── Project Environment Variables ──────────────────────────
+export const projectEnvVars = pgTable('project_env_vars', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  key: varchar('key', { length: 128 }).notNull(),
+  value: text('value').notNull(),
+  isSecret: boolean('is_secret').notNull().default(true),
+  description: varchar('description', { length: 255 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index('project_env_vars_project_idx').on(table.projectId),
+  uniqueKeyIdx: uniqueIndex('project_env_vars_unique').on(table.projectId, table.key),
+}));
+
 // ─── Relations ───────────────────────────────────────────────
 export const usersRelations = relations(users, ({ one, many }) => ({
   organization: one(organizations, { fields: [users.organizationId], references: [organizations.id] }),
   oauthAccounts: many(oauthAccounts),
+  connections: many(userConnections),
   projects: many(projects),
   refreshTokens: many(refreshTokens),
 }));
@@ -377,6 +428,19 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   members: many(orgMembers),
   projects: many(projects),
   subscriptions: many(subscriptions),
+}));
+
+export const userConnectionsRelations = relations(userConnections, ({ one }) => ({
+  user: one(users, { fields: [userConnections.userId], references: [users.id] }),
+}));
+
+export const projectIntegrationsRelations = relations(projectIntegrations, ({ one }) => ({
+  project: one(projects, { fields: [projectIntegrations.projectId], references: [projects.id] }),
+  connection: one(userConnections, { fields: [projectIntegrations.connectionId], references: [userConnections.id] }),
+}));
+
+export const projectEnvVarsRelations = relations(projectEnvVars, ({ one }) => ({
+  project: one(projects, { fields: [projectEnvVars.projectId], references: [projects.id] }),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -389,6 +453,8 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   conversations: many(aiConversations),
   customDomains: many(customDomains),
   previewSessions: many(previewSessions),
+  integrations: many(projectIntegrations),
+  envVars: many(projectEnvVars),
 }));
 
 export const projectFilesRelations = relations(projectFiles, ({ one }) => ({

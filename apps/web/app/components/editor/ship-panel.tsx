@@ -1,113 +1,169 @@
 // ============================================================
-// SimpleBuild Pro — Ship Panel
-// One place to push to GitHub, deploy to Cloudflare, download zip
+// SimpleBuild Pro — Ship Panel v2
+// Full integrations: GitHub OAuth, Cloudflare, Vercel, Netlify,
+// Supabase, Download, Environment Variables
 // ============================================================
 
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
 import { useEditorStore } from '@/lib/store';
-import { projectsApi } from '@/lib/api-client';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import clsx from 'clsx';
 import {
   X, Github, Cloud, Download, ExternalLink,
-  Check, AlertCircle, Loader2, FolderArchive,
-  GitBranch, RefreshCw, Link2, Unplug,
+  Check, Loader2, FolderArchive, GitBranch,
+  Link2, Unplug, ChevronDown, Plus, Trash2,
+  Eye, EyeOff, Key, Database, Triangle, Globe2,
+  RefreshCw, Search, Lock,
 } from 'lucide-react';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
 // ─── Types ──────────────────────────────────────────────────
-interface IntegrationSettings {
-  github?: {
-    connected: boolean;
-    repo?: string;
-    owner?: string;
-    branch?: string;
-    lastPush?: string;
-  };
-  cloudflare?: {
-    connected: boolean;
-    projectName?: string;
-    accountId?: string;
-    lastDeploy?: string;
-    liveUrl?: string;
-  };
+interface Connection {
+  id: string;
+  provider: string;
+  displayName: string;
+  accountId: string | null;
+  connectedAt: string;
+  metadata?: Record<string, any>;
 }
 
-type Tab = 'github' | 'cloudflare' | 'download';
+interface ProjectIntegration {
+  id: string;
+  provider: string;
+  connectionId: string | null;
+  config: Record<string, any>;
+  lastActionAt: string | null;
+  lastActionResult: Record<string, any> | null;
+}
+
+interface GithubRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  owner: string;
+  private: boolean;
+  defaultBranch: string;
+  description: string | null;
+  updatedAt: string;
+  htmlUrl: string;
+}
+
+interface EnvVar {
+  id: string;
+  key: string;
+  value: string;
+  isSecret: boolean;
+  description: string | null;
+  updatedAt: string;
+}
+
+type Tab = 'github' | 'cloudflare' | 'vercel' | 'netlify' | 'download' | 'env';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'github', label: 'GitHub', icon: <Github size={14} /> },
   { id: 'cloudflare', label: 'Cloudflare', icon: <Cloud size={14} /> },
+  { id: 'vercel', label: 'Vercel', icon: <Triangle size={14} /> },
+  { id: 'netlify', label: 'Netlify', icon: <Globe2 size={14} /> },
   { id: 'download', label: 'Download', icon: <Download size={14} /> },
+  { id: 'env', label: 'Secrets', icon: <Key size={14} /> },
 ];
 
 interface ShipPanelProps {
   onClose: () => void;
 }
 
+// ─── Helper: API fetch with auth ────────────────────────────
+async function shipFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const { getAccessToken } = await import('@/lib/api-client');
+  const token = getAccessToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  const json = await res.json();
+  if (!res.ok || json.success === false) {
+    throw new Error(json.error?.message || 'Request failed');
+  }
+  return json.data as T;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════
+
 export function ShipPanel({ onClose }: ShipPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('github');
-  const [settings, setSettings] = useState<IntegrationSettings>({});
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [integrations, setIntegrations] = useState<ProjectIntegration[]>([]);
   const [loading, setLoading] = useState(true);
 
   const project = useEditorStore((s) => s.project);
 
-  // Load settings on mount
   useEffect(() => {
     if (!project?.id) return;
-    loadSettings();
+    loadData();
   }, [project?.id]);
 
-  const loadSettings = async () => {
+  const loadData = async () => {
     if (!project?.id) return;
     setLoading(true);
     try {
-      const data = await projectsApi.getIntegrations(project.id);
-      setSettings(data);
+      const data = await shipFetch<{ integrations: ProjectIntegration[]; connections: Connection[] }>(
+        `/api/v1/projects/${project.id}/integrations`
+      );
+      setConnections(data.connections || []);
+      setIntegrations(data.integrations || []);
     } catch {
-      // No settings yet — that's fine
-      setSettings({});
+      // Fresh project — no integrations yet
+      try {
+        const connData = await shipFetch<Connection[]>('/api/v1/projects/connections');
+        setConnections(connData || []);
+      } catch { /* ignore */ }
     } finally {
       setLoading(false);
     }
   };
 
+  const getConnection = (provider: string) => connections.find(c => c.provider === provider);
+  const getIntegration = (provider: string) => integrations.find(i => i.provider === provider);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Panel */}
-      <div className="relative w-full max-w-2xl bg-[#1E1E1E] rounded-2xl shadow-2xl border border-white/10 overflow-hidden animate-slide-up">
+      <div className="relative w-full max-w-3xl bg-[#1E1E1E] rounded-2xl shadow-2xl border border-white/10 overflow-hidden animate-slide-up max-h-[85vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-brand-600/20 flex items-center justify-center">
               <FolderArchive size={16} className="text-brand-400" />
             </div>
             <div>
               <h2 className="text-base font-semibold text-white">Ship It</h2>
-              <p className="text-xs text-slate-400">Push, deploy, or download your project</p>
+              <p className="text-xs text-slate-400">Connect, deploy, and download your project</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-          >
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
             <X size={16} />
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-white/10 px-6">
+        {/* Tabs — scrollable */}
+        <div className="flex border-b border-white/10 px-4 overflow-x-auto shrink-0">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={clsx(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px',
+                'flex items-center gap-1.5 px-3 py-3 text-xs font-medium border-b-2 transition-colors -mb-px whitespace-nowrap',
                 activeTab === tab.id
                   ? 'border-brand-500 text-brand-400'
                   : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-white/20',
@@ -115,12 +171,19 @@ export function ShipPanel({ onClose }: ShipPanelProps) {
             >
               {tab.icon}
               {tab.label}
+              {/* Show connected indicator */}
+              {(tab.id === 'github' && getConnection('github_repo')) ||
+               (tab.id === 'cloudflare' && getConnection('cloudflare')) ||
+               (tab.id === 'vercel' && getConnection('vercel')) ||
+               (tab.id === 'netlify' && getConnection('netlify')) ? (
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+              ) : null}
             </button>
           ))}
         </div>
 
         {/* Content */}
-        <div className="p-6 min-h-[320px]">
+        <div className="p-6 overflow-y-auto flex-1">
           {loading ? (
             <div className="flex items-center justify-center h-48">
               <Loader2 size={24} className="animate-spin text-slate-400" />
@@ -130,20 +193,37 @@ export function ShipPanel({ onClose }: ShipPanelProps) {
               {activeTab === 'github' && (
                 <GitHubTab
                   projectId={project?.id || ''}
-                  settings={settings.github}
-                  onRefresh={loadSettings}
+                  connection={getConnection('github_repo')}
+                  integration={getIntegration('github')}
+                  onRefresh={loadData}
                 />
               )}
               {activeTab === 'cloudflare' && (
                 <CloudflareTab
                   projectId={project?.id || ''}
-                  settings={settings.cloudflare}
-                  onRefresh={loadSettings}
+                  connection={getConnection('cloudflare')}
+                  integration={getIntegration('cloudflare')}
+                  onRefresh={loadData}
                 />
               )}
-              {activeTab === 'download' && (
-                <DownloadTab projectId={project?.id || ''} />
+              {activeTab === 'vercel' && (
+                <VercelTab
+                  projectId={project?.id || ''}
+                  connection={getConnection('vercel')}
+                  integration={getIntegration('vercel')}
+                  onRefresh={loadData}
+                />
               )}
+              {activeTab === 'netlify' && (
+                <NetlifyTab
+                  projectId={project?.id || ''}
+                  connection={getConnection('netlify')}
+                  integration={getIntegration('netlify')}
+                  onRefresh={loadData}
+                />
+              )}
+              {activeTab === 'download' && <DownloadTab projectId={project?.id || ''} />}
+              {activeTab === 'env' && <EnvVarsTab projectId={project?.id || ''} />}
             </>
           )}
         </div>
@@ -152,56 +232,80 @@ export function ShipPanel({ onClose }: ShipPanelProps) {
   );
 }
 
-// ─── GitHub Tab ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// GITHUB TAB — OAuth connect + repo picker + push
+// ═══════════════════════════════════════════════════════════════
+
 function GitHubTab({
   projectId,
-  settings,
+  connection,
+  integration,
   onRefresh,
 }: {
   projectId: string;
-  settings?: IntegrationSettings['github'];
+  connection?: Connection;
+  integration?: ProjectIntegration;
   onRefresh: () => void;
 }) {
-  const [repo, setRepo] = useState(settings?.repo || '');
-  const [owner, setOwner] = useState(settings?.owner || '');
-  const [branch, setBranch] = useState(settings?.branch || 'main');
-  const [pushing, setPushing] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [repos, setRepos] = useState<GithubRepo[]>([]);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [selectedRepo, setSelectedRepo] = useState(integration?.config?.repo || '');
+  const [branch, setBranch] = useState(integration?.config?.branch || 'main');
   const [commitMsg, setCommitMsg] = useState('');
+  const [pushing, setPushing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showRepoList, setShowRepoList] = useState(false);
 
-  const handleSaveConnection = async () => {
-    if (!owner.trim() || !repo.trim()) {
-      toast('error', 'Enter both owner and repo name');
-      return;
-    }
-    setSaving(true);
+  useEffect(() => {
+    if (connection) loadRepos();
+  }, [connection]);
+
+  const loadRepos = async () => {
+    setLoadingRepos(true);
     try {
-      await projectsApi.saveIntegrations(projectId, {
-        github: { owner: owner.trim(), repo: repo.trim(), branch: branch.trim() || 'main', connected: true },
-      });
-      toast('success', 'GitHub connection saved');
+      const data = await shipFetch<GithubRepo[]>('/api/v1/projects/connect/github/repos');
+      setRepos(data);
+    } catch (err: any) {
+      toast('error', 'Failed to load repos', err.message);
+    } finally {
+      setLoadingRepos(false);
+    }
+  };
+
+  const handleConnect = () => {
+    // Redirect to OAuth flow
+    window.location.href = `${API_BASE}/api/v1/projects/connect/github`;
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await shipFetch('/api/v1/projects/connections/github_repo', { method: 'DELETE' });
+      toast('success', 'GitHub disconnected');
       onRefresh();
     } catch (err: any) {
-      toast('error', 'Failed to save', err.message);
-    } finally {
-      setSaving(false);
+      toast('error', 'Failed to disconnect', err.message);
     }
   };
 
   const handlePush = async () => {
-    if (!owner || !repo) {
-      toast('error', 'Connect a repo first');
+    if (!selectedRepo) {
+      toast('error', 'Select a repository first');
       return;
     }
     setPushing(true);
     try {
-      const result = await projectsApi.pushToGithub(projectId, {
-        owner,
-        repo,
-        branch: branch || 'main',
-        commitMessage: commitMsg || `Update from SimpleBuild Pro Studio`,
-      });
-      toast('success', 'Pushed to GitHub!', `${(result as any).filesCount || ''} files → ${owner}/${repo}`);
+      const result = await shipFetch<{ status: string; commitSha: string; filesCount: number; url: string }>(
+        `/api/v1/projects/${projectId}/github/push`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            repo: selectedRepo,
+            branch: branch || 'main',
+            commitMessage: commitMsg || 'Update from SimpleBuild Pro Studio',
+          }),
+        }
+      );
+      toast('success', 'Pushed to GitHub!', `${result.filesCount} files → ${selectedRepo}`);
       setCommitMsg('');
       onRefresh();
     } catch (err: any) {
@@ -211,179 +315,229 @@ function GitHubTab({
     }
   };
 
+  const filteredRepos = repos.filter(r =>
+    r.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    r.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Not connected — show connect button
+  if (!connection) {
+    return (
+      <div className="space-y-5">
+        <div className="p-5 rounded-xl bg-slate-500/10 border border-white/10 text-center">
+          <Github size={32} className="mx-auto text-slate-400 mb-3" />
+          <p className="text-sm text-slate-300 mb-1">Connect your GitHub account</p>
+          <p className="text-xs text-slate-500 mb-4">Push project files to any repository you have access to.</p>
+          <Button onClick={handleConnect} icon={<Github size={14} />}>
+            Connect GitHub
+          </Button>
+        </div>
+        <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/10">
+          <p className="text-2xs text-blue-300">
+            We'll request <code className="bg-white/5 px-1 rounded">repo</code> scope to push code.
+            Your token is encrypted and stored securely. You can disconnect at any time.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Connected — show repo picker + push
+  return (
+    <div className="space-y-5">
+      {/* Connected badge */}
+      <div className="flex items-center justify-between p-3 rounded-xl bg-green-500/10 border border-green-500/20">
+        <div className="flex items-center gap-2">
+          <Check size={14} className="text-green-400" />
+          <span className="text-sm text-green-300">Connected as <strong>{connection.displayName}</strong></span>
+        </div>
+        <button onClick={handleDisconnect} className="text-xs text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1">
+          <Unplug size={12} /> Disconnect
+        </button>
+      </div>
+
+      {/* Repo picker */}
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1.5">Repository</label>
+        <div className="relative">
+          <button
+            onClick={() => setShowRepoList(!showRepoList)}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white hover:border-white/20 transition-colors"
+          >
+            <span className={selectedRepo ? 'text-white' : 'text-slate-500'}>
+              {selectedRepo || 'Select a repository...'}
+            </span>
+            <ChevronDown size={14} className="text-slate-400" />
+          </button>
+
+          {showRepoList && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-[#2D2D2D] border border-white/10 rounded-lg shadow-xl z-10 max-h-60 overflow-hidden flex flex-col">
+              <div className="p-2 border-b border-white/5">
+                <div className="relative">
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search repos..."
+                    className="w-full pl-7 pr-3 py-1.5 rounded bg-white/5 border border-white/5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500/50"
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <div className="overflow-y-auto max-h-48">
+                {loadingRepos ? (
+                  <div className="p-4 text-center">
+                    <Loader2 size={16} className="animate-spin text-slate-400 mx-auto" />
+                  </div>
+                ) : filteredRepos.length === 0 ? (
+                  <p className="p-3 text-xs text-slate-500 text-center">No repos found</p>
+                ) : (
+                  filteredRepos.map(repo => (
+                    <button
+                      key={repo.id}
+                      onClick={() => {
+                        setSelectedRepo(repo.fullName);
+                        setBranch(repo.defaultBranch);
+                        setShowRepoList(false);
+                      }}
+                      className={clsx(
+                        'w-full px-3 py-2 text-left hover:bg-white/5 flex items-center justify-between',
+                        selectedRepo === repo.fullName && 'bg-brand-500/10',
+                      )}
+                    >
+                      <div>
+                        <p className="text-xs text-white">{repo.fullName}</p>
+                        {repo.description && <p className="text-2xs text-slate-500 truncate max-w-[280px]">{repo.description}</p>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {repo.private && <Lock size={10} className="text-slate-500" />}
+                        {selectedRepo === repo.fullName && <Check size={12} className="text-brand-400" />}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Branch */}
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1.5">Branch</label>
+        <div className="flex items-center gap-2">
+          <GitBranch size={14} className="text-slate-500" />
+          <input
+            type="text"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            placeholder="main"
+            className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+          />
+        </div>
+      </div>
+
+      {/* Commit message */}
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1.5">Commit message (optional)</label>
+        <input
+          type="text"
+          value={commitMsg}
+          onChange={(e) => setCommitMsg(e.target.value)}
+          placeholder="Update from SimpleBuild Pro Studio"
+          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+        />
+      </div>
+
+      {/* Last push info */}
+      {integration?.lastActionResult?.url && (
+        <a
+          href={integration.lastActionResult.url as string}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300"
+        >
+          <ExternalLink size={12} />
+          {integration.lastActionResult.url as string}
+          {integration.lastActionAt && (
+            <span className="text-slate-500 ml-auto">{new Date(integration.lastActionAt).toLocaleDateString()}</span>
+          )}
+        </a>
+      )}
+
+      {/* Push button */}
+      <Button onClick={handlePush} loading={pushing} icon={<Github size={14} />} className="w-full">
+        Push to GitHub
+      </Button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CLOUDFLARE TAB — Guided token setup + deploy
+// ═══════════════════════════════════════════════════════════════
+
+function CloudflareTab({
+  projectId,
+  connection,
+  integration,
+  onRefresh,
+}: {
+  projectId: string;
+  connection?: Connection;
+  integration?: ProjectIntegration;
+  onRefresh: () => void;
+}) {
+  const [apiToken, setApiToken] = useState('');
+  const [accountId, setAccountId] = useState('');
+  const [projectName, setProjectName] = useState(integration?.config?.projectName || '');
+  const [connecting, setConnecting] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+
+  const handleConnect = async () => {
+    if (!apiToken.trim()) {
+      toast('error', 'Paste your Cloudflare API token');
+      return;
+    }
+    setConnecting(true);
+    try {
+      await shipFetch('/api/v1/projects/connect/cloudflare', {
+        method: 'POST',
+        body: JSON.stringify({ apiToken: apiToken.trim(), accountId: accountId.trim() || undefined }),
+      });
+      toast('success', 'Cloudflare connected!');
+      setApiToken('');
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Connection failed', err.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   const handleDisconnect = async () => {
     try {
-      await projectsApi.saveIntegrations(projectId, { github: { connected: false } });
-      setRepo('');
-      setOwner('');
-      setBranch('main');
-      toast('success', 'GitHub disconnected');
+      await shipFetch('/api/v1/projects/connections/cloudflare', { method: 'DELETE' });
+      toast('success', 'Cloudflare disconnected');
       onRefresh();
     } catch (err: any) {
       toast('error', 'Failed', err.message);
     }
   };
 
-  if (settings?.connected) {
-    return (
-      <div className="space-y-5">
-        {/* Connected state */}
-        <div className="flex items-start justify-between p-4 rounded-xl bg-green-500/10 border border-green-500/20">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
-              <Check size={14} className="text-green-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-green-300">Connected to GitHub</p>
-              <a
-                href={`https://github.com/${settings.owner}/${settings.repo}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-green-400/70 hover:text-green-300 flex items-center gap-1"
-              >
-                {settings.owner}/{settings.repo}
-                <ExternalLink size={10} />
-              </a>
-            </div>
-          </div>
-          <button
-            onClick={handleDisconnect}
-            className="p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-            title="Disconnect"
-          >
-            <Unplug size={14} />
-          </button>
-        </div>
-
-        {/* Branch info */}
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <GitBranch size={12} />
-          <span>Branch: <code className="bg-white/5 px-1.5 py-0.5 rounded text-slate-300">{settings.branch || 'main'}</code></span>
-          {settings.lastPush && (
-            <span className="ml-auto">Last push: {new Date(settings.lastPush).toLocaleDateString()}</span>
-          )}
-        </div>
-
-        {/* Push form */}
-        <div className="space-y-3">
-          <label className="block text-xs font-medium text-slate-300">Commit message (optional)</label>
-          <input
-            type="text"
-            value={commitMsg}
-            onChange={(e) => setCommitMsg(e.target.value)}
-            placeholder="Update from SimpleBuild Pro Studio"
-            className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500/50"
-          />
-          <Button
-            onClick={handlePush}
-            loading={pushing}
-            icon={<Github size={14} />}
-            className="w-full"
-          >
-            Push to GitHub
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Disconnected state — setup form
-  return (
-    <div className="space-y-5">
-      <div className="p-4 rounded-xl bg-slate-500/10 border border-white/10">
-        <p className="text-sm text-slate-300 mb-1">Connect a GitHub repository</p>
-        <p className="text-xs text-slate-500">Push your project files to any GitHub repo you have access to.</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1.5">Owner / Org</label>
-          <input
-            type="text"
-            value={owner}
-            onChange={(e) => setOwner(e.target.value)}
-            placeholder="gary790"
-            className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1.5">Repository</label>
-          <input
-            type="text"
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-            placeholder="my-website"
-            className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1.5">Branch</label>
-        <input
-          type="text"
-          value={branch}
-          onChange={(e) => setBranch(e.target.value)}
-          placeholder="main"
-          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
-        />
-      </div>
-
-      <Button
-        onClick={handleSaveConnection}
-        loading={saving}
-        icon={<Link2 size={14} />}
-        className="w-full"
-      >
-        Connect Repository
-      </Button>
-    </div>
-  );
-}
-
-// ─── Cloudflare Tab ─────────────────────────────────────────
-function CloudflareTab({
-  projectId,
-  settings,
-  onRefresh,
-}: {
-  projectId: string;
-  settings?: IntegrationSettings['cloudflare'];
-  onRefresh: () => void;
-}) {
-  const [projectName, setProjectName] = useState(settings?.projectName || '');
-  const [accountId, setAccountId] = useState(settings?.accountId || '');
-  const [deploying, setDeploying] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const handleSaveConnection = async () => {
+  const handleDeploy = async () => {
     if (!projectName.trim()) {
-      toast('error', 'Enter a Cloudflare Pages project name');
+      toast('error', 'Enter a Pages project name');
       return;
     }
-    setSaving(true);
-    try {
-      await projectsApi.saveIntegrations(projectId, {
-        cloudflare: {
-          projectName: projectName.trim(),
-          accountId: accountId.trim() || undefined,
-          connected: true,
-        },
-      });
-      toast('success', 'Cloudflare connection saved');
-      onRefresh();
-    } catch (err: any) {
-      toast('error', 'Failed to save', err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDeploy = async () => {
     setDeploying(true);
     try {
-      const result = await projectsApi.deployToCloudflare(projectId);
-      toast('success', 'Deployed to Cloudflare!', (result as any).url || '');
+      const result = await shipFetch<{ status: string; url: string; filesCount: number }>(
+        `/api/v1/projects/${projectId}/cloudflare/deploy`,
+        { method: 'POST', body: JSON.stringify({ projectName: projectName.trim() }) }
+      );
+      toast('success', 'Deployed to Cloudflare!', result.url);
       onRefresh();
     } catch (err: any) {
       toast('error', 'Deploy failed', err.message);
@@ -392,79 +546,68 @@ function CloudflareTab({
     }
   };
 
-  const handleDisconnect = async () => {
-    try {
-      await projectsApi.saveIntegrations(projectId, { cloudflare: { connected: false } });
-      setProjectName('');
-      setAccountId('');
-      toast('success', 'Cloudflare disconnected');
-      onRefresh();
-    } catch (err: any) {
-      toast('error', 'Failed', err.message);
-    }
-  };
-
-  if (settings?.connected) {
+  if (!connection) {
     return (
       <div className="space-y-5">
-        {/* Connected state */}
-        <div className="flex items-start justify-between p-4 rounded-xl bg-orange-500/10 border border-orange-500/20">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center">
-              <Cloud size={14} className="text-orange-400" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-orange-300">Connected to Cloudflare Pages</p>
-              <p className="text-xs text-orange-400/70">Project: {settings.projectName}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleDisconnect}
-            className="p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-            title="Disconnect"
-          >
-            <Unplug size={14} />
-          </button>
+        <div className="p-5 rounded-xl bg-slate-500/10 border border-white/10">
+          <Cloud size={28} className="text-orange-400 mb-3" />
+          <p className="text-sm text-slate-300 mb-1">Connect Cloudflare Pages</p>
+          <p className="text-xs text-slate-500 mb-4">Deploy to Cloudflare's global edge network.</p>
         </div>
 
-        {settings.liveUrl && (
-          <a
-            href={settings.liveUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300"
-          >
-            <ExternalLink size={12} />
-            {settings.liveUrl}
-          </a>
-        )}
+        {/* Step-by-step guide */}
+        <div className="p-4 rounded-xl bg-orange-500/5 border border-orange-500/10 space-y-3">
+          <p className="text-xs font-medium text-orange-300">Create a scoped API token:</p>
+          <ol className="text-2xs text-slate-400 space-y-1.5 list-decimal list-inside">
+            <li>Go to <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Cloudflare API Tokens page</a></li>
+            <li>Click "Create Token"</li>
+            <li>Use the <strong>"Edit Cloudflare Pages"</strong> template</li>
+            <li>Set account scope to your account</li>
+            <li>Create token and paste it below</li>
+          </ol>
+        </div>
 
-        {settings.lastDeploy && (
-          <p className="text-xs text-slate-500">Last deploy: {new Date(settings.lastDeploy).toLocaleString()}</p>
-        )}
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">API Token</label>
+          <input
+            type="password"
+            value={apiToken}
+            onChange={(e) => setApiToken(e.target.value)}
+            placeholder="Paste your Cloudflare API token"
+            className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+          />
+        </div>
 
-        <Button
-          onClick={handleDeploy}
-          loading={deploying}
-          icon={<Cloud size={14} />}
-          className="w-full"
-        >
-          Deploy to Cloudflare Pages
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">Account ID (optional — auto-detected)</label>
+          <input
+            type="text"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            placeholder="Auto-detected from token"
+            className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+          />
+        </div>
+
+        <Button onClick={handleConnect} loading={connecting} icon={<Link2 size={14} />} className="w-full">
+          Connect Cloudflare
         </Button>
-
-        <p className="text-2xs text-slate-500 text-center">
-          Deploys current project files to {settings.projectName}.pages.dev
-        </p>
       </div>
     );
   }
 
-  // Setup form
+  // Connected — deploy form
   return (
     <div className="space-y-5">
-      <div className="p-4 rounded-xl bg-slate-500/10 border border-white/10">
-        <p className="text-sm text-slate-300 mb-1">Connect to Cloudflare Pages</p>
-        <p className="text-xs text-slate-500">Deploy your project to Cloudflare's global edge network with one click.</p>
+      <div className="flex items-center justify-between p-3 rounded-xl bg-orange-500/10 border border-orange-500/20">
+        <div className="flex items-center gap-2">
+          <Check size={14} className="text-orange-400" />
+          <span className="text-sm text-orange-300">Cloudflare connected</span>
+          {connection.accountId && <span className="text-2xs text-slate-500">({connection.accountId.slice(0, 8)}...)</span>}
+        </div>
+        <button onClick={handleDisconnect} className="text-xs text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1">
+          <Unplug size={12} /> Disconnect
+        </button>
       </div>
 
       <div>
@@ -476,53 +619,241 @@ function CloudflareTab({
           placeholder="my-website"
           className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
         />
-        <p className="text-2xs text-slate-500 mt-1">Will be deployed to <code>{projectName || 'my-website'}.pages.dev</code></p>
+        <p className="text-2xs text-slate-500 mt-1">Deploys to <code>{projectName || 'my-website'}.pages.dev</code></p>
       </div>
 
-      <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1.5">Account ID (optional)</label>
-        <input
-          type="text"
-          value={accountId}
-          onChange={(e) => setAccountId(e.target.value)}
-          placeholder="Your Cloudflare Account ID"
-          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
-        />
-        <p className="text-2xs text-slate-500 mt-1">Found in Cloudflare Dashboard → Overview → right sidebar</p>
-      </div>
+      {integration?.lastActionResult?.url && (
+        <a href={integration.lastActionResult.url as string} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300">
+          <ExternalLink size={12} /> {integration.lastActionResult.url as string}
+        </a>
+      )}
 
-      <Button
-        onClick={handleSaveConnection}
-        loading={saving}
-        icon={<Link2 size={14} />}
-        className="w-full"
-      >
-        Connect to Cloudflare
+      <Button onClick={handleDeploy} loading={deploying} icon={<Cloud size={14} />} className="w-full">
+        Deploy to Cloudflare Pages
       </Button>
     </div>
   );
 }
 
-// ─── Download Tab ───────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// VERCEL TAB — OAuth connect + deploy
+// ═══════════════════════════════════════════════════════════════
+
+function VercelTab({
+  projectId,
+  connection,
+  integration,
+  onRefresh,
+}: {
+  projectId: string;
+  connection?: Connection;
+  integration?: ProjectIntegration;
+  onRefresh: () => void;
+}) {
+  const [projectName, setProjectName] = useState(integration?.config?.projectName || '');
+  const [deploying, setDeploying] = useState(false);
+
+  const handleConnect = () => {
+    window.location.href = `${API_BASE}/api/v1/projects/connect/vercel`;
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await shipFetch('/api/v1/projects/connections/vercel', { method: 'DELETE' });
+      toast('success', 'Vercel disconnected');
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Failed', err.message);
+    }
+  };
+
+  const handleDeploy = async () => {
+    if (!projectName.trim()) { toast('error', 'Enter a project name'); return; }
+    setDeploying(true);
+    try {
+      const result = await shipFetch<{ status: string; url: string }>(
+        `/api/v1/projects/${projectId}/vercel/deploy`,
+        { method: 'POST', body: JSON.stringify({ projectName: projectName.trim() }) }
+      );
+      toast('success', 'Deployed to Vercel!', result.url);
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Deploy failed', err.message);
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  if (!connection) {
+    return (
+      <div className="space-y-5">
+        <div className="p-5 rounded-xl bg-slate-500/10 border border-white/10 text-center">
+          <Triangle size={28} className="mx-auto text-slate-400 mb-3" />
+          <p className="text-sm text-slate-300 mb-1">Connect Vercel</p>
+          <p className="text-xs text-slate-500 mb-4">Deploy to Vercel's edge platform with one click.</p>
+          <Button onClick={handleConnect} icon={<Triangle size={14} />}>
+            Connect Vercel
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between p-3 rounded-xl bg-slate-500/10 border border-white/20">
+        <div className="flex items-center gap-2">
+          <Check size={14} className="text-green-400" />
+          <span className="text-sm text-slate-300">Connected as <strong>{connection.displayName}</strong></span>
+        </div>
+        <button onClick={handleDisconnect} className="text-xs text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1">
+          <Unplug size={12} /> Disconnect
+        </button>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1.5">Project Name</label>
+        <input type="text" value={projectName} onChange={(e) => setProjectName(e.target.value)}
+          placeholder="my-website"
+          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50" />
+      </div>
+
+      {integration?.lastActionResult?.url && (
+        <a href={integration.lastActionResult.url as string} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300">
+          <ExternalLink size={12} /> {integration.lastActionResult.url as string}
+        </a>
+      )}
+
+      <Button onClick={handleDeploy} loading={deploying} icon={<Triangle size={14} />} className="w-full">
+        Deploy to Vercel
+      </Button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NETLIFY TAB — OAuth connect + deploy
+// ═══════════════════════════════════════════════════════════════
+
+function NetlifyTab({
+  projectId,
+  connection,
+  integration,
+  onRefresh,
+}: {
+  projectId: string;
+  connection?: Connection;
+  integration?: ProjectIntegration;
+  onRefresh: () => void;
+}) {
+  const [siteName, setSiteName] = useState(integration?.config?.siteName || '');
+  const [deploying, setDeploying] = useState(false);
+
+  const handleConnect = () => {
+    window.location.href = `${API_BASE}/api/v1/projects/connect/netlify`;
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await shipFetch('/api/v1/projects/connections/netlify', { method: 'DELETE' });
+      toast('success', 'Netlify disconnected');
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Failed', err.message);
+    }
+  };
+
+  const handleDeploy = async () => {
+    if (!siteName.trim()) { toast('error', 'Enter a site name'); return; }
+    setDeploying(true);
+    try {
+      const result = await shipFetch<{ status: string; url: string }>(
+        `/api/v1/projects/${projectId}/netlify/deploy`,
+        { method: 'POST', body: JSON.stringify({ siteName: siteName.trim() }) }
+      );
+      toast('success', 'Deployed to Netlify!', result.url);
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Deploy failed', err.message);
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  if (!connection) {
+    return (
+      <div className="space-y-5">
+        <div className="p-5 rounded-xl bg-slate-500/10 border border-white/10 text-center">
+          <Globe2 size={28} className="mx-auto text-teal-400 mb-3" />
+          <p className="text-sm text-slate-300 mb-1">Connect Netlify</p>
+          <p className="text-xs text-slate-500 mb-4">Deploy to Netlify with one click.</p>
+          <Button onClick={handleConnect} icon={<Globe2 size={14} />}>
+            Connect Netlify
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between p-3 rounded-xl bg-teal-500/10 border border-teal-500/20">
+        <div className="flex items-center gap-2">
+          <Check size={14} className="text-teal-400" />
+          <span className="text-sm text-teal-300">Connected as <strong>{connection.displayName}</strong></span>
+        </div>
+        <button onClick={handleDisconnect} className="text-xs text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1">
+          <Unplug size={12} /> Disconnect
+        </button>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1.5">Site Name</label>
+        <input type="text" value={siteName} onChange={(e) => setSiteName(e.target.value)}
+          placeholder="my-website"
+          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50" />
+        <p className="text-2xs text-slate-500 mt-1">Deploys to <code>{siteName || 'my-website'}.netlify.app</code></p>
+      </div>
+
+      {integration?.lastActionResult?.url && (
+        <a href={integration.lastActionResult.url as string} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300">
+          <ExternalLink size={12} /> {integration.lastActionResult.url as string}
+        </a>
+      )}
+
+      <Button onClick={handleDeploy} loading={deploying} icon={<Globe2 size={14} />} className="w-full">
+        Deploy to Netlify
+      </Button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOWNLOAD TAB
+// ═══════════════════════════════════════════════════════════════
+
 function DownloadTab({ projectId }: { projectId: string }) {
   const [downloading, setDownloading] = useState(false);
   const files = useEditorStore((s) => s.files);
   const project = useEditorStore((s) => s.project);
 
-  const handleDownloadZip = async () => {
+  const handleDownload = async () => {
     setDownloading(true);
     try {
-      const result = await projectsApi.exportZip(projectId) as any;
+      const result = await shipFetch<{ format: string; filesCount: number; files: { path: string; content: string }[] }>(
+        `/api/v1/projects/${projectId}/export`,
+        { method: 'POST' }
+      );
 
       if (result.format === 'json-files' && result.files) {
-        // Client-side zip generation using JSZip
         const JSZip = (await import('jszip')).default;
         const zip = new JSZip();
-
         for (const file of result.files) {
           zip.file(file.path, file.content || '');
         }
-
         const blob = await zip.generateAsync({ type: 'blob' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -533,11 +864,6 @@ function DownloadTab({ projectId }: { projectId: string }) {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         toast('success', 'Download started', `${result.filesCount} files`);
-      } else if (result.downloadUrl) {
-        window.open(result.downloadUrl, '_blank');
-        toast('success', 'Download started');
-      } else {
-        toast('error', 'No download URL returned');
       }
     } catch (err: any) {
       toast('error', 'Export failed', err.message);
@@ -546,24 +872,13 @@ function DownloadTab({ projectId }: { projectId: string }) {
     }
   };
 
-  const handleClientDownload = () => {
-    const fileEntries = Array.from(files.entries());
-    if (fileEntries.length === 0) {
-      toast('error', 'No files to download');
-      return;
-    }
-    // Always use the API export which returns file contents for client-side zip
-    handleDownloadZip();
-  };
-
   return (
     <div className="space-y-5">
       <div className="p-4 rounded-xl bg-slate-500/10 border border-white/10">
         <p className="text-sm text-slate-300 mb-1">Download your project</p>
-        <p className="text-xs text-slate-500">Get a .zip file with all your project files — ready to open anywhere.</p>
+        <p className="text-xs text-slate-500">Get a .zip file with all your project files.</p>
       </div>
 
-      {/* File summary */}
       <div className="p-4 rounded-xl bg-white/5 border border-white/5">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-medium text-slate-300">Project files</span>
@@ -579,18 +894,153 @@ function DownloadTab({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <Button
-        onClick={handleClientDownload}
-        loading={downloading}
-        icon={<FolderArchive size={14} />}
-        className="w-full"
-      >
+      <Button onClick={handleDownload} loading={downloading} icon={<FolderArchive size={14} />} className="w-full">
         Download as .zip
       </Button>
+    </div>
+  );
+}
 
-      <p className="text-2xs text-slate-500 text-center">
-        Includes all project files in their original folder structure
-      </p>
+// ═══════════════════════════════════════════════════════════════
+// ENV VARS TAB — Secrets manager
+// ═══════════════════════════════════════════════════════════════
+
+function EnvVarsTab({ projectId }: { projectId: string }) {
+  const [vars, setVars] = useState<EnvVar[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [isSecret, setIsSecret] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showValues, setShowValues] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    loadVars();
+  }, [projectId]);
+
+  const loadVars = async () => {
+    setLoading(true);
+    try {
+      const data = await shipFetch<EnvVar[]>(`/api/v1/projects/${projectId}/env`);
+      setVars(data);
+    } catch { /* empty */ } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdd = async () => {
+    if (!newKey.trim() || !newValue.trim()) {
+      toast('error', 'Enter a key and value');
+      return;
+    }
+    setSaving(true);
+    try {
+      await shipFetch(`/api/v1/projects/${projectId}/env`, {
+        method: 'POST',
+        body: JSON.stringify({ key: newKey.trim(), value: newValue.trim(), isSecret, description: newDesc.trim() || undefined }),
+      });
+      toast('success', `${newKey} saved`);
+      setNewKey('');
+      setNewValue('');
+      setNewDesc('');
+      loadVars();
+    } catch (err: any) {
+      toast('error', 'Failed to save', err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (key: string) => {
+    try {
+      await shipFetch(`/api/v1/projects/${projectId}/env/${key}`, { method: 'DELETE' });
+      toast('success', `${key} deleted`);
+      loadVars();
+    } catch (err: any) {
+      toast('error', 'Failed', err.message);
+    }
+  };
+
+  const toggleShow = (id: string) => {
+    setShowValues(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="p-4 rounded-xl bg-slate-500/10 border border-white/10">
+        <p className="text-sm text-slate-300 mb-1">Environment Variables & Secrets</p>
+        <p className="text-xs text-slate-500">Store API keys (Stripe, Resend, etc.) for your project. Secrets are encrypted at rest.</p>
+      </div>
+
+      {/* Existing vars */}
+      {loading ? (
+        <Loader2 size={16} className="animate-spin text-slate-400 mx-auto" />
+      ) : vars.length > 0 ? (
+        <div className="space-y-2">
+          {vars.map(v => (
+            <div key={v.id} className="flex items-center gap-2 p-2.5 rounded-lg bg-white/5 border border-white/5">
+              <Key size={12} className="text-slate-500 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-mono text-slate-300">{v.key}</p>
+                <p className="text-2xs text-slate-500 truncate">
+                  {showValues.has(v.id) ? v.value : '••••••••'}
+                </p>
+              </div>
+              <button onClick={() => toggleShow(v.id)} className="p-1 text-slate-500 hover:text-slate-300">
+                {showValues.has(v.id) ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
+              <button onClick={() => handleDelete(v.key)} className="p-1 text-slate-500 hover:text-red-400">
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-slate-500 text-center py-4">No environment variables set yet.</p>
+      )}
+
+      {/* Add new */}
+      <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-3">
+        <p className="text-xs font-medium text-slate-300">Add variable</p>
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            type="text"
+            value={newKey}
+            onChange={(e) => setNewKey(e.target.value.toUpperCase())}
+            placeholder="STRIPE_SECRET_KEY"
+            className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-brand-500/50"
+          />
+          <input
+            type={isSecret ? 'password' : 'text'}
+            value={newValue}
+            onChange={(e) => setNewValue(e.target.value)}
+            placeholder="sk_live_..."
+            className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-brand-500/50"
+          />
+        </div>
+        <input
+          type="text"
+          value={newDesc}
+          onChange={(e) => setNewDesc(e.target.value)}
+          placeholder="Description (optional)"
+          className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-brand-500/50"
+        />
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+            <input type="checkbox" checked={isSecret} onChange={(e) => setIsSecret(e.target.checked)}
+              className="rounded border-slate-600" />
+            Encrypt value (secret)
+          </label>
+          <Button size="xs" onClick={handleAdd} loading={saving} icon={<Plus size={12} />}>
+            Add
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
