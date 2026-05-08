@@ -1334,12 +1334,25 @@ aiRoutes.post('/chat/stream', async (c) => {
     },
   });
 
+  // Must include CORS headers — raw Response bypasses Hono's cors() middleware
+  const origin = c.req.header('Origin') || '';
+  const allowedOrigins = [
+    'https://simplebuildpro.com',
+    'https://www.simplebuildpro.com',
+    'https://app.simplebuildpro.com',
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ];
+  const corsOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[2];
+
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Conversation-Id': convId,
+      'Access-Control-Allow-Origin': corsOrigin,
+      'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Expose-Headers': 'X-Conversation-Id',
     },
   });
