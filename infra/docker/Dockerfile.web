@@ -26,6 +26,8 @@ COPY apps/web/ apps/web/
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV NEXT_PUBLIC_API_URL=https://api.simplebuildpro.com
+ENV NEXT_PUBLIC_APP_URL=https://app.simplebuildpro.com
 
 RUN npm run build --workspace=apps/web
 
