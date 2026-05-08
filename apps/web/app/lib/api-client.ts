@@ -266,7 +266,7 @@ export const aiApi = {
   streamMessage: async (
     data: { projectId: string; conversationId?: string; message: string },
     onToken: (token: string) => void,
-    onComplete: () => void,
+    onComplete: (meta?: { conversationId?: string; appliedFiles?: boolean }) => void,
     onError: (error: string) => void,
   ) => {
     const url = `${API_BASE}/api/v1/ai/chat/stream`;
@@ -280,13 +280,21 @@ export const aiApi = {
     });
 
     if (!res.ok || !res.body) {
-      onError('Failed to connect to AI service.');
+      const errJson = await res.json().catch(() => null);
+      onError(errJson?.error?.message || 'Failed to connect to AI service.');
       return;
     }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let meta: { conversationId?: string; appliedFiles?: boolean } = {};
+
+    // Get conversationId from response header
+    const headerConvId = res.headers.get('X-Conversation-Id');
+    if (headerConvId && headerConvId !== 'new') {
+      meta.conversationId = headerConvId;
+    }
 
     while (true) {
       const { done, value } = await reader.read();
@@ -298,15 +306,20 @@ export const aiApi = {
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
-          const eventData = line.slice(6);
+          const eventData = line.slice(6).trim();
           if (eventData === '[DONE]') {
-            onComplete();
-            return;
+            continue; // Wait for our custom sbp_done event
           }
           try {
             const parsed = JSON.parse(eventData);
+            // Handle content streaming from Anthropic
             if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
               onToken(parsed.delta.text);
+            }
+            // Handle our custom completion event with metadata
+            else if (parsed.type === 'sbp_done') {
+              meta.conversationId = parsed.conversationId || meta.conversationId;
+              meta.appliedFiles = parsed.appliedFiles;
             }
           } catch {
             // Skip malformed SSE events
@@ -315,7 +328,7 @@ export const aiApi = {
       }
     }
 
-    onComplete();
+    onComplete(meta);
   },
 
   getConversations: (projectId: string) =>

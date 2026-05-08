@@ -81,12 +81,17 @@ export function AiChat() {
             (useChatStore.getState().messages.find((m) => m.id === assistantMsgId)?.content || '') + token,
           );
         },
-        // On complete
-        () => {
+        // On complete (with metadata from server)
+        (meta) => {
           setStreaming(assistantMsgId, false);
           setLoading(false);
 
-          // Parse file updates from the response
+          // Track conversationId for follow-up messages
+          if (meta?.conversationId) {
+            setConversationId(meta.conversationId);
+          }
+
+          // Parse file updates from the response and apply to editor
           const finalContent = useChatStore.getState().messages.find((m) => m.id === assistantMsgId)?.content || '';
           applyFileUpdates(finalContent);
         },
@@ -107,29 +112,78 @@ export function AiChat() {
   }, [input, project?.id, conversationId, isLoading, addMessage, updateLastMessage, setStreaming, setLoading]);
 
   // Parse AI response for file update blocks
+  // Supports format: ```json {"files": {"index.html": "...", "style.css": "..."}} ```
   const applyFileUpdates = useCallback((content: string) => {
-    const fileBlockRegex = /```(?:json)?\s*\n?\s*\{\s*"file"\s*:\s*"([^"]+)"\s*,\s*"content"\s*:\s*"([\s\S]*?)"\s*\}\s*\n?```/g;
-    let match;
     let applied = 0;
+    const appliedPaths: string[] = [];
 
-    while ((match = fileBlockRegex.exec(content)) !== null) {
-      const [, filePath, fileContent] = match;
+    // Match the ```json ... ``` block containing {"files": {...}}
+    const jsonBlockRegex = /```json\s*([\s\S]*?)```/g;
+    let blockMatch;
+
+    while ((blockMatch = jsonBlockRegex.exec(content)) !== null) {
+      const jsonStr = blockMatch[1].trim();
       try {
-        // Unescape JSON string content
-        const decoded = JSON.parse(`"${fileContent}"`);
-        updateFile(filePath, decoded);
-        applied++;
+        const parsed = JSON.parse(jsonStr);
+
+        // Handle {"files": {"filename": "content", ...}} format
+        if (parsed.files && typeof parsed.files === 'object') {
+          for (const [filePath, fileContent] of Object.entries(parsed.files)) {
+            if (typeof fileContent === 'string') {
+              updateFile(filePath, fileContent);
+              appliedPaths.push(filePath);
+              applied++;
+            }
+          }
+        }
+        // Handle {"file": "path", "content": "..."} format (legacy)
+        else if (parsed.file && typeof parsed.content === 'string') {
+          updateFile(parsed.file, parsed.content);
+          appliedPaths.push(parsed.file);
+          applied++;
+        }
       } catch {
-        // Try raw content
-        updateFile(filePath, fileContent);
-        applied++;
+        // Not valid JSON — skip this block
       }
     }
 
     if (applied > 0) {
       toast('success', `Applied ${applied} file update${applied > 1 ? 's' : ''}`, 'Changes are reflected in the editor.');
+
+      // Open the first modified file in a tab so the user sees the code immediately
+      const { openTab, setActiveFile } = useEditorStore.getState();
+      const primaryFile = appliedPaths.find(p => p === 'index.html') || appliedPaths[0];
+      if (primaryFile) {
+        openTab(primaryFile);
+        setActiveFile(primaryFile);
+      }
+      // Open all other applied files as tabs too
+      for (const p of appliedPaths) {
+        openTab(p);
+      }
+
+      // Server-side already persists files (via streaming route flush)
+      // But also persist as backup via bulk upsert
+      const filesToSave: Record<string, string> = {};
+      const jsonBlock2 = /```json\s*([\s\S]*?)```/g;
+      let m2;
+      while ((m2 = jsonBlock2.exec(content)) !== null) {
+        try {
+          const p = JSON.parse(m2[1].trim());
+          if (p.files && typeof p.files === 'object') {
+            Object.assign(filesToSave, p.files);
+          } else if (p.file && typeof p.content === 'string') {
+            filesToSave[p.file] = p.content;
+          }
+        } catch {}
+      }
+      if (Object.keys(filesToSave).length > 0 && project?.id) {
+        filesApi.bulkUpsert(project.id, filesToSave).catch(() => {
+          // Silent fail — server-side AI route already persists
+        });
+      }
     }
-  }, [updateFile]);
+  }, [updateFile, project?.id]);
 
   const handleCopy = (id: string, content: string) => {
     navigator.clipboard.writeText(content);
