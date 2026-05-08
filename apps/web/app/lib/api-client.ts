@@ -182,6 +182,37 @@ export const projectsApi = {
 
   delete: (id: string) =>
     apiFetch<{ message: string }>(`/api/v1/projects/${id}`, { method: 'DELETE' }),
+
+  // ─── Integrations (Ship Panel) ─────────────────────────────
+  getIntegrations: (id: string) =>
+    apiFetch<{
+      github?: { connected: boolean; repo?: string; owner?: string; branch?: string; lastPush?: string };
+      cloudflare?: { connected: boolean; projectName?: string; accountId?: string; lastDeploy?: string; liveUrl?: string };
+    }>(`/api/v1/projects/${id}/integrations`),
+
+  saveIntegrations: (id: string, data: Record<string, unknown>) =>
+    apiFetch<{ message: string }>(`/api/v1/projects/${id}/integrations`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  pushToGithub: (id: string, data: { owner: string; repo: string; branch: string; commitMessage: string }) =>
+    apiFetch<{ filesCount: number; commitSha: string; url: string }>(
+      `/api/v1/projects/${id}/github/push`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  deployToCloudflare: (id: string) =>
+    apiFetch<{ url: string; projectName: string }>(
+      `/api/v1/projects/${id}/cloudflare/deploy`,
+      { method: 'POST' },
+    ),
+
+  exportZip: (id: string) =>
+    apiFetch<{ downloadUrl: string; sizeBytes: number; filesCount: number }>(
+      `/api/v1/projects/${id}/export`,
+      { method: 'POST' },
+    ),
 };
 
 // ─── Files API ──────────────────────────────────────────────

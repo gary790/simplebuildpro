@@ -19,11 +19,12 @@ import { TabBar } from '@/components/editor/tab-bar';
 import { PreviewPanel } from '@/components/editor/preview-panel';
 import { AiChat } from '@/components/editor/ai-chat';
 import { StudioBuilder } from '@/components/editor/studio-builder';
+import { ShipPanel } from '@/components/editor/ship-panel';
 import {
   ArrowLeft, Save, Play, Rocket, Sparkles, FolderTree,
   Eye, Terminal, Image, Settings, Loader2, ChevronDown,
   FilePlus, FolderPlus, MoreVertical, Package, Globe,
-  History, Upload, Download, Layout, Code,
+  History, Upload, Download, Layout, Code, Ship,
 } from 'lucide-react';
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/dropdown';
 import clsx from 'clsx';
@@ -63,6 +64,7 @@ export default function EditorPage() {
   const [renameNewName, setRenameNewName] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePath, setDeletePath] = useState('');
+  const [shipOpen, setShipOpen] = useState(false);
 
   // ─── Load project ──────────────────────────────────────
   useEffect(() => {
@@ -413,6 +415,17 @@ export default function EditorPage() {
             Deploy
           </Button>
 
+          {/* Ship — GitHub, Cloudflare, Download */}
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => setShipOpen(true)}
+            className="text-slate-400 hover:text-white"
+            icon={<Ship size={13} />}
+          >
+            Ship
+          </Button>
+
           {/* Separator */}
           <div className="w-px h-5 bg-white/10 mx-1" />
 
@@ -451,14 +464,14 @@ export default function EditorPage() {
             <DropdownItem icon={<History size={14} />} onClick={() => toast('info', 'Version history coming soon')}>
               Version History
             </DropdownItem>
-            <DropdownItem icon={<Globe size={14} />} onClick={() => toast('info', 'Domain settings coming soon')}>
+            <DropdownItem icon={<Globe size={14} />} onClick={() => setShipOpen(true)}>
               Custom Domains
             </DropdownItem>
-            <DropdownItem icon={<Settings size={14} />} onClick={() => router.push('/dashboard/settings')}>
+            <DropdownItem icon={<Settings size={14} />} onClick={() => setShipOpen(true)}>
               Project Settings
             </DropdownItem>
             <DropdownSeparator />
-            <DropdownItem icon={<Download size={14} />} onClick={() => toast('info', 'Export coming soon')}>
+            <DropdownItem icon={<Download size={14} />} onClick={() => setShipOpen(true)}>
               Export Project
             </DropdownItem>
           </Dropdown>
@@ -611,6 +624,9 @@ export default function EditorPage() {
           <span className="text-white/60">{user?.plan || 'free'} plan</span>
         </div>
       </div>
+
+      {/* ─── Ship Panel ─────────────────────────────────── */}
+      {shipOpen && <ShipPanel onClose={() => setShipOpen(false)} />}
 
       {/* ─── Create File/Folder Modal ─────────────────────── */}
       <Modal

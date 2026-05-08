@@ -25,6 +25,7 @@ import { orgRoutes } from './routes/organizations';
 import { mfaRoutes } from './routes/mfa';
 import { adminRoutes } from './routes/admin';
 import { sitesRoutes } from './routes/sites';
+import { integrationsRoutes } from './routes/integrations';
 import { errorHandler } from './middleware/error-handler';
 import { rateLimiter } from './middleware/rate-limiter';
 import { requestLogger } from './middleware/request-logger';
@@ -68,6 +69,7 @@ app.route('/api/v1/billing', billingWebhookRoute); // Stripe webhook (no auth)
 app.route('/api/v1/organizations', orgRoutes);
 app.route('/api/v1/mfa', mfaRoutes);
 app.route('/api/v1/admin', adminRoutes);
+app.route('/api/v1/projects', integrationsRoutes); // Ship panel: integrations, github push, cf deploy, export
 app.route('/health', healthRoutes);
 
 // ─── Sites Serving (*.sites.simplebuildpro.com via host header) ──
