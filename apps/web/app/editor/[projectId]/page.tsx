@@ -9,7 +9,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useEditorStore, useAuthStore, useChatStore } from '@/lib/store';
-import { projectsApi, filesApi, buildApi, deployApi } from '@/lib/api-client';
+import { projectsApi, filesApi, buildApi, deployApi, sandboxApi } from '@/lib/api-client';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
@@ -62,6 +62,7 @@ export default function EditorPage() {
     previewSession,
     assets, setAssets,
     terminalLogs, addTerminalLog, clearTerminalLogs,
+    sandboxUrl, setSandboxUrl, sandboxStatus, setSandboxStatus,
   } = useEditorStore();
 
   const { clearMessages: clearChat } = useChatStore();
@@ -111,7 +112,7 @@ export default function EditorPage() {
     document.body.style.userSelect = 'none';
   }, [chatWidth]);
 
-  // ─── Load project ──────────────────────────────────────
+  // ─── Load project + start sandbox ──────────────────────
   useEffect(() => {
     const load = async () => {
       try {
@@ -139,6 +140,19 @@ export default function EditorPage() {
           openTab(indexFile);
           setActiveFile(indexFile);
         }
+
+        // ─── Start sandbox in background ─────────────────
+        setSandboxStatus('creating');
+        try {
+          const sandboxResult = await sandboxApi.start(projectId);
+          setSandboxUrl(sandboxResult.sandboxUrl || null);
+          setSandboxStatus('running');
+          console.log('[Editor] Sandbox started:', sandboxResult.sandboxUrl);
+        } catch (sandboxErr: any) {
+          console.warn('[Editor] Sandbox failed to start (falling back to local preview):', sandboxErr.message);
+          setSandboxStatus('error');
+          // Don't block the editor — just fall back to local preview
+        }
       } catch (err: any) {
         toast('error', 'Failed to load project', err.message);
         router.push('/dashboard');
@@ -151,8 +165,12 @@ export default function EditorPage() {
     clearChat();
 
     return () => {
+      // Stop sandbox on unmount (fire-and-forget)
+      sandboxApi.stop(projectId).catch(() => {});
       setProject(null);
       setFiles(new Map());
+      setSandboxUrl(null);
+      setSandboxStatus('idle');
     };
   }, [projectId]);
 
@@ -721,6 +739,18 @@ export default function EditorPage() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          {/* Sandbox status */}
+          <span className={clsx(
+            sandboxStatus === 'running' ? 'text-green-200' :
+            sandboxStatus === 'creating' ? 'text-amber-200' :
+            sandboxStatus === 'error' ? 'text-red-200' :
+            'text-white/50',
+          )}>
+            {sandboxStatus === 'running' && '● Sandbox'}
+            {sandboxStatus === 'creating' && '◌ Starting...'}
+            {sandboxStatus === 'error' && '✕ Sandbox err'}
+            {sandboxStatus === 'idle' && '○ No sandbox'}
+          </span>
           {buildStatus !== 'idle' && (
             <span className={clsx(
               buildStatus === 'building' ? 'text-white/80' :

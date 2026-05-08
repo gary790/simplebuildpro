@@ -71,6 +71,12 @@ interface EditorState {
   isAssetsOpen: boolean;
   toggleAssets: () => void;
 
+  // Sandbox
+  sandboxUrl: string | null;
+  setSandboxUrl: (url: string | null) => void;
+  sandboxStatus: 'idle' | 'creating' | 'running' | 'stopping' | 'stopped' | 'error';
+  setSandboxStatus: (status: EditorState['sandboxStatus']) => void;
+
   // Build / Deploy status
   buildStatus: 'idle' | 'building' | 'success' | 'error';
   setBuildStatus: (status: EditorState['buildStatus']) => void;
@@ -180,6 +186,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   toggleTerminal: () => set({ isTerminalOpen: !get().isTerminalOpen }),
   isAssetsOpen: false,
   toggleAssets: () => set({ isAssetsOpen: !get().isAssetsOpen }),
+
+  // Sandbox
+  sandboxUrl: null,
+  setSandboxUrl: (sandboxUrl) => set({ sandboxUrl }),
+  sandboxStatus: 'idle',
+  setSandboxStatus: (sandboxStatus) => set({ sandboxStatus }),
 
   // Build / Deploy
   buildStatus: 'idle',

@@ -286,26 +286,85 @@ export const assetsApi = {
     apiFetch<{ message: string }>(`/api/v1/assets/${projectId}/${assetId}`, { method: 'DELETE' }),
 };
 
-// ─── AI Chat API — Structured Streaming Protocol ─────────────
+// ─── Sandbox API ────────────────────────────────────────────
+export const sandboxApi = {
+  start: (projectId: string) =>
+    apiFetch<{ sandboxId: string; sandboxUrl: string; status: string }>(
+      `/api/v1/sandbox/${projectId}/start`,
+      { method: 'POST' },
+    ),
+
+  stop: (projectId: string) =>
+    apiFetch<{ message: string; filesSnapshot: number }>(
+      `/api/v1/sandbox/${projectId}/stop`,
+      { method: 'POST' },
+    ),
+
+  status: (projectId: string) =>
+    apiFetch<{ active: boolean; sandboxUrl?: string; uptime?: number }>(
+      `/api/v1/sandbox/${projectId}/status`,
+    ),
+
+  exec: (projectId: string, command: string) =>
+    apiFetch<{ stdout: string; stderr: string; exitCode: number }>(
+      `/api/v1/sandbox/${projectId}/exec`,
+      { method: 'POST', body: JSON.stringify({ command }) },
+    ),
+
+  listFiles: (projectId: string, path = '/home/user/project') =>
+    apiFetch<{ files: { path: string; type: 'file' | 'directory'; size?: number }[] }>(
+      `/api/v1/sandbox/${projectId}/files?path=${encodeURIComponent(path)}`,
+    ),
+
+  readFile: (projectId: string, filePath: string) =>
+    apiFetch<{ path: string; content: string }>(
+      `/api/v1/sandbox/${projectId}/files/${encodeURIComponent(filePath)}`,
+    ),
+
+  writeFile: (projectId: string, filePath: string, content: string) =>
+    apiFetch<{ path: string; written: boolean }>(
+      `/api/v1/sandbox/${projectId}/files/${encodeURIComponent(filePath)}`,
+      { method: 'PUT', body: JSON.stringify({ content }) },
+    ),
+
+  deleteFile: (projectId: string, filePath: string) =>
+    apiFetch<{ message: string }>(
+      `/api/v1/sandbox/${projectId}/files/${encodeURIComponent(filePath)}`,
+      { method: 'DELETE' },
+    ),
+};
+
+// ─── AI Chat API — Sandbox Tool-Calling Protocol ──────────────
 export interface AIStreamEvent {
-  type: 'stream_start' | 'plan' | 'file_start' | 'file_chunk' | 'file_end' | 'plan_progress' | 'explanation' | 'text_token' | 'stream_end' | 'error' | 'action_start' | 'action_result';
+  type:
+    | 'stream_start'
+    | 'text'
+    | 'tool_call'
+    | 'tool_result'
+    | 'file_changed'
+    | 'stream_end'
+    | 'error';
+  // stream_start
   conversationId?: string;
-  items?: string[];
-  path?: string;
-  content?: string;
+  sandboxUrl?: string;
+  // text
   token?: string;
-  text?: string;
-  completedIndex?: number;
-  appliedFiles?: boolean;
-  filesPaths?: string[];
-  tokensUsed?: number;
-  message?: string;
-  // Action events (tool use)
-  tool?: string;
+  // tool_call
+  toolName?: string;
+  toolCallId?: string;
   input?: Record<string, any>;
+  // tool_result
   success?: boolean;
   result?: any;
   error?: string;
+  filesChanged?: string[];
+  // file_changed
+  path?: string;
+  action?: 'created' | 'modified' | 'deleted';
+  // stream_end
+  tokensUsed?: number;
+  // error
+  message?: string;
 }
 
 export type AIStreamCallback = (event: AIStreamEvent) => void;
@@ -318,17 +377,14 @@ export const aiApi = {
     ),
 
   /**
-   * Stream AI response with structured events.
-   * The server parses the XML protocol and sends typed SSE events:
-   * - stream_start: {conversationId}
-   * - plan: {items: string[]}
-   * - file_start: {path}
-   * - file_chunk: {path, content}
-   * - file_end: {path, content} (complete file)
-   * - plan_progress: {completedIndex}
-   * - explanation: {text}
-   * - text_token: {token} (for plain text responses)
-   * - stream_end: {conversationId, appliedFiles, filesPaths, tokensUsed}
+   * Stream AI response with sandbox tool-calling protocol.
+   * The AI uses Anthropic tool_use to execute commands in an E2B sandbox:
+   * - stream_start: {conversationId, sandboxUrl}
+   * - text: {token} (AI thinking/response text)
+   * - tool_call: {toolName, toolCallId, input} (AI calling a sandbox tool)
+   * - tool_result: {toolCallId, success, result, error, filesChanged}
+   * - file_changed: {path, action} (file created/modified/deleted in sandbox)
+   * - stream_end: {conversationId, filesChanged, tokensUsed}
    * - error: {message}
    */
   streamMessage: async (

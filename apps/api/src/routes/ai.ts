@@ -1,9 +1,8 @@
 // ============================================================
-// SimpleBuild Pro — AI Routes
-// Real Anthropic Claude API proxy — NEVER exposes keys to client
-// XML Protocol: <plan>, <explanation>, <file path="...">
-// Tool-Use: github_push, cloudflare_deploy, aws_deploy, gcp_deploy, export_project
-// Server-side parsing → structured SSE events to frontend
+// SimpleBuild Pro — AI Routes (Phase 2: Sandbox Architecture)
+// Anthropic Claude with tool_use against E2B sandboxes
+// No more XML protocol — AI calls real tools (run_command,
+// write_file, read_file, list_files) against Linux containers
 // ============================================================
 
 import { Hono } from 'hono';
@@ -17,6 +16,7 @@ import { rateLimiter } from '../middleware/rate-limiter';
 import { PLAN_LIMITS, AI_MODEL, AI_MAX_TOKENS, APP_NAME } from '@simplebuildpro/shared';
 import * as crypto from 'crypto';
 import { logger } from '../services/logger';
+import * as sandboxService from '../services/sandbox';
 
 export const aiRoutes = new Hono<AuthEnv>();
 aiRoutes.use('*', requireAuth);
@@ -50,121 +50,95 @@ function decrypt(encryptedText: string): string {
   }
 }
 
-// ─── Anthropic Tool Definitions ──────────────────────────────
-// These tools let the AI agent perform real actions on behalf of the user.
-const AI_TOOLS = [
+// ─── Sandbox Tools (NEW — interact with E2B sandbox) ────────
+const SANDBOX_TOOLS = [
   {
-    name: 'github_push',
-    description: 'Push the current project files to a GitHub repository. The user must have a connected GitHub account. Use this when the user asks to push, commit, upload, or sync their project to GitHub.',
+    name: 'run_command',
+    description: 'Run a bash command in the project sandbox. Use for:\n- grep/find to search files\n- sed to edit files in place\n- cat to read file contents\n- rm to delete files or directories\n- mkdir to create directories\n- npm install to add packages\n- Any other shell command\nWorking directory is /home/user/project/.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        repo: {
-          type: 'string',
-          description: 'The GitHub repository in "owner/repo" format. If the user doesn\'t specify, ask them or use their most recently used repo.',
-        },
-        branch: {
-          type: 'string',
-          description: 'The branch to push to. Defaults to "main".',
-        },
-        commit_message: {
-          type: 'string',
-          description: 'The commit message. Generate a meaningful one based on recent changes if the user doesn\'t provide one.',
-        },
+        command: { type: 'string', description: 'The bash command to execute' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'write_file',
+    description: 'Create or overwrite a file in the project sandbox. Use for creating new files or fully rewriting existing ones. For small edits to existing files, prefer run_command with sed instead.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        path: { type: 'string', description: 'File path relative to project root (e.g., "index.html", "src/app.js")' },
+        content: { type: 'string', description: 'Complete file content' },
+      },
+      required: ['path', 'content'],
+    },
+  },
+  {
+    name: 'read_file',
+    description: 'Read the contents of a file from the project sandbox. Use before editing to understand current state.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        path: { type: 'string', description: 'File path relative to project root' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'list_files',
+    description: 'List files and directories in the project sandbox. Gives awareness of project structure.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        path: { type: 'string', description: 'Directory path relative to project root (default: ".")' },
+      },
+      required: [],
+    },
+  },
+];
+
+// ─── Deploy/Ship Tools (KEPT from old architecture) ─────────
+const DEPLOY_TOOLS = [
+  {
+    name: 'github_push',
+    description: 'Push the current project files to a GitHub repository. The user must have a connected GitHub account.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        repo: { type: 'string', description: 'GitHub repository in "owner/repo" format.' },
+        branch: { type: 'string', description: 'Branch to push to. Defaults to "main".' },
+        commit_message: { type: 'string', description: 'Commit message.' },
       },
       required: ['repo', 'commit_message'],
     },
   },
   {
     name: 'cloudflare_deploy',
-    description: 'Deploy the current project to Cloudflare Pages. The user must have a connected Cloudflare account. Use this when the user asks to deploy to Cloudflare.',
+    description: 'Deploy the current project to Cloudflare Pages.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        project_name: {
-          type: 'string',
-          description: 'The Cloudflare Pages project name. Use the project name in kebab-case if not specified.',
-        },
+        project_name: { type: 'string', description: 'Cloudflare Pages project name.' },
       },
       required: ['project_name'],
     },
   },
   {
     name: 'vercel_deploy',
-    description: 'Deploy the current project to Vercel. The user must have a connected Vercel account. Use this when the user asks to deploy to Vercel.',
+    description: 'Deploy the current project to Vercel.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        project_name: {
-          type: 'string',
-          description: 'The Vercel project name.',
-        },
+        project_name: { type: 'string', description: 'Vercel project name.' },
       },
       required: ['project_name'],
     },
   },
   {
-    name: 'netlify_deploy',
-    description: 'Deploy the current project to Netlify. The user must have a connected Netlify account. Use this when the user asks to deploy to Netlify.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        site_name: {
-          type: 'string',
-          description: 'The Netlify site name.',
-        },
-      },
-      required: ['site_name'],
-    },
-  },
-  {
-    name: 'aws_deploy',
-    description: 'Deploy the current project to AWS S3 (with optional CloudFront). The user must have a connected AWS account. Use this when the user asks to deploy to AWS or S3.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        bucket_name: {
-          type: 'string',
-          description: 'The S3 bucket name.',
-        },
-        region: {
-          type: 'string',
-          description: 'AWS region. Defaults to "us-east-1".',
-        },
-        distribution_id: {
-          type: 'string',
-          description: 'Optional CloudFront distribution ID for cache invalidation.',
-        },
-      },
-      required: ['bucket_name'],
-    },
-  },
-  {
-    name: 'gcp_deploy',
-    description: 'Deploy the current project to Google Cloud (Firebase Hosting or Cloud Storage). The user must have a connected GCP account. Use this when the user asks to deploy to Firebase or Google Cloud.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        target: {
-          type: 'string',
-          enum: ['firebase_hosting', 'cloud_storage'],
-          description: 'Deployment target. Defaults to "firebase_hosting".',
-        },
-        site_id: {
-          type: 'string',
-          description: 'Firebase Hosting site ID (optional, defaults to GCP project ID).',
-        },
-        bucket_name: {
-          type: 'string',
-          description: 'GCS bucket name (for cloud_storage target).',
-        },
-      },
-      required: ['target'],
-    },
-  },
-  {
     name: 'export_project',
-    description: 'Export the current project files as a downloadable package. Use this when the user asks to download, export, or get a zip of their project.',
+    description: 'Export the current project files as a downloadable package.',
     input_schema: {
       type: 'object' as const,
       properties: {},
@@ -173,7 +147,7 @@ const AI_TOOLS = [
   },
   {
     name: 'list_connections',
-    description: 'List the user\'s connected accounts (GitHub, Cloudflare, AWS, GCP, Vercel, Netlify). Use this to check which services are available before attempting a push or deploy.',
+    description: 'List the user\'s connected accounts (GitHub, Cloudflare, etc.).',
     input_schema: {
       type: 'object' as const,
       properties: {},
@@ -182,9 +156,79 @@ const AI_TOOLS = [
   },
 ];
 
-// ─── Tool Executor ───────────────────────────────────────────
-// Executes a tool call server-side using the same logic as integration routes.
-async function executeToolCall(
+// All tools available to the AI
+const ALL_TOOLS = [...SANDBOX_TOOLS, ...DEPLOY_TOOLS];
+
+// ─── Sandbox Tool Executor ──────────────────────────────────
+async function executeSandboxTool(
+  toolName: string,
+  toolInput: Record<string, any>,
+  projectId: string,
+): Promise<{ success: boolean; result: any; error?: string; filesChanged?: string[] }> {
+  try {
+    switch (toolName) {
+      case 'run_command': {
+        const { command } = toolInput;
+        const result = await sandboxService.execCommand(projectId, command);
+        // Detect file changes from certain commands
+        const filesChanged: string[] = [];
+        const cmd = command.trim().toLowerCase();
+        if (cmd.startsWith('sed ') || cmd.startsWith('rm ') || cmd.startsWith('mv ') ||
+            cmd.startsWith('cp ') || cmd.startsWith('touch ') || cmd.includes('>') ||
+            cmd.startsWith('mkdir ')) {
+          filesChanged.push('*'); // Signal that files may have changed
+        }
+        return {
+          success: result.exitCode === 0,
+          result: {
+            stdout: result.stdout.slice(0, 10000), // Truncate large outputs
+            stderr: result.stderr.slice(0, 5000),
+            exitCode: result.exitCode,
+          },
+          error: result.exitCode !== 0 ? result.stderr.slice(0, 500) : undefined,
+          filesChanged,
+        };
+      }
+
+      case 'write_file': {
+        const { path, content } = toolInput;
+        await sandboxService.writeFile(projectId, path, content);
+        return {
+          success: true,
+          result: { path, size: content.length, message: `File written: ${path}` },
+          filesChanged: [path],
+        };
+      }
+
+      case 'read_file': {
+        const { path } = toolInput;
+        const content = await sandboxService.readFile(projectId, path);
+        return {
+          success: true,
+          result: { path, content: content.slice(0, 50000), size: content.length },
+        };
+      }
+
+      case 'list_files': {
+        const { path = '.' } = toolInput;
+        const files = await sandboxService.listFiles(projectId, path);
+        return {
+          success: true,
+          result: { path, files: files.slice(0, 200) },
+        };
+      }
+
+      default:
+        return { success: false, result: null, error: `Unknown sandbox tool: ${toolName}` };
+    }
+  } catch (err: any) {
+    logger.error(`[AI Tool] ${toolName} failed: ${err.message}`);
+    return { success: false, result: null, error: err.message };
+  }
+}
+
+// ─── Deploy Tool Executor (kept from old architecture) ──────
+async function executeDeployTool(
   toolName: string,
   toolInput: Record<string, any>,
   userId: string,
@@ -212,12 +256,35 @@ async function executeToolCall(
       }
 
       case 'github_push': {
+        // First, snapshot files from sandbox to DB so we have the latest
+        const snapshotFiles = await sandboxService.snapshotFiles(projectId).catch(() => []);
+        if (snapshotFiles.length > 0) {
+          for (const file of snapshotFiles) {
+            const existing = await db.query.projectFiles.findFirst({
+              where: and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, file.path)),
+            });
+            const contentHash = crypto.createHash('sha256').update(file.content).digest('hex');
+            const sizeBytes = Buffer.byteLength(file.content, 'utf-8');
+
+            if (existing) {
+              await db.update(projectFiles).set({
+                content: file.content, contentHash, sizeBytes, updatedAt: new Date(),
+              }).where(eq(projectFiles.id, existing.id));
+            } else {
+              await db.insert(projectFiles).values({
+                projectId, path: file.path, content: file.content,
+                contentHash, mimeType: 'text/plain', sizeBytes,
+              });
+            }
+          }
+        }
+
         const { repo, branch = 'main', commit_message } = toolInput;
         const connection = await db.query.userConnections.findFirst({
           where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'github_repo')),
         });
         if (!connection?.accessToken) {
-          return { success: false, result: null, error: 'GitHub account not connected. Please connect GitHub first via Settings → Integrations.' };
+          return { success: false, result: null, error: 'GitHub account not connected. Connect via Settings.' };
         }
 
         const token = decrypt(connection.accessToken);
@@ -225,7 +292,7 @@ async function executeToolCall(
           where: eq(projectFiles.projectId, projectId),
         });
         if (files.length === 0) {
-          return { success: false, result: null, error: 'No files in project to push.' };
+          return { success: false, result: null, error: 'No files to push.' };
         }
 
         const [owner, repoName] = repo.includes('/') ? repo.split('/') : [connection.displayName, repo];
@@ -238,7 +305,6 @@ async function executeToolCall(
           'User-Agent': 'SimpleBuildPro',
         };
 
-        // 1. Get latest commit SHA for branch
         let baseSha: string | null = null;
         let baseTreeSha: string | null = null;
         try {
@@ -252,7 +318,6 @@ async function executeToolCall(
           }
         } catch { /* Branch doesn't exist */ }
 
-        // 2. Create blobs
         const treeItems: any[] = [];
         for (const file of files) {
           const blobRes = await fetch(`${apiBase}/git/blobs`, {
@@ -264,7 +329,6 @@ async function executeToolCall(
           treeItems.push({ path: file.path, mode: '100644', type: 'blob', sha: blobData.sha });
         }
 
-        // 3. Create tree
         const treePayload: any = { tree: treeItems };
         if (baseTreeSha) treePayload.base_tree = baseTreeSha;
         const treeRes = await fetch(`${apiBase}/git/trees`, {
@@ -273,7 +337,6 @@ async function executeToolCall(
         if (!treeRes.ok) throw new Error('Tree creation failed');
         const treeData = await treeRes.json() as any;
 
-        // 4. Create commit
         const commitPayload: any = { message: commit_message, tree: treeData.sha };
         if (baseSha) commitPayload.parents = [baseSha];
         const commitRes = await fetch(`${apiBase}/git/commits`, {
@@ -282,43 +345,20 @@ async function executeToolCall(
         if (!commitRes.ok) throw new Error('Commit creation failed');
         const commitData = await commitRes.json() as any;
 
-        // 5. Update/create branch ref
         if (baseSha) {
           await fetch(`${apiBase}/git/refs/heads/${branch}`, {
-            method: 'PATCH', headers,
-            body: JSON.stringify({ sha: commitData.sha, force: true }),
+            method: 'PATCH', headers, body: JSON.stringify({ sha: commitData.sha, force: true }),
           });
         } else {
           await fetch(`${apiBase}/git/refs`, {
-            method: 'POST', headers,
-            body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitData.sha }),
+            method: 'POST', headers, body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitData.sha }),
           });
         }
 
-        // Record integration
-        const existingInt = await db.query.projectIntegrations.findFirst({
-          where: and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, 'github')),
-        });
         const actionResult = {
-          status: 'success',
-          commitSha: commitData.sha,
-          filesCount: files.length,
+          status: 'success', commitSha: commitData.sha, filesCount: files.length,
           url: `https://github.com/${owner}/${repoName}/tree/${branch}`,
         };
-        if (existingInt) {
-          await db.update(projectIntegrations).set({
-            lastActionAt: new Date(), lastActionResult: actionResult,
-            config: { ...(existingInt.config as any), repo: `${owner}/${repoName}`, branch },
-            updatedAt: new Date(),
-          }).where(eq(projectIntegrations.id, existingInt.id));
-        } else {
-          await db.insert(projectIntegrations).values({
-            projectId, provider: 'github', connectionId: connection.id,
-            config: { repo: `${owner}/${repoName}`, branch },
-            lastActionAt: new Date(), lastActionResult: actionResult,
-          });
-        }
-
         logger.info(`[AI Tool] GitHub push: ${owner}/${repoName}#${branch} — ${files.length} files`);
         return { success: true, result: actionResult };
       }
@@ -329,21 +369,19 @@ async function executeToolCall(
           where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'cloudflare')),
         });
         if (!connection?.accessToken) {
-          return { success: false, result: null, error: 'Cloudflare account not connected. Please connect via Settings → Integrations.' };
+          return { success: false, result: null, error: 'Cloudflare account not connected.' };
         }
 
-        const token = decrypt(connection.accessToken);
+        const cfToken = decrypt(connection.accessToken);
         const accountId = connection.accountId;
-        if (!accountId) {
-          return { success: false, result: null, error: 'Cloudflare account ID not found. Reconnect your account.' };
-        }
+        if (!accountId) return { success: false, result: null, error: 'Cloudflare account ID not found.' };
 
-        const files = await db.query.projectFiles.findMany({ where: eq(projectFiles.projectId, projectId) });
-        if (files.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
+        // Snapshot latest files from sandbox
+        const sbFiles = await sandboxService.snapshotFiles(projectId).catch(() => []);
+        if (sbFiles.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
 
-        const cfHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+        const cfHeaders = { Authorization: `Bearer ${cfToken}`, 'Content-Type': 'application/json' };
 
-        // Ensure project exists
         const checkRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${project_name}`, { headers: cfHeaders });
         if (!checkRes.ok) {
           const createRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`, {
@@ -355,14 +393,13 @@ async function executeToolCall(
           }
         }
 
-        // Deploy files
         const formData = new FormData();
-        for (const file of files) {
+        for (const file of sbFiles) {
           formData.append(file.path, new Blob([file.content || '']), file.path);
         }
         const deployRes = await fetch(
           `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${project_name}/deployments`,
-          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData },
+          { method: 'POST', headers: { Authorization: `Bearer ${cfToken}` }, body: formData },
         );
         if (!deployRes.ok) {
           const err = await deployRes.json() as any;
@@ -371,9 +408,8 @@ async function executeToolCall(
         const deployData = await deployRes.json() as any;
         const deployUrl = deployData.result?.url || `https://${project_name}.pages.dev`;
 
-        const actionResult = { status: 'success', url: deployUrl, filesCount: files.length };
-        logger.info(`[AI Tool] Cloudflare deploy: ${project_name} — ${files.length} files → ${deployUrl}`);
-        return { success: true, result: actionResult };
+        logger.info(`[AI Tool] Cloudflare deploy: ${project_name} — ${sbFiles.length} files → ${deployUrl}`);
+        return { success: true, result: { status: 'success', url: deployUrl, filesCount: sbFiles.length } };
       }
 
       case 'vercel_deploy': {
@@ -381,17 +417,16 @@ async function executeToolCall(
         const connection = await db.query.userConnections.findFirst({
           where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'vercel')),
         });
-        if (!connection?.accessToken) {
-          return { success: false, result: null, error: 'Vercel account not connected. Please connect via Settings → Integrations.' };
-        }
-        const token = decrypt(connection.accessToken);
-        const files = await db.query.projectFiles.findMany({ where: eq(projectFiles.projectId, projectId) });
-        if (files.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
+        if (!connection?.accessToken) return { success: false, result: null, error: 'Vercel account not connected.' };
 
-        const vercelFiles = files.map(f => ({ file: f.path, data: f.content || '' }));
+        const vToken = decrypt(connection.accessToken);
+        const sbFiles = await sandboxService.snapshotFiles(projectId).catch(() => []);
+        if (sbFiles.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
+
+        const vercelFiles = sbFiles.map(f => ({ file: f.path, data: f.content || '' }));
         const deployRes = await fetch('https://api.vercel.com/v13/deployments', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          headers: { Authorization: `Bearer ${vToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: project_name, files: vercelFiles, projectSettings: { framework: null }, target: 'production' }),
         });
         if (!deployRes.ok) {
@@ -400,116 +435,16 @@ async function executeToolCall(
         }
         const deployData = await deployRes.json() as any;
         const deployUrl = `https://${deployData.url}`;
-        logger.info(`[AI Tool] Vercel deploy: ${project_name} — ${files.length} files → ${deployUrl}`);
-        return { success: true, result: { status: 'success', url: deployUrl, filesCount: files.length } };
-      }
-
-      case 'netlify_deploy': {
-        const { site_name } = toolInput;
-        const connection = await db.query.userConnections.findFirst({
-          where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'netlify')),
-        });
-        if (!connection?.accessToken) {
-          return { success: false, result: null, error: 'Netlify account not connected. Please connect via Settings → Integrations.' };
-        }
-        const token = decrypt(connection.accessToken);
-        const files = await db.query.projectFiles.findMany({ where: eq(projectFiles.projectId, projectId) });
-        if (files.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
-
-        // Find or create site
-        let siteId: string | null = null;
-        const sitesRes = await fetch(`https://api.netlify.com/api/v1/sites?name=${site_name}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const sites = await sitesRes.json() as any[];
-        const existingSite = sites.find((s: any) => s.name === site_name);
-        if (existingSite) { siteId = existingSite.id; }
-        else {
-          const createRes = await fetch('https://api.netlify.com/api/v1/sites', {
-            method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: site_name }),
-          });
-          const newSite = await createRes.json() as any;
-          siteId = newSite.id;
-        }
-        if (!siteId) throw new Error('Could not find or create Netlify site');
-
-        const fileDigests: Record<string, string> = {};
-        for (const file of files) {
-          const hash = crypto.createHash('sha1').update(file.content || '').digest('hex');
-          fileDigests[`/${file.path}`] = hash;
-        }
-        const deployCreateRes = await fetch(`https://api.netlify.com/api/v1/sites/${siteId}/deploys`, {
-          method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ files: fileDigests }),
-        });
-        const deploy = await deployCreateRes.json() as any;
-        if (deploy.required?.length > 0) {
-          for (const file of files) {
-            const hash = crypto.createHash('sha1').update(file.content || '').digest('hex');
-            if (deploy.required.includes(hash)) {
-              await fetch(`https://api.netlify.com/api/v1/deploys/${deploy.id}/files/${file.path}`, {
-                method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
-                body: file.content || '',
-              });
-            }
-          }
-        }
-        const deployUrl = deploy.ssl_url || deploy.url || `https://${site_name}.netlify.app`;
-        logger.info(`[AI Tool] Netlify deploy: ${site_name} — ${files.length} files → ${deployUrl}`);
-        return { success: true, result: { status: 'success', url: deployUrl, filesCount: files.length } };
-      }
-
-      case 'aws_deploy': {
-        const { bucket_name, region = 'us-east-1', distribution_id } = toolInput;
-        const connection = await db.query.userConnections.findFirst({
-          where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'aws')),
-        });
-        if (!connection?.accessToken) {
-          return { success: false, result: null, error: 'AWS account not connected. Please connect via Settings → Integrations.' };
-        }
-        const files = await db.query.projectFiles.findMany({ where: eq(projectFiles.projectId, projectId) });
-        if (files.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
-
-        const deployUrl = distribution_id
-          ? `CloudFront distribution ${distribution_id}`
-          : `http://${bucket_name}.s3-website-${region}.amazonaws.com`;
-        // Note: Full AWS S3 upload is handled by the integration route; here we provide a simplified result
-        logger.info(`[AI Tool] AWS deploy requested: ${bucket_name} (${region})`);
-        return { success: true, result: { status: 'success', url: deployUrl, filesCount: files.length, bucketName: bucket_name, region, note: 'Deploy initiated via integration route.' } };
-      }
-
-      case 'gcp_deploy': {
-        const { target = 'firebase_hosting', site_id, bucket_name } = toolInput;
-        const connection = await db.query.userConnections.findFirst({
-          where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'gcp')),
-        });
-        if (!connection?.accessToken) {
-          return { success: false, result: null, error: 'Google Cloud account not connected. Please connect via Settings → Integrations.' };
-        }
-        const files = await db.query.projectFiles.findMany({ where: eq(projectFiles.projectId, projectId) });
-        if (files.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
-
-        const gcpProjectId = connection.accountId;
-        const deployUrl = target === 'firebase_hosting'
-          ? `https://${site_id || gcpProjectId}.web.app`
-          : `https://storage.googleapis.com/${bucket_name || gcpProjectId + '-website'}/index.html`;
-        logger.info(`[AI Tool] GCP deploy requested: ${target}`);
-        return { success: true, result: { status: 'success', url: deployUrl, filesCount: files.length, target, note: 'Deploy initiated via integration route.' } };
+        return { success: true, result: { status: 'success', url: deployUrl, filesCount: sbFiles.length } };
       }
 
       case 'export_project': {
-        const files = await db.query.projectFiles.findMany({ where: eq(projectFiles.projectId, projectId) });
-        if (files.length === 0) return { success: false, result: null, error: 'No files to export.' };
-        const totalSize = files.reduce((sum, f) => sum + (f.content?.length || 0), 0);
+        const sbFiles = await sandboxService.snapshotFiles(projectId).catch(() => []);
+        const totalSize = sbFiles.reduce((sum, f) => sum + (f.content?.length || 0), 0);
         return {
           success: true,
-          result: {
-            status: 'success',
-            filesCount: files.length,
-            totalSizeBytes: totalSize,
-            message: 'Project export ready. The user can download it from the Ship panel → Download tab.',
-          },
+          result: { status: 'success', filesCount: sbFiles.length, totalSizeBytes: totalSize,
+            message: 'Project export ready. Download from the Ship panel.' },
         };
       }
 
@@ -522,167 +457,61 @@ async function executeToolCall(
   }
 }
 
-// ─── Build System Prompt with XML Protocol ───────────────────
+// ─── Build System Prompt (NEW — sandbox-aware) ──────────────
 function buildSystemPrompt(
-  files: { path: string; content: string }[],
+  fileList: { path: string; isDir: boolean }[],
   assets: { filename: string; cdnUrl: string; mimeType: string }[],
   projectName: string,
+  previewUrl: string | null,
 ): string {
-  const fileCtx = files
-    .map(f => `=== ${f.path} ===\n${f.content}`)
-    .join('\n\n');
+  const fileTree = fileList
+    .filter(f => !f.isDir)
+    .map(f => `  ${f.path}`)
+    .join('\n') || '  (empty project)';
 
   const assetList = assets
     .map(a => `- ${a.filename} (${a.mimeType}) → ${a.cdnUrl}`)
     .join('\n');
 
-  return `You are the AI coding assistant for ${APP_NAME} Studio — a professional creation platform that builds websites, web apps, software, scripts, documents, and any digital project.
-You have FULL CONTEXT of the user's project "${projectName}".
+  return `You are the AI coding assistant for ${APP_NAME} Studio.
+You have FULL ACCESS to the user's project "${projectName}" as a real Linux filesystem.
 
-## AVAILABLE ACTIONS (Tools)
-You have tools to perform real actions on the user's behalf:
-- **github_push**: Push project files to a GitHub repository
+## TOOLS AVAILABLE
+You have tools to interact with the project sandbox:
+- **run_command**: Run any bash command (grep, sed, cat, rm, mkdir, npm, etc.)
+- **write_file**: Create or overwrite a file (use for new files or full rewrites)
+- **read_file**: Read a file's contents
+- **list_files**: List directory contents
+
+And deployment tools:
+- **github_push**: Push to GitHub
 - **cloudflare_deploy**: Deploy to Cloudflare Pages
 - **vercel_deploy**: Deploy to Vercel
-- **netlify_deploy**: Deploy to Netlify
-- **aws_deploy**: Deploy to AWS S3/CloudFront
-- **gcp_deploy**: Deploy to Firebase Hosting or Google Cloud Storage
-- **export_project**: Prepare project for download
-- **list_connections**: Check which services the user has connected
+- **export_project**: Export for download
+- **list_connections**: Check connected services
 
-When the user asks to push, deploy, publish, ship, upload to any service, or download/export:
-1. If you're unsure which repo/service/settings to use, call list_connections first or ask the user.
-2. Use the appropriate tool with reasonable defaults (e.g., branch "main", a meaningful commit message).
-3. After the action completes, report the result clearly to the user.
+## CURRENT PROJECT FILES
+${fileTree}
 
-## PROJECT FILES
-${fileCtx || 'No files yet. Create index.html as the entry point.'}
-
-## UPLOADED ASSETS (${assets.length} files)
+${previewUrl ? `## LIVE PREVIEW\nA dev server is running at: ${previewUrl}\nChanges to files are reflected when the user refreshes the preview.\n` : ''}
+## UPLOADED ASSETS (${assets.length})
 ${assetList || 'None yet.'}
 When referencing assets in code, use their CDN URLs directly.
 
-## CRITICAL OUTPUT FORMAT — XML PROTOCOL
+## WORKFLOW RULES
+1. **ALWAYS read before editing** — use read_file or run_command with cat/grep to understand what exists before making changes.
+2. **Prefer surgical edits** — use run_command with sed for small changes instead of rewriting entire files.
+3. **Use write_file for new files** — or when you need to completely rewrite a file.
+4. **Delete with rm** — use run_command with rm to delete files when asked.
+5. **Test your changes** — after modifying code, use cat or read_file to verify the changes look correct.
+6. **Explain what you did** — after making changes, briefly describe what was changed and why.
 
-You MUST structure your response using these XML tags:
-
-### 1. Plan (REQUIRED when creating/modifying code)
-List the steps you will take:
-
-<plan>
-- Step description 1
-- Step description 2
-- Step description 3
-</plan>
-
-### 2. Files (REQUIRED when creating/modifying code)
-Output EACH file in its own tag. ALWAYS output the COMPLETE file content — never abbreviate.
-
-<file path="index.html">
-<!DOCTYPE html>
-<html lang="en">
-...complete file content...
-</html>
-</file>
-
-<file path="style.css">
-body { margin: 0; }
-...complete file content...
-</file>
-
-<file path="app.js">
-// Complete JavaScript
-...complete file content...
-</file>
-
-### 3. Explanation (REQUIRED — always explain what you did)
-<explanation>
-Brief description of what was created/changed and why.
-</explanation>
-
-## RULES
-1. ALWAYS use the XML tags above when generating or modifying code.
-2. Each <file> tag MUST have a path attribute and contain the FULL file content.
-3. NEVER abbreviate file content — no "..." or "/* rest of code */" placeholders.
-4. The <plan> comes FIRST, then <file> tags, then <explanation>.
-5. If the user asks a question without needing code changes, respond with plain text (no XML tags).
-6. For multi-file projects: index.html is the entry point.
-7. Use Tailwind CSS via CDN (<script src="https://cdn.tailwindcss.com"></script>) for web projects unless the user requests otherwise.
-8. Write production-quality, semantic HTML5 with accessibility for web projects.
-9. Write clean, well-structured code in any language the user needs (JavaScript, Python, TypeScript, etc.).
-10. Reference uploaded assets using their exact CDN URLs.
-11. NEVER output markdown code fences (\`\`\`) around file content — use the <file> tag instead.
-12. You can create ANY type of file: .html, .css, .js, .ts, .py, .json, .md, .yaml, .sh, .sql, etc.
-13. For non-web projects (scripts, utilities, documents), create appropriate file structures.`;
-}
-
-// ─── XML Parser: Extract structured data from AI response ────
-interface ParsedAIResponse {
-  plan: string[];
-  files: Record<string, string>;
-  explanation: string;
-  rawContent: string;
-}
-
-function parseXMLResponse(content: string): ParsedAIResponse {
-  const result: ParsedAIResponse = {
-    plan: [],
-    files: {},
-    explanation: '',
-    rawContent: content,
-  };
-
-  // Extract plan
-  const planMatch = content.match(/<plan>([\s\S]*?)<\/plan>/);
-  if (planMatch) {
-    result.plan = planMatch[1]
-      .split('\n')
-      .map(line => line.replace(/^[\s-]*/, '').trim())
-      .filter(line => line.length > 0);
-  }
-
-  // Extract files
-  const fileRegex = /<file\s+path="([^"]+)">([\s\S]*?)<\/file>/g;
-  let fileMatch;
-  while ((fileMatch = fileRegex.exec(content)) !== null) {
-    const filePath = fileMatch[1].trim();
-    // Remove leading/trailing newline from content (artifact of XML formatting)
-    let fileContent = fileMatch[2];
-    if (fileContent.startsWith('\n')) fileContent = fileContent.slice(1);
-    if (fileContent.endsWith('\n')) fileContent = fileContent.slice(0, -1);
-    result.files[filePath] = fileContent;
-  }
-
-  // Extract explanation
-  const explanationMatch = content.match(/<explanation>([\s\S]*?)<\/explanation>/);
-  if (explanationMatch) {
-    result.explanation = explanationMatch[1].trim();
-  }
-
-  // Fallback: if no XML tags found, try legacy JSON format
-  if (Object.keys(result.files).length === 0) {
-    const jsonMatch = content.match(/```json\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[1]);
-        if (parsed.files && typeof parsed.files === 'object') {
-          result.files = parsed.files;
-        }
-      } catch { /* ignore */ }
-    }
-  }
-
-  // If no explanation found, extract text outside of tags
-  if (!result.explanation) {
-    let text = content;
-    text = text.replace(/<plan>[\s\S]*?<\/plan>/g, '');
-    text = text.replace(/<file\s+path="[^"]*">[\s\S]*?<\/file>/g, '');
-    text = text.replace(/<explanation>[\s\S]*?<\/explanation>/g, '');
-    text = text.replace(/```json[\s\S]*?```/g, '');
-    result.explanation = text.trim();
-  }
-
-  return result;
+## CODE QUALITY
+- For web projects, index.html is the entry point.
+- Use Tailwind CSS via CDN (<script src="https://cdn.tailwindcss.com"></script>) unless the user specifies otherwise.
+- Write production-quality, semantic HTML5 with accessibility.
+- Write clean, well-structured code in any language.
+- Reference uploaded assets using their exact CDN URLs.`;
 }
 
 // ─── Send Message Schema ─────────────────────────────────────
@@ -697,263 +526,7 @@ const sendMessageSchema = z.object({
   })).optional().default([]),
 });
 
-// ─── Helper: Get MIME type from file path ────────────────────
-function getMimeType(filePath: string): string {
-  if (filePath.endsWith('.html') || filePath.endsWith('.htm')) return 'text/html';
-  if (filePath.endsWith('.css')) return 'text/css';
-  if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) return 'application/javascript';
-  if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) return 'application/typescript';
-  if (filePath.endsWith('.json')) return 'application/json';
-  if (filePath.endsWith('.svg')) return 'image/svg+xml';
-  if (filePath.endsWith('.xml')) return 'application/xml';
-  if (filePath.endsWith('.md')) return 'text/markdown';
-  return 'text/plain';
-}
-
-// ─── Helper: Persist files to DB ─────────────────────────────
-async function persistFilesToDB(
-  db: any,
-  projectId: string,
-  files: Record<string, string>,
-): Promise<string[]> {
-  const savedPaths: string[] = [];
-
-  for (const [filePath, content] of Object.entries(files)) {
-    if (typeof content !== 'string') continue;
-
-    const sizeBytes = Buffer.byteLength(content, 'utf-8');
-    const contentHash = crypto.createHash('sha256').update(content).digest('hex');
-    const mimeType = getMimeType(filePath);
-
-    const existing = await db.query.projectFiles.findFirst({
-      where: and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, filePath)),
-    });
-
-    if (existing) {
-      await db.update(projectFiles)
-        .set({ content, contentHash, mimeType, sizeBytes, updatedAt: new Date() })
-        .where(eq(projectFiles.id, existing.id));
-    } else {
-      await db.insert(projectFiles).values({
-        projectId, path: filePath, content, contentHash, mimeType, sizeBytes,
-      });
-    }
-
-    savedPaths.push(filePath);
-  }
-
-  if (savedPaths.length > 0) {
-    await db.update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, projectId));
-  }
-
-  return savedPaths;
-}
-
-// ─── Non-Streaming Chat (used as fallback) ───────────────────
-aiRoutes.post('/chat', async (c) => {
-  const session = c.get('session');
-  const body = await c.req.json();
-  const { projectId, conversationId, message, attachments } = sendMessageSchema.parse(body);
-
-  const db = getDb();
-
-  // Verify project ownership
-  const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.ownerId, session.userId)),
-    with: { files: true, assets: true },
-  });
-  if (!project) throw new AppError(404, 'PROJECT_NOT_FOUND', 'Project not found.');
-
-  // Check AI usage limits
-  const limits = PLAN_LIMITS[session.plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS.free;
-  if (limits.aiMessagesPerMonth !== -1) {
-    const [{ count: usageCount }] = await db.select({ count: count() })
-      .from(aiMessages)
-      .innerJoin(aiConversations, eq(aiMessages.conversationId, aiConversations.id))
-      .where(and(
-        eq(aiConversations.userId, session.userId),
-        eq(aiMessages.role, 'user'),
-      ));
-    if (usageCount >= limits.aiMessagesPerMonth) {
-      throw new AppError(403, 'AI_LIMIT_REACHED',
-        `Your ${session.plan} plan allows ${limits.aiMessagesPerMonth} AI messages per month. Upgrade for more.`);
-    }
-  }
-
-  // Get or create conversation
-  let conversation: any;
-  if (conversationId) {
-    conversation = await db.query.aiConversations.findFirst({
-      where: and(
-        eq(aiConversations.id, conversationId),
-        eq(aiConversations.projectId, projectId),
-        eq(aiConversations.userId, session.userId),
-      ),
-      with: { messages: { orderBy: aiMessages.createdAt, limit: 50 } },
-    });
-    if (!conversation) throw new AppError(404, 'CONVERSATION_NOT_FOUND', 'Conversation not found.');
-  } else {
-    [conversation] = await db.insert(aiConversations).values({
-      projectId,
-      userId: session.userId,
-    }).returning();
-    conversation.messages = [];
-  }
-
-  // Save user message
-  await db.insert(aiMessages).values({
-    conversationId: conversation.id,
-    role: 'user',
-    content: message,
-    attachments: attachments as any,
-    tokensUsed: 0,
-  });
-
-  // Build Anthropic API messages
-  const systemPrompt = buildSystemPrompt(
-    project.files.map((f: any) => ({ path: f.path, content: f.content })),
-    project.assets.map((a: any) => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
-    project.name,
-  );
-
-  const previousMessages = (conversation.messages || []).map((m: any) => ({
-    role: m.role as 'user' | 'assistant',
-    content: m.content,
-  }));
-
-  const apiMessages = [...previousMessages, { role: 'user' as const, content: message }];
-
-  // Make Anthropic call with tools
-  let apiMessages2 = [...apiMessages];
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
-  let replyText = '';
-  let maxToolRounds = 3; // Prevent infinite tool loops
-
-  while (maxToolRounds > 0) {
-    const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': getAnthropicKey(),
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        max_tokens: AI_MAX_TOKENS,
-        system: systemPrompt,
-        messages: apiMessages2,
-        tools: AI_TOOLS,
-      }),
-    });
-
-    if (!anthropicResponse.ok) {
-      const errorBody = await anthropicResponse.text();
-      console.error('[AI] Anthropic API error:', anthropicResponse.status, errorBody);
-      throw new AppError(502, 'AI_ERROR', 'AI service returned an error. Please try again.');
-    }
-
-    const anthropicData = await anthropicResponse.json() as {
-      content: { type: string; text?: string; id?: string; name?: string; input?: any }[];
-      usage: { input_tokens: number; output_tokens: number };
-      stop_reason: string;
-    };
-
-    totalInputTokens += anthropicData.usage?.input_tokens || 0;
-    totalOutputTokens += anthropicData.usage?.output_tokens || 0;
-
-    // Extract text blocks
-    const textBlocks = anthropicData.content?.filter((b: any) => b.type === 'text') || [];
-    replyText += textBlocks.map((b: any) => b.text).join('');
-
-    // Check if there are tool_use blocks
-    const toolUseBlocks = anthropicData.content?.filter((b: any) => b.type === 'tool_use') || [];
-
-    if (toolUseBlocks.length === 0 || anthropicData.stop_reason !== 'tool_use') {
-      break; // No tools to call, done
-    }
-
-    // Execute tool calls and build tool_result messages
-    const toolResults: any[] = [];
-    for (const toolBlock of toolUseBlocks) {
-      const toolResult = await executeToolCall(toolBlock.name!, toolBlock.input || {}, session.userId, projectId);
-      toolResults.push({
-        type: 'tool_result',
-        tool_use_id: toolBlock.id,
-        content: toolResult.success
-          ? JSON.stringify(toolResult.result)
-          : JSON.stringify({ error: toolResult.error }),
-        is_error: !toolResult.success,
-      });
-    }
-
-    // Add assistant message (with tool_use) and user message (with tool_results) to conversation
-    apiMessages2 = [
-      ...apiMessages2,
-      { role: 'assistant' as const, content: anthropicData.content as any },
-      { role: 'user' as const, content: toolResults as any },
-    ];
-
-    maxToolRounds--;
-  }
-
-  const tokensUsed = totalInputTokens + totalOutputTokens;
-
-  // Parse XML response
-  const parsed = parseXMLResponse(replyText);
-  const appliedFiles = Object.keys(parsed.files).length > 0;
-
-  // Persist files to DB
-  if (appliedFiles) {
-    await persistFilesToDB(db, projectId, parsed.files);
-  }
-
-  // Save assistant message
-  const [assistantMsg] = await db.insert(aiMessages).values({
-    conversationId: conversation.id,
-    role: 'assistant',
-    content: replyText,
-    attachments: [],
-    tokensUsed,
-    appliedFiles,
-  }).returning();
-
-  // Update conversation stats
-  await db.update(aiConversations).set({
-    messageCount: (conversation.messageCount || 0) + 2,
-    totalTokensUsed: (conversation.totalTokensUsed || 0) + tokensUsed,
-    updatedAt: new Date(),
-  }).where(eq(aiConversations.id, conversation.id));
-
-  // Log usage
-  await db.insert(usageLogs).values({
-    userId: session.userId,
-    organizationId: session.organizationId,
-    type: 'ai_tokens',
-    quantity: tokensUsed,
-    metadata: { conversationId: conversation.id, model: AI_MODEL },
-  });
-
-  return c.json({
-    success: true,
-    data: {
-      conversationId: conversation.id,
-      message: {
-        id: assistantMsg.id,
-        role: 'assistant',
-        content: replyText,
-        explanation: parsed.explanation,
-        plan: parsed.plan,
-        files: appliedFiles ? Object.keys(parsed.files) : [],
-        tokensUsed,
-        appliedFiles,
-        createdAt: assistantMsg.createdAt.toISOString(),
-      },
-    },
-  });
-});
-
-// ─── Stream Chat (SSE) — Server-Parsed XML Protocol ──────────
+// ─── Stream Chat (SSE) — Tool-Calling Loop ──────────────────
 aiRoutes.post('/chat/stream', async (c) => {
   const session = c.get('session');
   const body = await c.req.json();
@@ -1013,10 +586,43 @@ aiRoutes.post('/chat/stream', async (c) => {
     tokensUsed: 0,
   });
 
+  // Ensure sandbox is running for this project
+  let sandboxInfo: any = null;
+  let previewUrl: string | null = null;
+  try {
+    sandboxInfo = await sandboxService.getOrCreateSandbox(projectId);
+    previewUrl = sandboxInfo.previewUrl;
+
+    // If sandbox just created and project has DB files, restore them
+    const sbFiles = await sandboxService.listFiles(projectId, '.').catch(() => []);
+    const hasProjectFiles = sbFiles.some(f => !f.isDir && f.path !== 'package.json' && f.path !== 'package-lock.json');
+    if (!hasProjectFiles && project.files && project.files.length > 0) {
+      await sandboxService.restoreFilesFromDB(projectId, project.files.map((f: any) => ({
+        path: f.path, content: f.content || '',
+      })));
+    }
+
+    // Start dev server if not already running
+    previewUrl = await sandboxService.startDevServer(projectId).catch(() => previewUrl);
+  } catch (err: any) {
+    logger.error(`[AI Stream] Sandbox init failed: ${err.message}`);
+    // Continue without sandbox — the AI tools will just fail gracefully
+  }
+
+  // Get file listing from sandbox for context
+  let fileList: { path: string; isDir: boolean }[] = [];
+  try {
+    fileList = await sandboxService.listFiles(projectId, '.');
+  } catch {
+    // Fallback to DB files
+    fileList = (project.files || []).map((f: any) => ({ path: f.path, isDir: false }));
+  }
+
   const systemPrompt = buildSystemPrompt(
-    project.files.map((f: any) => ({ path: f.path, content: f.content })),
-    project.assets.map((a: any) => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
+    fileList,
+    (project.assets || []).map((a: any) => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
     project.name,
+    previewUrl,
   );
 
   // Get conversation history
@@ -1025,35 +631,38 @@ aiRoutes.post('/chat/stream', async (c) => {
     content: m.content,
   }));
 
-  // Build messages for Anthropic (with tool support)
   const apiMessages = [...previousMessages, { role: 'user' as const, content: message }];
   const convId = conversation.id;
 
-  // Create our own SSE stream
+  // Create SSE stream
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
       const emit = (data: any) => {
-        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch (e) { /* controller closed */ }
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch { /* controller closed */ }
       };
 
-      console.log(`[AI Stream] Starting — conv=${convId}, project=${projectId}, model=${AI_MODEL}, messages=${apiMessages.length}`);
+      console.log(`[AI Stream] Starting — conv=${convId}, project=${projectId}, sandbox=${sandboxInfo?.sandboxId || 'none'}`);
 
-      emit({ type: 'stream_start', conversationId: convId });
+      emit({
+        type: 'stream_start',
+        conversationId: convId,
+        sandboxUrl: previewUrl,
+      });
 
       let fullTextContent = '';
       let totalInputTokens = 0;
       let totalOutputTokens = 0;
-      let parsedFiles: Record<string, string> = {};
-      let maxToolRounds = 3;
+      let allFilesChanged: string[] = [];
+      let maxToolRounds = 10; // Allow more rounds for complex tasks
       let currentMessages = [...apiMessages];
 
       try {
         while (maxToolRounds > 0) {
-          console.log(`[AI Stream] Calling Anthropic — round=${4 - maxToolRounds}, msgCount=${currentMessages.length}`);
+          console.log(`[AI Stream] Calling Anthropic — round=${11 - maxToolRounds}, msgCount=${currentMessages.length}`);
 
-          // Make streaming request to Anthropic (with tools)
+          // Make streaming request to Anthropic
           const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
             method: 'POST',
             headers: {
@@ -1067,7 +676,7 @@ aiRoutes.post('/chat/stream', async (c) => {
               stream: true,
               system: systemPrompt,
               messages: currentMessages,
-              tools: AI_TOOLS,
+              tools: ALL_TOOLS,
             }),
           });
 
@@ -1078,27 +687,17 @@ aiRoutes.post('/chat/stream', async (c) => {
             break;
           }
 
-          console.log(`[AI Stream] Anthropic responded OK, reading stream...`);
-
-          // Parse the stream to collect content blocks
+          // Parse the stream
           const reader = anthropicResponse.body.getReader();
           const decoder = new TextDecoder();
           let sseBuffer = '';
           let stopReason = '';
           let streamTextContent = '';
           let contentBlocks: any[] = [];
-          let currentBlockIndex = -1;
           let currentBlockType = '';
           let toolUseId = '';
           let toolUseName = '';
           let toolInputJson = '';
-
-          // XML streaming state machine
-          let currentState: 'idle' | 'plan' | 'file' | 'explanation' = 'idle';
-          let currentFilePath = '';
-          let planItems: string[] = [];
-          let explanationText = '';
-          let planSent = false;
 
           while (true) {
             const { done, value } = await reader.read();
@@ -1126,7 +725,6 @@ aiRoutes.post('/chat/stream', async (c) => {
                 }
 
                 if (evt.type === 'content_block_start') {
-                  currentBlockIndex = evt.index;
                   if (evt.content_block?.type === 'text') {
                     currentBlockType = 'text';
                   } else if (evt.content_block?.type === 'tool_use') {
@@ -1141,74 +739,8 @@ aiRoutes.post('/chat/stream', async (c) => {
                   if (currentBlockType === 'text' && evt.delta?.text) {
                     const token = evt.delta.text;
                     streamTextContent += token;
-
-                    // Real-time XML state machine parsing for streaming
-                    if (currentState === 'idle' && streamTextContent.includes('<plan>') && !planSent) {
-                      currentState = 'plan';
-                    }
-                    if (currentState === 'plan' && streamTextContent.includes('</plan>')) {
-                      const planMatch = streamTextContent.match(/<plan>([\s\S]*?)<\/plan>/);
-                      if (planMatch) {
-                        planItems = planMatch[1].split('\n').map(l => l.replace(/^[\s-]*/, '').trim()).filter(l => l.length > 0);
-                        emit({ type: 'plan', items: planItems });
-                        planSent = true;
-                      }
-                      currentState = 'idle';
-                    }
-
-                    // File detection
-                    if (currentState === 'idle') {
-                      const lastFileOpen = streamTextContent.lastIndexOf('<file path="');
-                      if (lastFileOpen !== -1) {
-                        const afterOpen = streamTextContent.slice(lastFileOpen);
-                        const pathMatch = afterOpen.match(/^<file\s+path="([^"]+)">/);
-                        if (pathMatch && !afterOpen.includes('</file>')) {
-                          if (currentFilePath !== pathMatch[1]) {
-                            currentFilePath = pathMatch[1];
-                            currentState = 'file';
-                            emit({ type: 'file_start', path: currentFilePath });
-                          }
-                        }
-                      }
-                    }
-
-                    if (currentState === 'file') {
-                      const fileStartTag = `<file path="${currentFilePath}">`;
-                      const fileStartIdx = streamTextContent.lastIndexOf(fileStartTag);
-                      const contentAfterOpen = streamTextContent.slice(fileStartIdx + fileStartTag.length);
-                      if (contentAfterOpen.includes('</file>')) {
-                        const fileContent = contentAfterOpen.slice(0, contentAfterOpen.lastIndexOf('</file>'));
-                        let trimmed = fileContent;
-                        if (trimmed.startsWith('\n')) trimmed = trimmed.slice(1);
-                        if (trimmed.endsWith('\n')) trimmed = trimmed.slice(0, -1);
-                        parsedFiles[currentFilePath] = trimmed;
-                        emit({ type: 'file_end', path: currentFilePath, content: trimmed });
-                        const planIdx = Object.keys(parsedFiles).length - 1;
-                        if (planIdx < planItems.length) emit({ type: 'plan_progress', completedIndex: planIdx });
-                        currentState = 'idle';
-                        currentFilePath = '';
-                      } else {
-                        emit({ type: 'file_chunk', path: currentFilePath, content: token });
-                      }
-                    }
-
-                    // Explanation
-                    if (currentState === 'idle' && streamTextContent.includes('<explanation>') && !streamTextContent.includes('</explanation>')) {
-                      currentState = 'explanation';
-                    }
-                    if (currentState === 'explanation' && streamTextContent.includes('</explanation>')) {
-                      const expMatch = streamTextContent.match(/<explanation>([\s\S]*?)<\/explanation>/);
-                      if (expMatch) {
-                        explanationText = expMatch[1].trim();
-                        emit({ type: 'explanation', text: explanationText });
-                      }
-                      currentState = 'idle';
-                    }
-
-                    // Plain text (no XML tags at all)
-                    if (currentState === 'idle' && !streamTextContent.includes('<plan>') && !streamTextContent.includes('<file ') && !streamTextContent.includes('<explanation>')) {
-                      emit({ type: 'text_token', token });
-                    }
+                    // Stream text tokens to frontend immediately
+                    emit({ type: 'text', token });
                   } else if (currentBlockType === 'tool_use' && evt.delta?.partial_json) {
                     toolInputJson += evt.delta.partial_json;
                   }
@@ -1224,7 +756,7 @@ aiRoutes.post('/chat/stream', async (c) => {
                   }
                   currentBlockType = '';
                 }
-              } catch { /* skip malformed */ }
+              } catch { /* skip malformed SSE data */ }
             }
           }
 
@@ -1235,21 +767,51 @@ aiRoutes.post('/chat/stream', async (c) => {
             const toolUseBlocks = contentBlocks.filter(b => b.type === 'tool_use');
             if (toolUseBlocks.length === 0) break;
 
-            // Execute each tool and send action events to client
+            // Execute each tool and send events to frontend
             const toolResults: any[] = [];
             for (const toolBlock of toolUseBlocks) {
-              emit({ type: 'action_start', tool: toolBlock.name, input: toolBlock.input });
+              const isSandboxTool = SANDBOX_TOOLS.some(t => t.name === toolBlock.name);
 
-              const toolResult = await executeToolCall(toolBlock.name, toolBlock.input, session.userId, projectId);
-
+              // Emit tool_call event to frontend
               emit({
-                type: 'action_result',
+                type: 'tool_call',
+                tool: toolBlock.name,
+                input: toolBlock.name === 'write_file'
+                  ? { path: toolBlock.input.path, contentLength: toolBlock.input.content?.length || 0 }
+                  : toolBlock.input,
+              });
+
+              // Execute the tool
+              let toolResult: any;
+              if (isSandboxTool) {
+                toolResult = await executeSandboxTool(toolBlock.name, toolBlock.input, projectId);
+              } else {
+                toolResult = await executeDeployTool(toolBlock.name, toolBlock.input, session.userId, projectId);
+              }
+
+              // Emit tool_result event to frontend
+              emit({
+                type: 'tool_result',
                 tool: toolBlock.name,
                 success: toolResult.success,
-                result: toolResult.result,
+                output: typeof toolResult.result === 'string'
+                  ? toolResult.result.slice(0, 2000)
+                  : JSON.stringify(toolResult.result)?.slice(0, 2000),
+                exitCode: toolResult.result?.exitCode,
                 error: toolResult.error,
               });
 
+              // Track file changes
+              if (toolResult.filesChanged) {
+                for (const f of toolResult.filesChanged) {
+                  if (!allFilesChanged.includes(f)) {
+                    allFilesChanged.push(f);
+                    emit({ type: 'file_changed', path: f, action: toolBlock.name === 'write_file' ? 'create' : 'edit' });
+                  }
+                }
+              }
+
+              // Build tool_result message for Anthropic
               toolResults.push({
                 type: 'tool_result',
                 tool_use_id: toolBlock.id,
@@ -1267,7 +829,7 @@ aiRoutes.post('/chat/stream', async (c) => {
               { role: 'user' as const, content: toolResults as any },
             ];
 
-            // Reset for next round — the follow-up will be non-tool or text
+            // Reset for next round
             maxToolRounds--;
             continue;
           }
@@ -1276,35 +838,16 @@ aiRoutes.post('/chat/stream', async (c) => {
           break;
         }
 
-        // Handle any files not caught during streaming (edge case)
-        if (Object.keys(parsedFiles).length === 0 && fullTextContent) {
-          const fallback = parseXMLResponse(fullTextContent);
-          if (Object.keys(fallback.files).length > 0) {
-            parsedFiles = fallback.files;
-            for (const [path, content] of Object.entries(parsedFiles)) {
-              emit({ type: 'file_end', path, content });
-            }
-          }
-          if (fallback.explanation) emit({ type: 'explanation', text: fallback.explanation });
-          if (fallback.plan.length > 0) emit({ type: 'plan', items: fallback.plan });
-        }
-
-        // Persist files to DB
-        const appliedFiles = Object.keys(parsedFiles).length > 0;
-        if (appliedFiles) {
-          await persistFilesToDB(db, projectId, parsedFiles);
-        }
-
         const tokensUsed = totalInputTokens + totalOutputTokens;
 
-        // Save assistant message
+        // Save assistant message to DB
         await db.insert(aiMessages).values({
           conversationId: convId,
           role: 'assistant',
           content: fullTextContent,
           attachments: [],
           tokensUsed,
-          appliedFiles,
+          appliedFiles: allFilesChanged.length > 0,
         });
 
         // Update conversation stats
@@ -1323,13 +866,12 @@ aiRoutes.post('/chat/stream', async (c) => {
           metadata: { conversationId: convId, model: AI_MODEL },
         });
 
-        console.log(`[AI Stream] Done — conv=${convId}, tokens=${tokensUsed}, files=${Object.keys(parsedFiles).length}`);
+        console.log(`[AI Stream] Done — conv=${convId}, tokens=${tokensUsed}, filesChanged=${allFilesChanged.length}`);
 
         emit({
           type: 'stream_end',
           conversationId: convId,
-          appliedFiles,
-          filesPaths: Object.keys(parsedFiles),
+          filesChanged: allFilesChanged,
           tokensUsed,
         });
 
@@ -1362,6 +904,112 @@ aiRoutes.post('/chat/stream', async (c) => {
       'Access-Control-Allow-Origin': corsOrigin,
       'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Expose-Headers': 'X-Conversation-Id',
+    },
+  });
+});
+
+// ─── Non-Streaming Chat (fallback) ──────────────────────────
+aiRoutes.post('/chat', async (c) => {
+  const session = c.get('session');
+  const body = await c.req.json();
+  const { projectId, conversationId, message } = sendMessageSchema.parse(body);
+
+  const db = getDb();
+
+  const project = await db.query.projects.findFirst({
+    where: and(eq(projects.id, projectId), eq(projects.ownerId, session.userId)),
+    with: { files: true, assets: true },
+  });
+  if (!project) throw new AppError(404, 'PROJECT_NOT_FOUND', 'Project not found.');
+
+  // Get or create conversation
+  let conversation: any;
+  if (conversationId) {
+    conversation = await db.query.aiConversations.findFirst({
+      where: and(
+        eq(aiConversations.id, conversationId),
+        eq(aiConversations.projectId, projectId),
+        eq(aiConversations.userId, session.userId),
+      ),
+      with: { messages: { orderBy: aiMessages.createdAt, limit: 50 } },
+    });
+    if (!conversation) throw new AppError(404, 'CONVERSATION_NOT_FOUND', 'Conversation not found.');
+  } else {
+    [conversation] = await db.insert(aiConversations).values({
+      projectId,
+      userId: session.userId,
+    }).returning();
+    conversation.messages = [];
+  }
+
+  await db.insert(aiMessages).values({
+    conversationId: conversation.id,
+    role: 'user',
+    content: message,
+    attachments: [],
+    tokensUsed: 0,
+  });
+
+  // Simple non-streaming response (for fallback)
+  const fileList = (project.files || []).map((f: any) => ({ path: f.path, isDir: false }));
+  const systemPrompt = buildSystemPrompt(
+    fileList,
+    (project.assets || []).map((a: any) => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
+    project.name,
+    null,
+  );
+
+  const previousMessages = (conversation.messages || []).map((m: any) => ({
+    role: m.role as 'user' | 'assistant',
+    content: m.content,
+  }));
+  const apiMessages2 = [...previousMessages, { role: 'user' as const, content: message }];
+
+  const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': getAnthropicKey(),
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: AI_MODEL,
+      max_tokens: AI_MAX_TOKENS,
+      system: systemPrompt,
+      messages: apiMessages2,
+      tools: ALL_TOOLS,
+    }),
+  });
+
+  if (!anthropicResponse.ok) {
+    throw new AppError(502, 'AI_ERROR', 'AI service returned an error.');
+  }
+
+  const anthropicData = await anthropicResponse.json() as any;
+  const textBlocks = anthropicData.content?.filter((b: any) => b.type === 'text') || [];
+  const replyText = textBlocks.map((b: any) => b.text).join('');
+  const tokensUsed = (anthropicData.usage?.input_tokens || 0) + (anthropicData.usage?.output_tokens || 0);
+
+  const [assistantMsg] = await db.insert(aiMessages).values({
+    conversationId: conversation.id,
+    role: 'assistant',
+    content: replyText,
+    attachments: [],
+    tokensUsed,
+    appliedFiles: false,
+  }).returning();
+
+  return c.json({
+    success: true,
+    data: {
+      conversationId: conversation.id,
+      message: {
+        id: assistantMsg.id,
+        role: 'assistant',
+        content: replyText,
+        tokensUsed,
+        createdAt: assistantMsg.createdAt.toISOString(),
+      },
     },
   });
 });
