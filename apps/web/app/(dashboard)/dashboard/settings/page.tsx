@@ -15,10 +15,11 @@ import { toast } from '@/components/ui/toast';
 import {
   User, CreditCard, Shield, ArrowLeft, Check, ExternalLink, Loader2,
   Smartphone, Copy, ShieldCheck, ShieldOff, KeyRound, AlertTriangle,
+  Plug2,
 } from 'lucide-react';
 import clsx from 'clsx';
 
-type Tab = 'profile' | 'billing' | 'security';
+type Tab = 'profile' | 'billing' | 'security' | 'integrations';
 
 const PLAN_FEATURES: Record<string, string[]> = {
   free: ['3 projects', '50 AI messages/mo', '100 MB storage', '10 deploys/mo'],
@@ -124,6 +125,7 @@ function SettingsContent() {
     { id: 'profile' as Tab, label: 'Profile', icon: User },
     { id: 'billing' as Tab, label: 'Billing', icon: CreditCard },
     { id: 'security' as Tab, label: 'Security', icon: Shield },
+    { id: 'integrations' as Tab, label: 'Integrations', icon: Plug2 },
   ];
 
   return (
@@ -292,6 +294,17 @@ function SettingsContent() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* Integrations Tab */}
+            {activeTab === 'integrations' && (
+              <div className="bg-white rounded-xl border border-slate-200 p-6">
+                <h2 className="text-lg font-bold text-slate-900 mb-2">Integrations</h2>
+                <p className="text-sm text-slate-500 mb-5">Connect GitHub, Cloudflare, Vercel, Netlify, and Supabase to deploy and manage your projects.</p>
+                <Button onClick={() => router.push('/dashboard/settings/integrations')} icon={<Plug2 size={14} />}>
+                  Manage Integrations
+                </Button>
               </div>
             )}
 
