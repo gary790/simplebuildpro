@@ -504,18 +504,52 @@ api.simplebuildpro.com  A     <lb_ip>
 
 SSL certificates are auto-provisioned by Google-managed certificates.
 
-## Plan Limits
+## Billing Model — Pay As You Go
 
-| Feature | Free | Pro ($19/mo) | Business ($49/mo) | Enterprise |
-|---|---|---|---|---|
-| Projects | 3 | 25 | Unlimited | Unlimited |
-| AI Messages/mo | 50 | 500 | 2,000 | Unlimited |
-| Storage | 100 MB | 5 GB | 25 GB | 500 GB |
-| Deploys/mo | 10 | Unlimited | Unlimited | Unlimited |
-| Custom Domains | 0 | 3 | 10 | Unlimited |
-| Collaborators | 0 | 5 | 25 | Unlimited |
-| MFA | Yes | Yes | Yes | Yes |
-| Admin Dashboard | No | No | Yes | Yes |
+SimpleBuild Pro uses a **pay-as-you-go** model with daily billing (charged to Stripe). 50% markup over true cost.
+
+### Free Tier (no credit card)
+
+| Resource | Daily Limit |
+|---|---|
+| Projects | 2 total |
+| AI Messages | 10 / day |
+| Storage | 50 MB total |
+| Deploys | 3 / day |
+| Live Preview | 5 minutes / day |
+| Bandwidth | 100 MB / day |
+| Custom Domains | 0 |
+
+### Pay-As-You-Go (add a card → unlimited)
+
+| Resource | Customer Price | Our Cost |
+|---|---|---|
+| AI Input Tokens (per 1M) | $4.50 | $3.00 |
+| AI Output Tokens (per 1M) | $22.50 | $15.00 |
+| AI Message (avg) | ~$0.009 | ~$0.006 |
+| Deploy | $0.0075 | $0.005 |
+| Storage (per GB/month) | $0.50 | $0.07 |
+| Live Preview (per min) | $0.075 | $0.05 |
+| Bandwidth (per GB) | $0.18 | $0.12 |
+| Custom Domain (per month) | $5.00 | $0 |
+
+### Spending Controls
+- Configurable daily spend limit ($1–$1000)
+- Warning at $5/day, pause at $20/day, hard stop at $50/day
+- Account auto-pauses if limit reached; increase limit to resume
+
+### Billing API Endpoints
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/billing/usage` | Current usage & spend |
+| `GET` | `/api/v1/billing/history` | Daily usage history |
+| `GET` | `/api/v1/billing/pricing` | Pricing table |
+| `POST` | `/api/v1/billing/setup-payment` | Create Stripe setup intent |
+| `POST` | `/api/v1/billing/confirm-payment` | Confirm card added |
+| `POST` | `/api/v1/billing/spend-limit` | Set daily limit |
+| `GET` | `/api/v1/billing/events` | Charge history |
+| `POST` | `/api/v1/billing/webhook` | Stripe webhook (no auth) |
+| `POST` | `/api/v1/billing/internal/run-daily-billing` | Cloud Scheduler trigger |
 
 ## Security
 
@@ -552,45 +586,63 @@ SSL certificates are auto-provisioned by Google-managed certificates.
 ## URLs
 
 - **GitHub**: https://github.com/gary790/simplebuildpro
-- **Production API**: https://api.simplebuildpro.com
 - **Production Web**: https://app.simplebuildpro.com
+- **Production API**: https://api.simplebuildpro.com
+- **CDN**: https://cdn.simplebuildpro.com
+- **User Sites**: https://{slug}.sites.simplebuildpro.com
 - **Cloud Run API**: https://simplebuildpro-api-397170798284.us-central1.run.app
 - **Cloud Run Web**: https://simplebuildpro-web-397170798284.us-central1.run.app
 - **Load Balancer IP**: 34.120.143.111
 
 ## Deployment Status
 
-- **Platform**: Google Cloud (Cloud Run + Cloud SQL + Memorystore Redis + Load Balancer)
+- **Platform**: Google Cloud (Cloud Run + Cloud SQL + Memorystore Redis + Load Balancer + Cloud CDN)
 - **Region**: us-central1
-- **Status**: ✅ Deployed and running
-- **Last Updated**: May 7, 2026
+- **Status**: ✅ Live and fully operational
+- **Billing**: Pay-as-you-go (daily Stripe charges)
+- **Last Updated**: May 8, 2026
 
 ### Infrastructure Components
 
 | Component | Resource | Status |
 |---|---|---|
-| **API Server** | Cloud Run `simplebuildpro-api` | ✅ Running |
+| **API Server** | Cloud Run `simplebuildpro-api` (rev 00007-bzj) | ✅ Running |
 | **Web Frontend** | Cloud Run `simplebuildpro-web` | ✅ Running |
-| **Database** | Cloud SQL PostgreSQL 16 `simplebuildpro-db` (136.113.45.130) | ✅ RUNNABLE |
+| **Database** | Cloud SQL PostgreSQL 16 `simplebuildpro-db` (136.113.45.130) | ✅ RUNNABLE (18 tables) |
 | **Cache** | Memorystore Redis `simplebuildpro-redis` (10.1.204.211:6379) | ✅ READY |
 | **VPC Connector** | `sbpro-vpc-connector` (10.8.0.0/28) | ✅ READY |
 | **Load Balancer** | Global HTTPS LB (34.120.143.111) | ✅ Active |
-| **SSL Certificate** | Google-managed for api/app.simplebuildpro.com | ⏳ Pending DNS |
+| **SSL Certificate** | `simplebuildpro-cert-cm` (api/app domains) | ✅ ACTIVE |
+| **Wildcard SSL** | `simplebuildpro-sites-cert` (cdn + *.sites) | ✅ ACTIVE |
+| **Cloud CDN** | Enabled on API + Web backends | ✅ Active |
+| **GCS Buckets** | assets, builds, deploys, snapshots | ✅ Configured |
 | **Artifact Registry** | `us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro` | ✅ Ready |
-| **Secret Manager** | DATABASE_URL, REDIS_URL | ✅ Configured |
+| **Secret Manager** | All production secrets configured | ✅ Active |
+| **DNS** | Cloud DNS zone `simplebuildpro-zone` | ✅ Active |
 
-### DNS Configuration Required
+### Verified End-to-End Flow
+✅ Signup → ✅ Login → ✅ Create Project → ✅ Create File → ✅ Build → ✅ Deploy → ✅ Serve Site
 
-To complete the deployment, add these DNS A records at your domain registrar:
+### DNS Configuration — ✅ Complete
 
+DNS is managed via Google Cloud DNS (zone: `simplebuildpro-zone`). Nameservers configured at registrar:
 ```
-api.simplebuildpro.com    A    34.120.143.111
-app.simplebuildpro.com    A    34.120.143.111
-simplebuildpro.com        A    34.120.143.111
-www.simplebuildpro.com    A    34.120.143.111
+ns-cloud-e1.googledomains.com
+ns-cloud-e2.googledomains.com
+ns-cloud-e3.googledomains.com
+ns-cloud-e4.googledomains.com
 ```
 
-Once DNS propagates, the Google-managed SSL certificate will auto-provision (typically 10-30 minutes after DNS is set).
+A records (all → 34.120.143.111):
+```
+simplebuildpro.com          A    34.120.143.111
+www.simplebuildpro.com      A    34.120.143.111
+api.simplebuildpro.com      A    34.120.143.111
+app.simplebuildpro.com      A    34.120.143.111
+cdn.simplebuildpro.com      A    34.120.143.111
+sites.simplebuildpro.com    A    34.120.143.111
+*.sites.simplebuildpro.com  A    34.120.143.111
+```
 
 ### Redeployment
 
