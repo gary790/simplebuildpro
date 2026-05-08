@@ -255,19 +255,48 @@ export const assetsApi = {
     apiFetch<{ message: string }>(`/api/v1/assets/${projectId}/${assetId}`, { method: 'DELETE' }),
 };
 
-// ─── AI Chat API ────────────────────────────────────────────
+// ─── AI Chat API — Structured Streaming Protocol ─────────────
+export interface AIStreamEvent {
+  type: 'stream_start' | 'plan' | 'file_start' | 'file_chunk' | 'file_end' | 'plan_progress' | 'explanation' | 'text_token' | 'stream_end' | 'error';
+  conversationId?: string;
+  items?: string[];
+  path?: string;
+  content?: string;
+  token?: string;
+  text?: string;
+  completedIndex?: number;
+  appliedFiles?: boolean;
+  filesPaths?: string[];
+  tokensUsed?: number;
+  message?: string;
+}
+
+export type AIStreamCallback = (event: AIStreamEvent) => void;
+
 export const aiApi = {
   sendMessage: (data: { projectId: string; conversationId?: string; message: string }) =>
-    apiFetch<{ conversationId: string; message: AiMessage }>(
+    apiFetch<{ conversationId: string; message: AiMessage & { explanation?: string; plan?: string[]; files?: string[] } }>(
       '/api/v1/ai/chat',
       { method: 'POST', body: JSON.stringify(data) },
     ),
 
+  /**
+   * Stream AI response with structured events.
+   * The server parses the XML protocol and sends typed SSE events:
+   * - stream_start: {conversationId}
+   * - plan: {items: string[]}
+   * - file_start: {path}
+   * - file_chunk: {path, content}
+   * - file_end: {path, content} (complete file)
+   * - plan_progress: {completedIndex}
+   * - explanation: {text}
+   * - text_token: {token} (for plain text responses)
+   * - stream_end: {conversationId, appliedFiles, filesPaths, tokensUsed}
+   * - error: {message}
+   */
   streamMessage: async (
     data: { projectId: string; conversationId?: string; message: string },
-    onToken: (token: string) => void,
-    onComplete: (meta?: { conversationId?: string; appliedFiles?: boolean }) => void,
-    onError: (error: string) => void,
+    onEvent: AIStreamCallback,
   ) => {
     const url = `${API_BASE}/api/v1/ai/chat/stream`;
     const res = await fetch(url, {
@@ -281,20 +310,16 @@ export const aiApi = {
 
     if (!res.ok || !res.body) {
       const errJson = await res.json().catch(() => null);
-      onError(errJson?.error?.message || 'Failed to connect to AI service.');
+      onEvent({
+        type: 'error',
+        message: errJson?.error?.message || `AI service error (${res.status})`,
+      });
       return;
     }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    let meta: { conversationId?: string; appliedFiles?: boolean } = {};
-
-    // Get conversationId from response header
-    const headerConvId = res.headers.get('X-Conversation-Id');
-    if (headerConvId && headerConvId !== 'new') {
-      meta.conversationId = headerConvId;
-    }
 
     while (true) {
       const { done, value } = await reader.read();
@@ -307,28 +332,31 @@ export const aiApi = {
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const eventData = line.slice(6).trim();
-          if (eventData === '[DONE]') {
-            continue; // Wait for our custom sbp_done event
-          }
+          if (!eventData || eventData === '[DONE]') continue;
           try {
-            const parsed = JSON.parse(eventData);
-            // Handle content streaming from Anthropic
-            if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-              onToken(parsed.delta.text);
-            }
-            // Handle our custom completion event with metadata
-            else if (parsed.type === 'sbp_done') {
-              meta.conversationId = parsed.conversationId || meta.conversationId;
-              meta.appliedFiles = parsed.appliedFiles;
-            }
+            const event: AIStreamEvent = JSON.parse(eventData);
+            onEvent(event);
           } catch {
-            // Skip malformed SSE events
+            // Skip malformed events
           }
         }
       }
     }
 
-    onComplete(meta);
+    // Process remaining buffer
+    if (buffer.trim()) {
+      const lines = buffer.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const eventData = line.slice(6).trim();
+          if (!eventData || eventData === '[DONE]') continue;
+          try {
+            const event: AIStreamEvent = JSON.parse(eventData);
+            onEvent(event);
+          } catch { /* skip */ }
+        }
+      }
+    }
   },
 
   getConversations: (projectId: string) =>

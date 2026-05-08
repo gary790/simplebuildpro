@@ -1,6 +1,6 @@
 // ============================================================
 // SimpleBuild Pro — Preview Panel
-// Client-side iframe preview — renders HTML/CSS/JS from editor
+// Client-side iframe preview — AUTO-STARTS when index.html exists
 // No external sandbox required — instant preview
 // ============================================================
 
@@ -8,10 +8,9 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useEditorStore } from '@/lib/store';
-import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import {
-  Play, RefreshCw, ExternalLink, Maximize2, Minimize2,
+  RefreshCw, ExternalLink, Maximize2, Minimize2,
   Monitor, Smartphone, Tablet, Eye,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -30,9 +29,10 @@ export function PreviewPanel() {
   const [device, setDevice] = useState<DeviceMode>('desktop');
   const [fullscreen, setFullscreen] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [previewActive, setPreviewActive] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  const hasIndex = files.has('index.html') || files.has('index.htm');
 
   // Build the preview HTML by combining project files
   const previewHtml = useMemo(() => {
@@ -54,7 +54,7 @@ export function PreviewPanel() {
       if (linkRegex.test(html)) {
         html = html.replace(linkRegex, `<style>/* ${path} */\n${content}\n</style>`);
       } else {
-        // Also try without path prefix (./style.css or just style.css)
+        // Try without path prefix (./style.css or just style.css)
         const basename = path.split('/').pop() || path;
         const linkRegex2 = new RegExp(
           `<link[^>]*href=["'](\\.?\\/?)${basename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`,
@@ -91,30 +91,34 @@ export function PreviewPanel() {
     }
 
     return html;
-  }, [files, refreshKey]);
+  }, [files]);
 
-  // Auto-refresh preview when files change
+  // Auto-refresh preview with debounce when files change
   useEffect(() => {
-    if (autoRefresh && previewActive && iframeRef.current && previewHtml) {
-      const blob = new Blob([previewHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      iframeRef.current.src = url;
-      return () => URL.revokeObjectURL(url);
-    }
-  }, [previewHtml, autoRefresh, previewActive]);
+    if (!autoRefresh || !previewHtml || !iframeRef.current) return;
 
-  const startPreview = useCallback(() => {
-    setPreviewActive(true);
-    setRefreshKey((k) => k + 1);
-  }, []);
+    // Debounce to avoid thrashing during streaming
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      if (iframeRef.current && previewHtml) {
+        const blob = new Blob([previewHtml], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        iframeRef.current.src = url;
+        // Clean up blob URL after load
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }
+    }, 500); // 500ms debounce — fast enough to feel live, slow enough to not thrash
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [previewHtml, autoRefresh]);
 
   const refreshPreview = useCallback(() => {
-    setRefreshKey((k) => k + 1);
     if (iframeRef.current && previewHtml) {
       const blob = new Blob([previewHtml], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       iframeRef.current.src = url;
-      // Clean up old blob URL after a short delay
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     }
   }, [previewHtml]);
@@ -124,11 +128,8 @@ export function PreviewPanel() {
     const blob = new Blob([previewHtml], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
-    // Don't revoke immediately — the new tab needs time to load
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }, [previewHtml]);
-
-  const hasIndex = files.has('index.html') || files.has('index.htm');
 
   return (
     <div className={clsx(
@@ -137,10 +138,17 @@ export function PreviewPanel() {
     )}>
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-9 border-b border-slate-200 bg-slate-50 shrink-0">
-        <span className="text-xs font-semibold text-slate-600">Preview</span>
+        <span className="text-xs font-semibold text-slate-600">
+          Preview
+          {hasIndex && (
+            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-2xs bg-green-100 text-green-700 font-medium">
+              Live
+            </span>
+          )}
+        </span>
         <div className="flex items-center gap-1">
           {/* Device Toggle */}
-          {previewActive && (
+          {hasIndex && (
             <div className="flex items-center border border-slate-200 rounded-md overflow-hidden mr-1">
               {([
                 { mode: 'desktop' as DeviceMode, Icon: Monitor },
@@ -162,11 +170,7 @@ export function PreviewPanel() {
           )}
 
           {/* Controls */}
-          {!previewActive ? (
-            <Button size="xs" onClick={startPreview} disabled={!hasIndex} icon={<Play size={10} />}>
-              Start
-            </Button>
-          ) : (
+          {hasIndex && (
             <>
               <button onClick={refreshPreview} className="p-1 rounded hover:bg-slate-200 text-slate-500 transition-colors" title="Refresh">
                 <RefreshCw size={12} />
@@ -197,27 +201,18 @@ export function PreviewPanel() {
 
       {/* Preview Content */}
       <div className="flex-1 bg-[#f0f0f0] flex items-center justify-center overflow-hidden">
-        {!previewActive && (
+        {!hasIndex && (
           <div className="flex flex-col items-center gap-3 text-center px-6">
             <div className="w-12 h-12 rounded-2xl bg-slate-200 flex items-center justify-center">
               <Monitor size={20} className="text-slate-400" />
             </div>
-            {hasIndex ? (
-              <>
-                <p className="text-xs text-slate-500">Click Start to preview your site</p>
-                <Button size="xs" onClick={startPreview} icon={<Play size={10} />}>
-                  Start Preview
-                </Button>
-              </>
-            ) : (
-              <p className="text-xs text-slate-500">
-                Create an <code className="bg-slate-100 px-1 py-0.5 rounded">index.html</code> file to preview your site
-              </p>
-            )}
+            <p className="text-xs text-slate-500">
+              Ask the AI to build something — the preview will appear here automatically
+            </p>
           </div>
         )}
 
-        {previewActive && previewHtml && (
+        {hasIndex && previewHtml && (
           <div
             className="h-full bg-white shadow-lg transition-all duration-200"
             style={{ width: deviceWidths[device], maxWidth: '100%' }}
@@ -231,10 +226,10 @@ export function PreviewPanel() {
           </div>
         )}
 
-        {previewActive && !previewHtml && (
+        {hasIndex && !previewHtml && (
           <div className="flex flex-col items-center gap-3 text-center px-6">
             <p className="text-xs text-slate-500">
-              No <code className="bg-slate-100 px-1 py-0.5 rounded">index.html</code> found. Ask the AI to create one!
+              Waiting for content...
             </p>
           </div>
         )}

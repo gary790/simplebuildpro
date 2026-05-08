@@ -1,7 +1,8 @@
 // ============================================================
 // SimpleBuild Pro — AI Routes
 // Real Anthropic Claude API proxy — NEVER exposes keys to client
-// Streaming support for real-time token delivery
+// XML Protocol: <plan>, <explanation>, <file path="...">
+// Server-side parsing → structured SSE events to frontend
 // ============================================================
 
 import { Hono } from 'hono';
@@ -13,6 +14,7 @@ import { requireAuth, type AuthEnv } from '../middleware/auth';
 import { AppError } from '../middleware/error-handler';
 import { rateLimiter } from '../middleware/rate-limiter';
 import { PLAN_LIMITS, AI_MODEL, AI_MAX_TOKENS, APP_NAME } from '@simplebuildpro/shared';
+import * as crypto from 'crypto';
 
 export const aiRoutes = new Hono<AuthEnv>();
 aiRoutes.use('*', requireAuth);
@@ -26,13 +28,13 @@ function getAnthropicKey(): string {
   return key;
 }
 
-// ─── Build System Prompt with Full Project Context ───────────
+// ─── Build System Prompt with XML Protocol ───────────────────
 function buildSystemPrompt(
-  projectFiles: { path: string; content: string }[],
+  files: { path: string; content: string }[],
   assets: { filename: string; cdnUrl: string; mimeType: string }[],
   projectName: string,
 ): string {
-  const fileCtx = projectFiles
+  const fileCtx = files
     .map(f => `=== ${f.path} ===\n${f.content}`)
     .join('\n\n');
 
@@ -40,41 +42,138 @@ function buildSystemPrompt(
     .map(a => `- ${a.filename} (${a.mimeType}) → ${a.cdnUrl}`)
     .join('\n');
 
-  return `You are the AI coding assistant for ${APP_NAME}, an enterprise website builder platform.
-You have FULL CONTEXT of the user's project "${projectName}" — all source files and uploaded assets.
+  return `You are the AI coding assistant for ${APP_NAME}, an enterprise website builder.
+You have FULL CONTEXT of the user's project "${projectName}".
 
 ## PROJECT FILES
 ${fileCtx || 'No files yet. Create index.html as the entry point.'}
 
 ## UPLOADED ASSETS (${assets.length} files)
 ${assetList || 'None yet.'}
-When referencing assets in code, use their CDN URLs directly in src attributes.
+When referencing assets in code, use their CDN URLs directly.
 
-## CRITICAL OUTPUT FORMAT
-When you create or modify code, you MUST output ALL changed/new files inside a single fenced JSON code block with this EXACT structure:
+## CRITICAL OUTPUT FORMAT — XML PROTOCOL
 
-\`\`\`json
-{"files":{"index.html":"<!DOCTYPE html>\\n<html>...</html>","style.css":"body { ... }","app.js":"// code here"}}
-\`\`\`
+You MUST structure your response using these XML tags:
 
-RULES for the JSON block:
-1. The key "files" maps to an object where each key is the filename (e.g. "index.html", "style.css", "app.js") and each value is the COMPLETE file content as a JSON string.
-2. ALWAYS include the FULL, COMPLETE content of every file you create or modify — never abbreviate with "..." or "/* rest of code */" or similar placeholders.
-3. Use proper JSON string escaping: newlines as \\n, quotes as \\", tabs as \\t, backslashes as \\\\.
-4. If you only modify one file, still use the same format with just that one file in the object.
-5. You may include explanatory text BEFORE or AFTER the JSON block, but the code MUST be inside the \`\`\`json block.
+### 1. Plan (REQUIRED when creating/modifying code)
+List the steps you will take:
 
-## CODING GUIDELINES
-- To reference uploaded assets, use the exact CDN URL from the assets list above.
-- Write production-quality, semantic HTML5 with proper accessibility attributes.
-- Use Tailwind CSS via CDN (<script src="https://cdn.tailwindcss.com"></script>) unless user requests otherwise.
-- Write clean, well-structured JavaScript with event delegation and proper error handling.
-- For multi-file projects: index.html is the entry point, link to style.css and app.js from it.
-- Be concise in explanations. Focus on the user's actual request.
-- If the user asks a question or wants discussion only (no code changes), respond normally without a JSON block.`;
+<plan>
+- Step description 1
+- Step description 2
+- Step description 3
+</plan>
+
+### 2. Files (REQUIRED when creating/modifying code)
+Output EACH file in its own tag. ALWAYS output the COMPLETE file content — never abbreviate.
+
+<file path="index.html">
+<!DOCTYPE html>
+<html lang="en">
+...complete file content...
+</html>
+</file>
+
+<file path="style.css">
+body { margin: 0; }
+...complete file content...
+</file>
+
+<file path="app.js">
+// Complete JavaScript
+...complete file content...
+</file>
+
+### 3. Explanation (REQUIRED — always explain what you did)
+<explanation>
+Brief description of what was created/changed and why.
+</explanation>
+
+## RULES
+1. ALWAYS use the XML tags above when generating or modifying code.
+2. Each <file> tag MUST have a path attribute and contain the FULL file content.
+3. NEVER abbreviate file content — no "..." or "/* rest of code */" placeholders.
+4. The <plan> comes FIRST, then <file> tags, then <explanation>.
+5. If the user asks a question without needing code changes, respond with plain text (no XML tags).
+6. For multi-file projects: index.html is the entry point.
+7. Use Tailwind CSS via CDN (<script src="https://cdn.tailwindcss.com"></script>) unless the user requests otherwise.
+8. Write production-quality, semantic HTML5 with accessibility.
+9. Write clean, well-structured JavaScript.
+10. Reference uploaded assets using their exact CDN URLs.
+11. NEVER output markdown code fences (\`\`\`) around file content — use the <file> tag instead.`;
 }
 
-// ─── Send Message (Streaming) ────────────────────────────────
+// ─── XML Parser: Extract structured data from AI response ────
+interface ParsedAIResponse {
+  plan: string[];
+  files: Record<string, string>;
+  explanation: string;
+  rawContent: string;
+}
+
+function parseXMLResponse(content: string): ParsedAIResponse {
+  const result: ParsedAIResponse = {
+    plan: [],
+    files: {},
+    explanation: '',
+    rawContent: content,
+  };
+
+  // Extract plan
+  const planMatch = content.match(/<plan>([\s\S]*?)<\/plan>/);
+  if (planMatch) {
+    result.plan = planMatch[1]
+      .split('\n')
+      .map(line => line.replace(/^[\s-]*/, '').trim())
+      .filter(line => line.length > 0);
+  }
+
+  // Extract files
+  const fileRegex = /<file\s+path="([^"]+)">([\s\S]*?)<\/file>/g;
+  let fileMatch;
+  while ((fileMatch = fileRegex.exec(content)) !== null) {
+    const filePath = fileMatch[1].trim();
+    // Remove leading/trailing newline from content (artifact of XML formatting)
+    let fileContent = fileMatch[2];
+    if (fileContent.startsWith('\n')) fileContent = fileContent.slice(1);
+    if (fileContent.endsWith('\n')) fileContent = fileContent.slice(0, -1);
+    result.files[filePath] = fileContent;
+  }
+
+  // Extract explanation
+  const explanationMatch = content.match(/<explanation>([\s\S]*?)<\/explanation>/);
+  if (explanationMatch) {
+    result.explanation = explanationMatch[1].trim();
+  }
+
+  // Fallback: if no XML tags found, try legacy JSON format
+  if (Object.keys(result.files).length === 0) {
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[1]);
+        if (parsed.files && typeof parsed.files === 'object') {
+          result.files = parsed.files;
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
+  // If no explanation found, extract text outside of tags
+  if (!result.explanation) {
+    let text = content;
+    text = text.replace(/<plan>[\s\S]*?<\/plan>/g, '');
+    text = text.replace(/<file\s+path="[^"]*">[\s\S]*?<\/file>/g, '');
+    text = text.replace(/<explanation>[\s\S]*?<\/explanation>/g, '');
+    text = text.replace(/```json[\s\S]*?```/g, '');
+    result.explanation = text.trim();
+  }
+
+  return result;
+}
+
+// ─── Send Message Schema ─────────────────────────────────────
 const sendMessageSchema = z.object({
   projectId: z.string().uuid(),
   conversationId: z.string().uuid().optional(),
@@ -86,6 +185,59 @@ const sendMessageSchema = z.object({
   })).optional().default([]),
 });
 
+// ─── Helper: Get MIME type from file path ────────────────────
+function getMimeType(filePath: string): string {
+  if (filePath.endsWith('.html') || filePath.endsWith('.htm')) return 'text/html';
+  if (filePath.endsWith('.css')) return 'text/css';
+  if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) return 'application/javascript';
+  if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) return 'application/typescript';
+  if (filePath.endsWith('.json')) return 'application/json';
+  if (filePath.endsWith('.svg')) return 'image/svg+xml';
+  if (filePath.endsWith('.xml')) return 'application/xml';
+  if (filePath.endsWith('.md')) return 'text/markdown';
+  return 'text/plain';
+}
+
+// ─── Helper: Persist files to DB ─────────────────────────────
+async function persistFilesToDB(
+  db: any,
+  projectId: string,
+  files: Record<string, string>,
+): Promise<string[]> {
+  const savedPaths: string[] = [];
+
+  for (const [filePath, content] of Object.entries(files)) {
+    if (typeof content !== 'string') continue;
+
+    const sizeBytes = Buffer.byteLength(content, 'utf-8');
+    const contentHash = crypto.createHash('sha256').update(content).digest('hex');
+    const mimeType = getMimeType(filePath);
+
+    const existing = await db.query.projectFiles.findFirst({
+      where: and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, filePath)),
+    });
+
+    if (existing) {
+      await db.update(projectFiles)
+        .set({ content, contentHash, mimeType, sizeBytes, updatedAt: new Date() })
+        .where(eq(projectFiles.id, existing.id));
+    } else {
+      await db.insert(projectFiles).values({
+        projectId, path: filePath, content, contentHash, mimeType, sizeBytes,
+      });
+    }
+
+    savedPaths.push(filePath);
+  }
+
+  if (savedPaths.length > 0) {
+    await db.update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, projectId));
+  }
+
+  return savedPaths;
+}
+
+// ─── Non-Streaming Chat (used as fallback) ───────────────────
 aiRoutes.post('/chat', async (c) => {
   const session = c.get('session');
   const body = await c.req.json();
@@ -103,10 +255,6 @@ aiRoutes.post('/chat', async (c) => {
   // Check AI usage limits
   const limits = PLAN_LIMITS[session.plan];
   if (limits.aiMessagesPerMonth !== -1) {
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-
     const [{ count: usageCount }] = await db.select({ count: count() })
       .from(aiMessages)
       .innerJoin(aiConversations, eq(aiMessages.conversationId, aiConversations.id))
@@ -114,7 +262,6 @@ aiRoutes.post('/chat', async (c) => {
         eq(aiConversations.userId, session.userId),
         eq(aiMessages.role, 'user'),
       ));
-
     if (usageCount >= limits.aiMessagesPerMonth) {
       throw new AppError(403, 'AI_LIMIT_REACHED',
         `Your ${session.plan} plan allows ${limits.aiMessagesPerMonth} AI messages per month. Upgrade for more.`);
@@ -122,7 +269,7 @@ aiRoutes.post('/chat', async (c) => {
   }
 
   // Get or create conversation
-  let conversation;
+  let conversation: any;
   if (conversationId) {
     conversation = await db.query.aiConversations.findFirst({
       where: and(
@@ -138,37 +285,32 @@ aiRoutes.post('/chat', async (c) => {
       projectId,
       userId: session.userId,
     }).returning();
-    (conversation as any).messages = [];
+    conversation.messages = [];
   }
 
   // Save user message
-  const [userMsg] = await db.insert(aiMessages).values({
+  await db.insert(aiMessages).values({
     conversationId: conversation.id,
     role: 'user',
     content: message,
     attachments: attachments as any,
     tokensUsed: 0,
-  }).returning();
+  });
 
   // Build Anthropic API messages
   const systemPrompt = buildSystemPrompt(
-    project.files.map(f => ({ path: f.path, content: f.content })),
-    project.assets.map(a => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
+    project.files.map((f: any) => ({ path: f.path, content: f.content })),
+    project.assets.map((a: any) => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
     project.name,
   );
 
-  const previousMessages = ((conversation as any).messages || []).map((m: any) => ({
+  const previousMessages = (conversation.messages || []).map((m: any) => ({
     role: m.role as 'user' | 'assistant',
     content: m.content,
   }));
 
-  // Add current message
-  const apiMessages = [
-    ...previousMessages,
-    { role: 'user' as const, content: message },
-  ];
+  const apiMessages = [...previousMessages, { role: 'user' as const, content: message }];
 
-  // Call Anthropic API (non-streaming for now — streaming SSE in future)
   const anthropicResponse = await fetch(ANTHROPIC_API_URL, {
     method: 'POST',
     headers: {
@@ -202,43 +344,13 @@ aiRoutes.post('/chat', async (c) => {
 
   const tokensUsed = (anthropicData.usage?.input_tokens || 0) + (anthropicData.usage?.output_tokens || 0);
 
-  // Check if reply contains file updates and apply them to the DB
-  let appliedFiles = false;
-  const jsonMatch = replyText.match(/```json\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[1]);
-      if (parsed.files && typeof parsed.files === 'object') {
-        appliedFiles = true;
-        // Persist file updates to the database
-        for (const [filePath, content] of Object.entries(parsed.files)) {
-          if (typeof content !== 'string') continue;
-          const sizeBytes = Buffer.byteLength(content, 'utf-8');
-          const contentHash = require('crypto').createHash('sha256').update(content).digest('hex');
-          const mimeType = filePath.endsWith('.html') ? 'text/html'
-            : filePath.endsWith('.css') ? 'text/css'
-            : filePath.endsWith('.js') ? 'application/javascript'
-            : filePath.endsWith('.json') ? 'application/json'
-            : 'text/plain';
+  // Parse XML response
+  const parsed = parseXMLResponse(replyText);
+  const appliedFiles = Object.keys(parsed.files).length > 0;
 
-          const existing = await db.query.projectFiles.findFirst({
-            where: and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, filePath)),
-          });
-
-          if (existing) {
-            await db.update(projectFiles)
-              .set({ content, contentHash, mimeType, sizeBytes, updatedAt: new Date() })
-              .where(eq(projectFiles.id, existing.id));
-          } else {
-            await db.insert(projectFiles).values({
-              projectId, path: filePath, content, contentHash, mimeType, sizeBytes,
-            });
-          }
-        }
-        // Update project timestamp
-        await db.update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, projectId));
-      }
-    } catch { /* not valid JSON — ignore */ }
+  // Persist files to DB
+  if (appliedFiles) {
+    await persistFilesToDB(db, projectId, parsed.files);
   }
 
   // Save assistant message
@@ -253,8 +365,8 @@ aiRoutes.post('/chat', async (c) => {
 
   // Update conversation stats
   await db.update(aiConversations).set({
-    messageCount: ((conversation as any).messageCount || 0) + 2,
-    totalTokensUsed: ((conversation as any).totalTokensUsed || 0) + tokensUsed,
+    messageCount: (conversation.messageCount || 0) + 2,
+    totalTokensUsed: (conversation.totalTokensUsed || 0) + tokensUsed,
     updatedAt: new Date(),
   }).where(eq(aiConversations.id, conversation.id));
 
@@ -275,6 +387,9 @@ aiRoutes.post('/chat', async (c) => {
         id: assistantMsg.id,
         role: 'assistant',
         content: replyText,
+        explanation: parsed.explanation,
+        plan: parsed.plan,
+        files: appliedFiles ? Object.keys(parsed.files) : [],
         tokensUsed,
         appliedFiles,
         createdAt: assistantMsg.createdAt.toISOString(),
@@ -283,7 +398,7 @@ aiRoutes.post('/chat', async (c) => {
   });
 });
 
-// ─── Stream Chat (SSE) ───────────────────────────────────────
+// ─── Stream Chat (SSE) — Server-Parsed XML Protocol ──────────
 aiRoutes.post('/chat/stream', async (c) => {
   const session = c.get('session');
   const body = await c.req.json();
@@ -344,8 +459,8 @@ aiRoutes.post('/chat/stream', async (c) => {
   });
 
   const systemPrompt = buildSystemPrompt(
-    project.files.map(f => ({ path: f.path, content: f.content })),
-    project.assets.map(a => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
+    project.files.map((f: any) => ({ path: f.path, content: f.content })),
+    project.assets.map((a: any) => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
     project.name,
   );
 
@@ -378,83 +493,221 @@ aiRoutes.post('/chat/stream', async (c) => {
     throw new AppError(502, 'AI_ERROR', 'AI streaming service returned an error.');
   }
 
-  // Create a TransformStream that collects the full response while forwarding to client
+  const convId = conversation.id;
+
+  // Create our own SSE stream that sends STRUCTURED events to the client
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
+
   let fullContent = '';
   let inputTokens = 0;
   let outputTokens = 0;
-  const convId = conversation.id;
 
-  const { readable, writable } = new TransformStream({
-    transform(chunk, controller) {
-      // Forward chunk to client as-is
-      controller.enqueue(chunk);
+  // Streaming state machine for XML parsing
+  let currentState: 'idle' | 'plan' | 'file' | 'explanation' = 'idle';
+  let currentFilePath = '';
+  let currentFileContent = '';
+  let planItems: string[] = [];
+  let explanationText = '';
+  let parsedFiles: Record<string, string> = {};
+  let planSent = false;
 
-      // Also parse the SSE events to collect full text
-      const text = decoder.decode(chunk, { stream: true });
-      const lines = text.split('\n');
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') continue;
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-              fullContent += parsed.delta.text;
-            }
-            if (parsed.type === 'message_delta' && parsed.usage) {
-              outputTokens = parsed.usage.output_tokens || 0;
-            }
-            if (parsed.type === 'message_start' && parsed.message?.usage) {
-              inputTokens = parsed.message.usage.input_tokens || 0;
-            }
-          } catch { /* skip malformed */ }
-        }
-      }
-    },
-    async flush(controller) {
-      // Stream is done — persist everything to DB in background
+  const stream = new ReadableStream({
+    async start(controller) {
+      // Send initial event with conversationId
+      const initEvent = `data: ${JSON.stringify({ type: 'stream_start', conversationId: convId })}\n\n`;
+      controller.enqueue(encoder.encode(initEvent));
+
+      const reader = anthropicResponse.body!.getReader();
+      let sseBuffer = '';
+
       try {
-        const tokensUsed = inputTokens + outputTokens;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        // Check if reply contains file updates and apply them
-        let appliedFiles = false;
-        const jsonMatch = fullContent.match(/```json\s*([\s\S]*?)```/);
-        if (jsonMatch) {
-          try {
-            const parsed = JSON.parse(jsonMatch[1]);
-            if (parsed.files && typeof parsed.files === 'object') {
-              appliedFiles = true;
-              for (const [filePath, content] of Object.entries(parsed.files)) {
-                if (typeof content !== 'string') continue;
-                const sizeBytes = Buffer.byteLength(content, 'utf-8');
-                const crypto = require('crypto');
-                const contentHash = crypto.createHash('sha256').update(content).digest('hex');
-                const mimeType = filePath.endsWith('.html') ? 'text/html'
-                  : filePath.endsWith('.css') ? 'text/css'
-                  : filePath.endsWith('.js') ? 'application/javascript'
-                  : filePath.endsWith('.json') ? 'application/json'
-                  : 'text/plain';
+          sseBuffer += decoder.decode(value, { stream: true });
+          const lines = sseBuffer.split('\n');
+          sseBuffer = lines.pop() || '';
 
-                const existing = await db.query.projectFiles.findFirst({
-                  where: and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, filePath)),
-                });
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') continue;
 
-                if (existing) {
-                  await db.update(projectFiles)
-                    .set({ content, contentHash, mimeType, sizeBytes, updatedAt: new Date() })
-                    .where(eq(projectFiles.id, existing.id));
-                } else {
-                  await db.insert(projectFiles).values({
-                    projectId, path: filePath, content, contentHash, mimeType, sizeBytes,
-                  });
+            try {
+              const parsed = JSON.parse(data);
+
+              if (parsed.type === 'message_start' && parsed.message?.usage) {
+                inputTokens = parsed.message.usage.input_tokens || 0;
+              }
+
+              if (parsed.type === 'message_delta' && parsed.usage) {
+                outputTokens = parsed.usage.output_tokens || 0;
+              }
+
+              if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+                const token = parsed.delta.text;
+                fullContent += token;
+
+                // Real-time XML state machine parsing
+                // Detect transitions based on accumulated content
+
+                // Check if we just received a <plan> opening
+                if (currentState === 'idle' && fullContent.includes('<plan>') && !planSent) {
+                  currentState = 'plan';
+                  // Don't send tokens to client while in plan — wait for complete plan
+                }
+
+                // Check if plan is complete
+                if (currentState === 'plan' && fullContent.includes('</plan>')) {
+                  const planMatch = fullContent.match(/<plan>([\s\S]*?)<\/plan>/);
+                  if (planMatch) {
+                    planItems = planMatch[1]
+                      .split('\n')
+                      .map(l => l.replace(/^[\s-]*/, '').trim())
+                      .filter(l => l.length > 0);
+
+                    // Send plan event to client
+                    const planEvent = `data: ${JSON.stringify({ type: 'plan', items: planItems })}\n\n`;
+                    controller.enqueue(encoder.encode(planEvent));
+                    planSent = true;
+                  }
+                  currentState = 'idle';
+                }
+
+                // Check for <file path="..."> opening
+                if (currentState === 'idle') {
+                  const fileOpenMatch = fullContent.match(/<file\s+path="([^"]+)">(?![\s\S]*<\/file>)/);
+                  if (fileOpenMatch && !fullContent.includes(`<file path="${fileOpenMatch[1]}">`+ '___DONE___')) {
+                    // Verify this is a NEW file tag not yet closed
+                    const lastFileOpen = fullContent.lastIndexOf(`<file path="`);
+                    const afterOpen = fullContent.slice(lastFileOpen);
+                    if (!afterOpen.includes('</file>')) {
+                      currentState = 'file';
+                      currentFilePath = fileOpenMatch[1];
+                      const startIdx = fullContent.indexOf('>', fullContent.lastIndexOf(`<file path="${currentFilePath}"`)) + 1;
+                      currentFileContent = fullContent.slice(startIdx);
+
+                      // Send file-start event
+                      const fileStartEvent = `data: ${JSON.stringify({ type: 'file_start', path: currentFilePath })}\n\n`;
+                      controller.enqueue(encoder.encode(fileStartEvent));
+
+                      // Send accumulated content as chunk
+                      if (currentFileContent.length > 0) {
+                        const chunkEvent = `data: ${JSON.stringify({ type: 'file_chunk', path: currentFilePath, content: currentFileContent })}\n\n`;
+                        controller.enqueue(encoder.encode(chunkEvent));
+                      }
+                    }
+                  }
+                }
+
+                // While in file state, send new tokens as file chunks
+                if (currentState === 'file') {
+                  // Check if file is now complete
+                  const closeTag = '</file>';
+                  const fileStartTag = `<file path="${currentFilePath}">`;
+                  const fileStartIdx = fullContent.lastIndexOf(fileStartTag);
+                  const contentAfterOpen = fullContent.slice(fileStartIdx + fileStartTag.length);
+
+                  if (contentAfterOpen.includes(closeTag)) {
+                    // File is complete
+                    const fileContent = contentAfterOpen.slice(0, contentAfterOpen.lastIndexOf(closeTag));
+                    let trimmed = fileContent;
+                    if (trimmed.startsWith('\n')) trimmed = trimmed.slice(1);
+                    if (trimmed.endsWith('\n')) trimmed = trimmed.slice(0, -1);
+
+                    parsedFiles[currentFilePath] = trimmed;
+
+                    // Send file_end event with complete content
+                    const fileEndEvent = `data: ${JSON.stringify({ type: 'file_end', path: currentFilePath, content: trimmed })}\n\n`;
+                    controller.enqueue(encoder.encode(fileEndEvent));
+
+                    // Mark plan item as done if applicable
+                    const planIdx = Object.keys(parsedFiles).length - 1;
+                    if (planIdx < planItems.length) {
+                      const progressEvent = `data: ${JSON.stringify({ type: 'plan_progress', completedIndex: planIdx })}\n\n`;
+                      controller.enqueue(encoder.encode(progressEvent));
+                    }
+
+                    currentState = 'idle';
+                    currentFilePath = '';
+                    currentFileContent = '';
+                  } else {
+                    // Still accumulating — send the new token as a chunk
+                    const chunkEvent = `data: ${JSON.stringify({ type: 'file_chunk', path: currentFilePath, content: token })}\n\n`;
+                    controller.enqueue(encoder.encode(chunkEvent));
+                  }
+                }
+
+                // Check for <explanation>
+                if (currentState === 'idle' && fullContent.includes('<explanation>') && !fullContent.includes('</explanation>')) {
+                  currentState = 'explanation';
+                }
+
+                if (currentState === 'explanation') {
+                  if (fullContent.includes('</explanation>')) {
+                    const expMatch = fullContent.match(/<explanation>([\s\S]*?)<\/explanation>/);
+                    if (expMatch) {
+                      explanationText = expMatch[1].trim();
+                      const expEvent = `data: ${JSON.stringify({ type: 'explanation', text: explanationText })}\n\n`;
+                      controller.enqueue(encoder.encode(expEvent));
+                    }
+                    currentState = 'idle';
+                  }
+                }
+
+                // For text outside XML tags (fallback — plain text response)
+                if (currentState === 'idle' && !fullContent.includes('<plan>') && !fullContent.includes('<file ') && !fullContent.includes('<explanation>')) {
+                  // This is a plain text response (no code generation)
+                  const textEvent = `data: ${JSON.stringify({ type: 'text_token', token })}\n\n`;
+                  controller.enqueue(encoder.encode(textEvent));
                 }
               }
-              await db.update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, projectId));
-            }
-          } catch { /* not valid JSON — ignore */ }
+            } catch { /* skip malformed SSE */ }
+          }
         }
+
+        // Stream complete — handle any remaining content
+        // If we ended in file state without closing tag, try to salvage
+        if (currentState === 'file' && currentFilePath) {
+          const parsed2 = parseXMLResponse(fullContent);
+          if (parsed2.files[currentFilePath]) {
+            parsedFiles[currentFilePath] = parsed2.files[currentFilePath];
+            const fileEndEvent = `data: ${JSON.stringify({ type: 'file_end', path: currentFilePath, content: parsed2.files[currentFilePath] })}\n\n`;
+            controller.enqueue(encoder.encode(fileEndEvent));
+          }
+        }
+
+        // Final parse to catch anything missed
+        if (Object.keys(parsedFiles).length === 0) {
+          const fallback = parseXMLResponse(fullContent);
+          if (Object.keys(fallback.files).length > 0) {
+            parsedFiles = fallback.files;
+            for (const [path, content] of Object.entries(parsedFiles)) {
+              const fileEndEvent = `data: ${JSON.stringify({ type: 'file_end', path, content })}\n\n`;
+              controller.enqueue(encoder.encode(fileEndEvent));
+            }
+          }
+          if (fallback.explanation && !explanationText) {
+            explanationText = fallback.explanation;
+            const expEvent = `data: ${JSON.stringify({ type: 'explanation', text: explanationText })}\n\n`;
+            controller.enqueue(encoder.encode(expEvent));
+          }
+          if (fallback.plan.length > 0 && !planSent) {
+            planItems = fallback.plan;
+            const planEvent = `data: ${JSON.stringify({ type: 'plan', items: planItems })}\n\n`;
+            controller.enqueue(encoder.encode(planEvent));
+          }
+        }
+
+        // Persist files to DB
+        const appliedFiles = Object.keys(parsedFiles).length > 0;
+        if (appliedFiles) {
+          await persistFilesToDB(db, projectId, parsedFiles);
+        }
+
+        const tokensUsed = inputTokens + outputTokens;
 
         // Save assistant message
         await db.insert(aiMessages).values({
@@ -468,8 +721,8 @@ aiRoutes.post('/chat/stream', async (c) => {
 
         // Update conversation stats
         await db.update(aiConversations).set({
-          messageCount: ((conversation as any).messageCount || 0) + 2,
-          totalTokensUsed: ((conversation as any).totalTokensUsed || 0) + tokensUsed,
+          messageCount: (conversation.messageCount || 0) + 2,
+          totalTokensUsed: (conversation.totalTokensUsed || 0) + tokensUsed,
           updatedAt: new Date(),
         }).where(eq(aiConversations.id, convId));
 
@@ -482,28 +735,35 @@ aiRoutes.post('/chat/stream', async (c) => {
           metadata: { conversationId: convId, model: AI_MODEL },
         });
 
-        console.log(`[AI Stream] Saved conversation ${convId}: ${tokensUsed} tokens, appliedFiles=${appliedFiles}`);
-      } catch (err) {
-        console.error('[AI Stream] Failed to persist after stream:', err);
-      }
+        console.log(`[AI Stream] Done — conv=${convId}, tokens=${tokensUsed}, files=${Object.keys(parsedFiles).length}`);
 
-      // Send a final custom SSE event with the conversationId for the client
-      const finalEvent = `data: ${JSON.stringify({ type: 'sbp_done', conversationId: convId, appliedFiles: fullContent.includes('```json') })}\n\n`;
-      controller.enqueue(encoder.encode(finalEvent));
+        // Send final done event
+        const doneEvent = `data: ${JSON.stringify({
+          type: 'stream_end',
+          conversationId: convId,
+          appliedFiles,
+          filesPaths: Object.keys(parsedFiles),
+          tokensUsed,
+        })}\n\n`;
+        controller.enqueue(encoder.encode(doneEvent));
+
+      } catch (err: any) {
+        console.error('[AI Stream] Error:', err);
+        const errorEvent = `data: ${JSON.stringify({ type: 'error', message: err.message || 'Stream error' })}\n\n`;
+        controller.enqueue(encoder.encode(errorEvent));
+      } finally {
+        controller.close();
+      }
     },
   });
 
-  // Pipe Anthropic's stream through our transform
-  anthropicResponse.body.pipeTo(writable).catch((err) => {
-    console.error('[AI Stream] Pipe error:', err);
-  });
-
-  return new Response(readable, {
+  return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'X-Conversation-Id': convId,
+      'Access-Control-Expose-Headers': 'X-Conversation-Id',
     },
   });
 });

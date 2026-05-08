@@ -1,11 +1,12 @@
 // ============================================================
 // SimpleBuild Pro — Monaco Code Editor Wrapper
 // Full VS Code experience in the browser
+// FIXED: Reactive to Zustand store updates via key prop
 // ============================================================
 
 'use client';
 
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import Editor, { type OnMount, type OnChange } from '@monaco-editor/react';
 import { useEditorStore } from '@/lib/store';
 
@@ -34,9 +35,34 @@ export function CodeEditor({ onSave }: CodeEditorProps) {
   const { activeFile, files, updateFile } = useEditorStore();
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
+  const isExternalUpdate = useRef(false);
 
   const content = activeFile ? files.get(activeFile) ?? '' : '';
   const language = activeFile ? getLanguage(activeFile) : 'plaintext';
+
+  // Track content version to force Monaco re-render when store changes externally
+  // This fixes the issue where AI-generated code doesn't appear in the editor
+  const [contentVersion, setContentVersion] = useState(0);
+  const lastKnownContent = useRef<string>('');
+
+  // Watch for external content changes (from AI streaming)
+  useEffect(() => {
+    if (!activeFile) return;
+    const currentContent = files.get(activeFile) ?? '';
+
+    // If content changed and it wasn't from user typing in this editor
+    if (currentContent !== lastKnownContent.current && editorRef.current) {
+      const editorValue = editorRef.current.getValue();
+      if (editorValue !== currentContent) {
+        // External update detected — force Monaco to sync
+        isExternalUpdate.current = true;
+        editorRef.current.setValue(currentContent);
+        isExternalUpdate.current = false;
+        setContentVersion(v => v + 1);
+      }
+    }
+    lastKnownContent.current = currentContent;
+  }, [activeFile, files, content]);
 
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
@@ -102,12 +128,18 @@ export function CodeEditor({ onSave }: CodeEditorProps) {
       padding: { top: 8 },
     });
 
+    // Set initial content
+    lastKnownContent.current = content;
     editor.focus();
   };
 
   const handleChange: OnChange = useCallback(
     (value) => {
+      // Skip if this was triggered by our external setValue
+      if (isExternalUpdate.current) return;
+
       if (activeFile && value !== undefined) {
+        lastKnownContent.current = value;
         updateFile(activeFile, value);
       }
     },
@@ -126,7 +158,7 @@ export function CodeEditor({ onSave }: CodeEditorProps) {
       <div className="h-full flex items-center justify-center bg-[#1E1E1E]">
         <div className="text-center">
           <p className="text-sm text-slate-500 mb-1">No file open</p>
-          <p className="text-xs text-slate-600">Select a file from the sidebar to start editing</p>
+          <p className="text-xs text-slate-600">Select a file from the sidebar or ask the AI to generate code</p>
         </div>
       </div>
     );
@@ -134,6 +166,7 @@ export function CodeEditor({ onSave }: CodeEditorProps) {
 
   return (
     <Editor
+      key={activeFile} // Force remount when switching files
       height="100%"
       language={language}
       value={content}

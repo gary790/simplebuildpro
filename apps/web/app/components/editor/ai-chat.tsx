@@ -1,29 +1,79 @@
 // ============================================================
 // SimpleBuild Pro — AI Chat Panel
-// Claude-powered AI assistant with streaming support
+// Structured streaming: plan → files → explanation
+// Code goes into editor, NOT into chat
 // ============================================================
 
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useEditorStore, useChatStore } from '@/lib/store';
-import { aiApi, filesApi } from '@/lib/api-client';
+import { aiApi, type AIStreamEvent } from '@/lib/api-client';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import {
   Send, X, Bot, User, Loader2, Sparkles, Copy, Check,
-  RotateCcw, MessageSquare, Trash2,
+  RotateCcw, CheckCircle2, Circle, FileCode, ArrowRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 
+// ─── Plan Item Component ─────────────────────────────────────
+function PlanItem({ text, completed }: { text: string; completed: boolean }) {
+  return (
+    <div className="flex items-start gap-2 py-0.5">
+      {completed ? (
+        <CheckCircle2 size={14} className="text-green-500 mt-0.5 shrink-0" />
+      ) : (
+        <Circle size={14} className="text-slate-300 mt-0.5 shrink-0" />
+      )}
+      <span className={clsx(
+        'text-xs leading-relaxed',
+        completed ? 'text-slate-500 line-through' : 'text-slate-700',
+      )}>
+        {text}
+      </span>
+    </div>
+  );
+}
+
+// ─── File Badge Component ────────────────────────────────────
+function FileBadge({ path, isStreaming }: { path: string; isStreaming?: boolean }) {
+  const { openTab, setActiveFile } = useEditorStore.getState();
+
+  return (
+    <button
+      onClick={() => { openTab(path); setActiveFile(path); }}
+      className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-xs text-slate-700 font-mono transition-colors"
+    >
+      <FileCode size={10} className={isStreaming ? 'text-amber-500 animate-pulse' : 'text-brand-600'} />
+      {path}
+      {isStreaming && <Loader2 size={10} className="animate-spin text-amber-500" />}
+    </button>
+  );
+}
+
+// ─── Chat Message Types ──────────────────────────────────────
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  isStreaming?: boolean;
+  plan?: string[];
+  planCompleted?: number[];
+  files?: string[];
+  streamingFile?: string;
+  explanation?: string;
+}
+
 export function AiChat() {
-  const { project, files, updateFile, isChatOpen, toggleChat } = useEditorStore();
+  const { project, updateFile, isChatOpen, toggleChat, openTab, setActiveFile } = useEditorStore();
   const {
-    conversationId, messages, isLoading,
-    setConversationId, addMessage, updateLastMessage,
-    setStreaming, setLoading, clearMessages,
+    conversationId, isLoading,
+    setConversationId, setLoading,
   } = useChatStore();
 
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -50,140 +100,171 @@ export function AiChat() {
 
     // Add user message
     const userMsgId = `user-${Date.now()}`;
-    addMessage({
-      id: userMsgId,
-      role: 'user',
-      content: userMsg,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Add placeholder assistant message
     const assistantMsgId = `assistant-${Date.now()}`;
-    addMessage({
-      id: assistantMsgId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString(),
-      isStreaming: true,
-    });
+
+    setMessages(prev => [
+      ...prev,
+      {
+        id: userMsgId,
+        role: 'user',
+        content: userMsg,
+        timestamp: new Date().toISOString(),
+      },
+      {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date().toISOString(),
+        isStreaming: true,
+        plan: [],
+        planCompleted: [],
+        files: [],
+      },
+    ]);
 
     try {
-      // Use streaming API
       await aiApi.streamMessage(
         {
           projectId: project.id,
           conversationId: conversationId || undefined,
           message: userMsg,
         },
-        // On token
-        (token) => {
-          updateLastMessage(
-            (useChatStore.getState().messages.find((m) => m.id === assistantMsgId)?.content || '') + token,
-          );
-        },
-        // On complete (with metadata from server)
-        (meta) => {
-          setStreaming(assistantMsgId, false);
-          setLoading(false);
+        (event: AIStreamEvent) => {
+          switch (event.type) {
+            case 'stream_start':
+              if (event.conversationId) {
+                setConversationId(event.conversationId);
+              }
+              break;
 
-          // Track conversationId for follow-up messages
-          if (meta?.conversationId) {
-            setConversationId(meta.conversationId);
+            case 'plan':
+              setMessages(prev => prev.map(m =>
+                m.id === assistantMsgId
+                  ? { ...m, plan: event.items || [], content: 'Building...' }
+                  : m
+              ));
+              break;
+
+            case 'file_start':
+              setMessages(prev => prev.map(m =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      streamingFile: event.path,
+                      files: [...(m.files || []).filter(f => f !== event.path), event.path!],
+                    }
+                  : m
+              ));
+              break;
+
+            case 'file_chunk':
+              // Stream file content directly into the editor store
+              if (event.path && event.content) {
+                const { files } = useEditorStore.getState();
+                const current = files.get(event.path) || '';
+                // Only append if this is incremental
+                // The chunk is just the new token, not accumulated
+                updateFile(event.path, current + event.content);
+              }
+              break;
+
+            case 'file_end':
+              // Set the COMPLETE file content (authoritative)
+              if (event.path && event.content !== undefined) {
+                updateFile(event.path, event.content);
+                // Auto-open the file in a tab
+                openTab(event.path);
+                // If this is index.html, make it active
+                if (event.path === 'index.html') {
+                  setActiveFile(event.path);
+                }
+              }
+              setMessages(prev => prev.map(m =>
+                m.id === assistantMsgId
+                  ? { ...m, streamingFile: undefined }
+                  : m
+              ));
+              break;
+
+            case 'plan_progress':
+              if (event.completedIndex !== undefined) {
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantMsgId
+                    ? {
+                        ...m,
+                        planCompleted: [...(m.planCompleted || []), event.completedIndex!],
+                      }
+                    : m
+                ));
+              }
+              break;
+
+            case 'explanation':
+              setMessages(prev => prev.map(m =>
+                m.id === assistantMsgId
+                  ? { ...m, explanation: event.text, content: event.text || '' }
+                  : m
+              ));
+              break;
+
+            case 'text_token':
+              // Plain text response (no code generation)
+              if (event.token) {
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantMsgId
+                    ? { ...m, content: (m.content || '') + event.token }
+                    : m
+                ));
+              }
+              break;
+
+            case 'stream_end':
+              setMessages(prev => prev.map(m =>
+                m.id === assistantMsgId
+                  ? { ...m, isStreaming: false }
+                  : m
+              ));
+              setLoading(false);
+
+              if (event.conversationId) {
+                setConversationId(event.conversationId);
+              }
+
+              // Open first file if not already open
+              if (event.filesPaths && event.filesPaths.length > 0) {
+                const primary = event.filesPaths.find(p => p === 'index.html') || event.filesPaths[0];
+                openTab(primary);
+                setActiveFile(primary);
+                // Open all other files as tabs
+                for (const p of event.filesPaths) {
+                  openTab(p);
+                }
+                toast('success', `Generated ${event.filesPaths.length} file${event.filesPaths.length > 1 ? 's' : ''}`, 'Code is in the editor.');
+              }
+              break;
+
+            case 'error':
+              setMessages(prev => prev.map(m =>
+                m.id === assistantMsgId
+                  ? { ...m, isStreaming: false, content: `Error: ${event.message}` }
+                  : m
+              ));
+              setLoading(false);
+              toast('error', 'AI Error', event.message || 'Something went wrong');
+              break;
           }
-
-          // Parse file updates from the response and apply to editor
-          const finalContent = useChatStore.getState().messages.find((m) => m.id === assistantMsgId)?.content || '';
-          applyFileUpdates(finalContent);
-        },
-        // On error
-        (error) => {
-          updateLastMessage('Sorry, I encountered an error. Please try again.');
-          setStreaming(assistantMsgId, false);
-          setLoading(false);
-          toast('error', 'AI Error', error);
         },
       );
     } catch (err: any) {
-      updateLastMessage('Sorry, I encountered an error. Please try again.');
-      setStreaming(assistantMsgId, false);
+      setMessages(prev => prev.map(m =>
+        m.id === assistantMsgId
+          ? { ...m, isStreaming: false, content: `Error: ${err.message}` }
+          : m
+      ));
       setLoading(false);
       toast('error', 'AI Error', err.message);
     }
-  }, [input, project?.id, conversationId, isLoading, addMessage, updateLastMessage, setStreaming, setLoading]);
-
-  // Parse AI response for file update blocks
-  // Supports format: ```json {"files": {"index.html": "...", "style.css": "..."}} ```
-  const applyFileUpdates = useCallback((content: string) => {
-    let applied = 0;
-    const appliedPaths: string[] = [];
-
-    // Match the ```json ... ``` block containing {"files": {...}}
-    const jsonBlockRegex = /```json\s*([\s\S]*?)```/g;
-    let blockMatch;
-
-    while ((blockMatch = jsonBlockRegex.exec(content)) !== null) {
-      const jsonStr = blockMatch[1].trim();
-      try {
-        const parsed = JSON.parse(jsonStr);
-
-        // Handle {"files": {"filename": "content", ...}} format
-        if (parsed.files && typeof parsed.files === 'object') {
-          for (const [filePath, fileContent] of Object.entries(parsed.files)) {
-            if (typeof fileContent === 'string') {
-              updateFile(filePath, fileContent);
-              appliedPaths.push(filePath);
-              applied++;
-            }
-          }
-        }
-        // Handle {"file": "path", "content": "..."} format (legacy)
-        else if (parsed.file && typeof parsed.content === 'string') {
-          updateFile(parsed.file, parsed.content);
-          appliedPaths.push(parsed.file);
-          applied++;
-        }
-      } catch {
-        // Not valid JSON — skip this block
-      }
-    }
-
-    if (applied > 0) {
-      toast('success', `Applied ${applied} file update${applied > 1 ? 's' : ''}`, 'Changes are reflected in the editor.');
-
-      // Open the first modified file in a tab so the user sees the code immediately
-      const { openTab, setActiveFile } = useEditorStore.getState();
-      const primaryFile = appliedPaths.find(p => p === 'index.html') || appliedPaths[0];
-      if (primaryFile) {
-        openTab(primaryFile);
-        setActiveFile(primaryFile);
-      }
-      // Open all other applied files as tabs too
-      for (const p of appliedPaths) {
-        openTab(p);
-      }
-
-      // Server-side already persists files (via streaming route flush)
-      // But also persist as backup via bulk upsert
-      const filesToSave: Record<string, string> = {};
-      const jsonBlock2 = /```json\s*([\s\S]*?)```/g;
-      let m2;
-      while ((m2 = jsonBlock2.exec(content)) !== null) {
-        try {
-          const p = JSON.parse(m2[1].trim());
-          if (p.files && typeof p.files === 'object') {
-            Object.assign(filesToSave, p.files);
-          } else if (p.file && typeof p.content === 'string') {
-            filesToSave[p.file] = p.content;
-          }
-        } catch {}
-      }
-      if (Object.keys(filesToSave).length > 0 && project?.id) {
-        filesApi.bulkUpsert(project.id, filesToSave).catch(() => {
-          // Silent fail — server-side AI route already persists
-        });
-      }
-    }
-  }, [updateFile, project?.id]);
+  }, [input, project?.id, conversationId, isLoading, updateFile, openTab, setActiveFile, setConversationId, setLoading]);
 
   const handleCopy = (id: string, content: string) => {
     navigator.clipboard.writeText(content);
@@ -196,6 +277,11 @@ export function AiChat() {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const clearMessages = () => {
+    setMessages([]);
+    setConversationId(null);
   };
 
   if (!isChatOpen) return null;
@@ -232,22 +318,23 @@ export function AiChat() {
             <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center mb-3">
               <Bot size={20} className="text-brand-600" />
             </div>
-            <h3 className="text-sm font-semibold text-slate-900 mb-1">AI Assistant</h3>
+            <h3 className="text-sm font-semibold text-slate-900 mb-1">AI Website Builder</h3>
             <p className="text-xs text-slate-500 max-w-[260px] leading-relaxed">
-              Ask me to generate code, fix bugs, redesign sections, or explain your project files.
+              Describe what you want to build. I'll generate the code directly into the editor with a live preview.
             </p>
             <div className="mt-4 space-y-1.5">
               {[
-                'Add a contact form to index.html',
-                'Make the hero section responsive',
-                'Add dark mode toggle',
-                'Fix the CSS layout issues',
+                'Build a landing page for a coffee shop',
+                'Create a portfolio website with dark theme',
+                'Make a contact form with validation',
+                'Build a pricing page with 3 tiers',
               ].map((suggestion) => (
                 <button
                   key={suggestion}
                   onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}
                   className="block w-full text-left px-3 py-2 text-xs text-slate-600 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
                 >
+                  <ArrowRight size={10} className="inline mr-1.5 text-brand-500" />
                   {suggestion}
                 </button>
               ))}
@@ -268,27 +355,78 @@ export function AiChat() {
                 'max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed',
                 msg.role === 'user'
                   ? 'bg-brand-600 text-white rounded-br-sm'
-                  : 'bg-slate-100 text-slate-800 rounded-bl-sm',
+                  : 'bg-slate-50 border border-slate-200 text-slate-800 rounded-bl-sm',
               )}
             >
-              {/* Render message with basic markdown-like formatting */}
-              <div className="whitespace-pre-wrap break-words">
-                {msg.content || (msg.isStreaming ? (
-                  <span className="inline-flex items-center gap-1 text-slate-400">
-                    <Loader2 size={12} className="animate-spin" /> Thinking...
-                  </span>
-                ) : '')}
-              </div>
+              {msg.role === 'assistant' ? (
+                <div className="space-y-2">
+                  {/* Plan section */}
+                  {msg.plan && msg.plan.length > 0 && (
+                    <div className="space-y-0.5">
+                      <p className="text-2xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Plan</p>
+                      {msg.plan.map((item, idx) => (
+                        <PlanItem
+                          key={idx}
+                          text={item}
+                          completed={(msg.planCompleted || []).includes(idx)}
+                        />
+                      ))}
+                    </div>
+                  )}
 
-              {/* Copy button for assistant messages */}
-              {msg.role === 'assistant' && msg.content && !msg.isStreaming && (
-                <button
-                  onClick={() => handleCopy(msg.id, msg.content)}
-                  className="mt-1.5 flex items-center gap-1 text-2xs text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  {copiedId === msg.id ? <Check size={10} /> : <Copy size={10} />}
-                  {copiedId === msg.id ? 'Copied' : 'Copy'}
-                </button>
+                  {/* Files section */}
+                  {msg.files && msg.files.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {msg.files.map((f) => (
+                        <FileBadge
+                          key={f}
+                          path={f}
+                          isStreaming={msg.streamingFile === f}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Explanation / content */}
+                  {msg.explanation ? (
+                    <p className="text-xs text-slate-700 pt-1 leading-relaxed">
+                      {msg.explanation}
+                    </p>
+                  ) : msg.content && !msg.plan?.length && !msg.files?.length ? (
+                    <div className="whitespace-pre-wrap break-words text-xs">
+                      {msg.content}
+                    </div>
+                  ) : null}
+
+                  {/* Loading state */}
+                  {msg.isStreaming && !msg.plan?.length && !msg.content && (
+                    <span className="inline-flex items-center gap-1 text-slate-400 text-xs">
+                      <Loader2 size={12} className="animate-spin" /> Thinking...
+                    </span>
+                  )}
+
+                  {/* Streaming indicator */}
+                  {msg.isStreaming && msg.streamingFile && (
+                    <span className="inline-flex items-center gap-1 text-amber-600 text-2xs mt-1">
+                      <Loader2 size={10} className="animate-spin" /> Writing {msg.streamingFile}...
+                    </span>
+                  )}
+
+                  {/* Copy button */}
+                  {!msg.isStreaming && msg.explanation && (
+                    <button
+                      onClick={() => handleCopy(msg.id, msg.explanation || msg.content)}
+                      className="mt-1.5 flex items-center gap-1 text-2xs text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {copiedId === msg.id ? <Check size={10} /> : <Copy size={10} />}
+                      {copiedId === msg.id ? 'Copied' : 'Copy'}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="whitespace-pre-wrap break-words">
+                  {msg.content}
+                </div>
               )}
             </div>
 
@@ -311,7 +449,7 @@ export function AiChat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask the AI assistant..."
+            placeholder="Describe what to build..."
             rows={1}
             className="flex-1 resize-none px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent max-h-32"
             style={{ minHeight: '38px' }}
@@ -331,7 +469,7 @@ export function AiChat() {
           </Button>
         </div>
         <p className="text-2xs text-slate-400 mt-1.5 text-center">
-          AI sees all project files. Shift+Enter for new line.
+          Code streams into the editor. Shift+Enter for new line.
         </p>
       </div>
     </div>
