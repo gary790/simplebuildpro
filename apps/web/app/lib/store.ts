@@ -174,7 +174,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setPreviewLoading: (loading) => set({ previewLoading: loading }),
 
   // Panels
-  isChatOpen: false,
+  isChatOpen: true,
   toggleChat: () => set({ isChatOpen: !get().isChatOpen }),
   isTerminalOpen: false,
   toggleTerminal: () => set({ isTerminalOpen: !get().isTerminalOpen }),
