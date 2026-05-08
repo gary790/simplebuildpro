@@ -1,7 +1,10 @@
 // ============================================================
-// SimpleBuild Pro — AI Chat Panel (Phase 2: Sandbox Architecture)
-// Tool-calling loop: AI thinks → calls sandbox tools → shows results
-// Real Linux sandbox execution via E2B.dev
+// SimpleBuild Pro — AI Chat Panel (Phase 2: Clean UX)
+// AI works silently in the sandbox. User sees only:
+//   1. A compact "Working..." progress bar while executing
+//   2. The AI's text response
+//   3. A small clickable file list at the end
+// No verbose tool dumps. No command output in chat.
 // ============================================================
 
 'use client';
@@ -12,21 +15,19 @@ import { aiApi, sandboxApi, type AIStreamEvent } from '@/lib/api-client';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import {
-  Send, X, Bot, User, Loader2, Sparkles, Copy, Check,
-  RotateCcw, CheckCircle2, Circle, FileCode, ArrowRight,
-  Terminal, AlertCircle, FolderOpen, Pencil, Trash2,
+  Send, Bot, User, Loader2, Sparkles, Copy, Check,
+  RotateCcw, FileCode, ArrowRight, AlertCircle,
+  ChevronDown, ChevronRight, Terminal,
 } from 'lucide-react';
 import clsx from 'clsx';
 
-// ─── Tool Call Types ──────────────────────────────────────────
+// ─── Internal tracking (not shown to user) ───────────────────
 interface ToolCallEvent {
   toolName: string;
   toolCallId: string;
   status: 'running' | 'success' | 'error';
   input?: Record<string, any>;
-  result?: any;
   error?: string;
-  filesChanged?: string[];
 }
 
 // ─── Chat Message Types ──────────────────────────────────────
@@ -36,112 +37,128 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   isStreaming?: boolean;
+  // Internal — tracked but mostly hidden
   toolCalls?: ToolCallEvent[];
   filesChanged?: string[];
+  hasError?: boolean;
+  errorDetail?: string;
 }
 
-// ─── Tool Display Names & Icons ──────────────────────────────
-function getToolDisplayName(tool: string): string {
-  const names: Record<string, string> = {
-    run_command: 'Run Command',
-    write_file: 'Write File',
-    read_file: 'Read File',
-    list_files: 'List Files',
-    github_push: 'GitHub Push',
-    cloudflare_deploy: 'Cloudflare Deploy',
-    vercel_deploy: 'Vercel Deploy',
-    export_project: 'Export',
-    list_connections: 'Check Connections',
-  };
-  return names[tool] || tool;
-}
+// ─── Compact "Working" Indicator ─────────────────────────────
+// Shows ONE line: "Working... 4 steps done" with a subtle progress bar
+function WorkingIndicator({ toolCalls }: { toolCalls: ToolCallEvent[] }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const done = toolCalls.filter(tc => tc.status !== 'running').length;
+  const total = toolCalls.length;
+  const hasRunning = toolCalls.some(tc => tc.status === 'running');
+  const hasError = toolCalls.some(tc => tc.status === 'error');
+  const currentTool = toolCalls.find(tc => tc.status === 'running');
 
-function getToolIcon(tool: string): React.ReactNode {
-  const iconMap: Record<string, React.ReactNode> = {
-    run_command: <Terminal size={12} />,
-    write_file: <Pencil size={12} />,
-    read_file: <FileCode size={12} />,
-    list_files: <FolderOpen size={12} />,
-  };
-  return iconMap[tool] || <Terminal size={12} />;
-}
-
-// ─── Tool Call Badge Component ───────────────────────────────
-function ToolCallBadge({ toolCall }: { toolCall: ToolCallEvent }) {
-  const [expanded, setExpanded] = useState(false);
-
-  // Truncate long command strings for display
-  const displayInput = toolCall.input
-    ? toolCall.toolName === 'run_command'
-      ? toolCall.input.command?.slice(0, 80) + (toolCall.input.command?.length > 80 ? '...' : '')
-      : toolCall.toolName === 'write_file'
-        ? toolCall.input.path
-        : toolCall.toolName === 'read_file'
-          ? toolCall.input.path
-          : toolCall.input.path || JSON.stringify(toolCall.input).slice(0, 60)
-    : '';
+  // Friendly label for what's happening right now
+  const currentLabel = currentTool
+    ? currentTool.toolName === 'write_file' ? 'Writing files'
+      : currentTool.toolName === 'run_command' ? 'Running command'
+      : currentTool.toolName === 'read_file' ? 'Reading files'
+      : currentTool.toolName === 'list_files' ? 'Scanning project'
+      : 'Working'
+    : 'Working';
 
   return (
-    <div className="group">
+    <div className="select-none">
+      {/* Main compact line */}
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => setShowDetails(!showDetails)}
         className={clsx(
-          'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs border w-full text-left transition-colors',
-          toolCall.status === 'running' && 'bg-amber-50 border-amber-200 text-amber-800',
-          toolCall.status === 'success' && 'bg-green-50 border-green-200 text-green-800',
-          toolCall.status === 'error' && 'bg-red-50 border-red-200 text-red-800',
+          'flex items-center gap-2 w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors',
+          hasError
+            ? 'bg-red-50 text-red-700'
+            : hasRunning
+              ? 'bg-slate-100 text-slate-600'
+              : 'bg-slate-50 text-slate-500',
         )}
       >
-        <span className="shrink-0">{getToolIcon(toolCall.toolName)}</span>
-        <span className="font-medium shrink-0">{getToolDisplayName(toolCall.toolName)}</span>
-        {displayInput && (
-          <span className="font-mono text-2xs truncate opacity-70">{displayInput}</span>
+        {hasRunning ? (
+          <Loader2 size={12} className="animate-spin text-brand-500 shrink-0" />
+        ) : hasError ? (
+          <AlertCircle size={12} className="text-red-500 shrink-0" />
+        ) : (
+          <Check size={12} className="text-green-500 shrink-0" />
         )}
-        <span className="ml-auto shrink-0">
-          {toolCall.status === 'running' && <Loader2 size={12} className="animate-spin" />}
-          {toolCall.status === 'success' && <CheckCircle2 size={12} className="text-green-600" />}
-          {toolCall.status === 'error' && <AlertCircle size={12} className="text-red-600" />}
+
+        <span className="truncate">
+          {hasRunning
+            ? `${currentLabel}...`
+            : hasError
+              ? `Completed with errors (${done}/${total} steps)`
+              : `Done (${total} step${total !== 1 ? 's' : ''})`
+          }
         </span>
+
+        {/* Mini progress dots */}
+        {total > 1 && (
+          <span className="ml-auto flex items-center gap-0.5 shrink-0">
+            {toolCalls.map((tc, i) => (
+              <span
+                key={i}
+                className={clsx(
+                  'w-1.5 h-1.5 rounded-full transition-colors',
+                  tc.status === 'running' && 'bg-brand-400 animate-pulse',
+                  tc.status === 'success' && 'bg-green-400',
+                  tc.status === 'error' && 'bg-red-400',
+                )}
+              />
+            ))}
+          </span>
+        )}
+
+        {/* Expand toggle */}
+        {!hasRunning && (
+          <span className="shrink-0 text-slate-400">
+            {showDetails ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
+        )}
       </button>
 
-      {/* Expanded details */}
-      {expanded && toolCall.status !== 'running' && (
-        <div className="mt-1 ml-2 px-2.5 py-2 bg-slate-900 rounded-md text-2xs font-mono text-slate-300 max-h-32 overflow-y-auto whitespace-pre-wrap">
-          {toolCall.status === 'error' && toolCall.error && (
-            <div className="text-red-400 mb-1">{toolCall.error}</div>
-          )}
-          {toolCall.result && typeof toolCall.result === 'string'
-            ? toolCall.result.slice(0, 500)
-            : toolCall.result
-              ? JSON.stringify(toolCall.result, null, 2).slice(0, 500)
-              : 'No output'}
-        </div>
-      )}
+      {/* Expandable details — only shown on click, after completion */}
+      {showDetails && !hasRunning && (
+        <div className="mt-1 ml-1 space-y-0.5">
+          {toolCalls.map((tc, i) => {
+            const label = tc.toolName === 'write_file' ? `Write ${tc.input?.path?.replace(/^\/home\/user\/project\//, '') || 'file'}`
+              : tc.toolName === 'run_command' ? `$ ${(tc.input?.command || '').slice(0, 50)}${(tc.input?.command || '').length > 50 ? '...' : ''}`
+              : tc.toolName === 'read_file' ? `Read ${tc.input?.path?.replace(/^\/home\/user\/project\//, '') || 'file'}`
+              : tc.toolName === 'list_files' ? 'List files'
+              : tc.toolName;
 
-      {/* Files changed badges */}
-      {toolCall.filesChanged && toolCall.filesChanged.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1 ml-2">
-          {toolCall.filesChanged.map((f) => (
-            <FileChangedBadge key={f} path={f} />
-          ))}
+            return (
+              <div key={i} className="flex items-center gap-1.5 text-2xs text-slate-400 font-mono">
+                <span className={clsx(
+                  'w-1 h-1 rounded-full shrink-0',
+                  tc.status === 'success' ? 'bg-green-400' : 'bg-red-400',
+                )} />
+                <span className="truncate">{label}</span>
+                {tc.status === 'error' && tc.error && (
+                  <span className="text-red-400 truncate ml-1">— {tc.error.slice(0, 40)}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-// ─── File Changed Badge Component ────────────────────────────
-function FileChangedBadge({ path }: { path: string }) {
+// ─── File Chip (clickable, opens in editor) ──────────────────
+function FileChip({ path }: { path: string }) {
   const { openTab, setActiveFile } = useEditorStore.getState();
-  // Strip the sandbox prefix for display
   const displayPath = path.replace(/^\/home\/user\/project\//, '');
 
   return (
     <button
       onClick={() => { openTab(displayPath); setActiveFile(displayPath); }}
-      className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 rounded text-2xs text-slate-700 font-mono transition-colors"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 hover:bg-brand-50 hover:text-brand-700 rounded text-2xs text-slate-600 font-mono transition-colors"
     >
-      <FileCode size={10} className="text-brand-600" />
+      <FileCode size={9} className="text-brand-500" />
       {displayPath}
     </button>
   );
@@ -177,7 +194,6 @@ export function AiChat() {
       const { files: fileList } = await sandboxApi.listFiles(project.id);
       for (const f of fileList) {
         if (f.type === 'file') {
-          // Only refresh changed files if we know which ones, otherwise refresh all
           const relativePath = f.path.replace(/^\/home\/user\/project\//, '');
           if (!changedPaths || changedPaths.some(cp => cp.includes(relativePath) || relativePath.includes(cp.replace(/^\/home\/user\/project\//, '')))) {
             try {
@@ -201,7 +217,6 @@ export function AiChat() {
     setInput('');
     setLoading(true);
 
-    // Add user message
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
 
@@ -224,7 +239,6 @@ export function AiChat() {
       },
     ]);
 
-    // Track all files changed during this stream for end-of-stream refresh
     const allFilesChanged: string[] = [];
 
     try {
@@ -237,16 +251,11 @@ export function AiChat() {
         (event: AIStreamEvent) => {
           switch (event.type) {
             case 'stream_start':
-              if (event.conversationId) {
-                setConversationId(event.conversationId);
-              }
-              if (event.sandboxUrl) {
-                setSandboxUrl(event.sandboxUrl);
-              }
+              if (event.conversationId) setConversationId(event.conversationId);
+              if (event.sandboxUrl) setSandboxUrl(event.sandboxUrl);
               break;
 
             case 'text':
-              // AI thinking/response text — append token
               if (event.token) {
                 setMessages(prev => prev.map(m =>
                   m.id === assistantMsgId
@@ -257,7 +266,7 @@ export function AiChat() {
               break;
 
             case 'tool_call':
-              // AI is calling a sandbox tool — show it running
+              // Silently track — only the compact WorkingIndicator sees this
               setMessages(prev => prev.map(m =>
                 m.id === assistantMsgId
                   ? {
@@ -277,7 +286,6 @@ export function AiChat() {
               break;
 
             case 'tool_result':
-              // Tool finished — update its status
               setMessages(prev => prev.map(m => {
                 if (m.id !== assistantMsgId) return m;
                 const toolCalls = [...(m.toolCalls || [])];
@@ -288,26 +296,27 @@ export function AiChat() {
                   toolCalls[idx] = {
                     ...toolCalls[idx],
                     status: event.success ? 'success' : 'error',
-                    result: event.result,
                     error: event.error,
-                    filesChanged: event.filesChanged,
                   };
                 }
-                // Accumulate changed files
                 const newFilesChanged = [
                   ...(m.filesChanged || []),
                   ...(event.filesChanged || []),
                 ];
-                return { ...m, toolCalls, filesChanged: newFilesChanged };
+                return {
+                  ...m,
+                  toolCalls,
+                  filesChanged: newFilesChanged,
+                  hasError: !event.success ? true : m.hasError,
+                  errorDetail: event.error || m.errorDetail,
+                };
               }));
-              // Track for end-of-stream refresh
               if (event.filesChanged) {
                 allFilesChanged.push(...event.filesChanged);
               }
               break;
 
             case 'file_changed':
-              // Individual file change notification
               if (event.path) {
                 const relativePath = event.path.replace(/^\/home\/user\/project\//, '');
                 setMessages(prev => prev.map(m =>
@@ -316,8 +325,6 @@ export function AiChat() {
                     : m
                 ));
                 allFilesChanged.push(event.path);
-
-                // If a file was deleted, remove from editor
                 if (event.action === 'deleted') {
                   useEditorStore.getState().deleteFile(relativePath);
                 }
@@ -331,15 +338,10 @@ export function AiChat() {
                   : m
               ));
               setLoading(false);
+              if (event.conversationId) setConversationId(event.conversationId);
 
-              if (event.conversationId) {
-                setConversationId(event.conversationId);
-              }
-
-              // Refresh changed files from sandbox into editor
               if (allFilesChanged.length > 0) {
                 refreshFilesFromSandbox(allFilesChanged).then(() => {
-                  // Auto-open the first HTML file if one was created
                   const htmlFile = allFilesChanged.find(p => p.endsWith('.html'));
                   if (htmlFile) {
                     const rel = htmlFile.replace(/^\/home\/user\/project\//, '');
@@ -347,11 +349,6 @@ export function AiChat() {
                     setActiveFile(rel);
                   }
                 });
-                toast(
-                  'success',
-                  `Updated ${allFilesChanged.length} file${allFilesChanged.length > 1 ? 's' : ''}`,
-                  'Changes applied to sandbox',
-                );
               }
               break;
 
@@ -403,23 +400,20 @@ export function AiChat() {
         <div className="flex items-center gap-2">
           <Sparkles size={14} className="text-brand-600" />
           <span className="text-sm font-semibold text-slate-700">AI Assistant</span>
-          {/* Sandbox status indicator */}
           {useEditorStore.getState().sandboxStatus === 'running' && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-2xs bg-green-100 text-green-700 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 animate-pulse" />
-              Sandbox
+              Live
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={clearMessages}
-            className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-            title="New conversation"
-          >
-            <RotateCcw size={13} />
-          </button>
-        </div>
+        <button
+          onClick={clearMessages}
+          className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          title="New conversation"
+        >
+          <RotateCcw size={13} />
+        </button>
       </div>
 
       {/* Messages */}
@@ -431,7 +425,7 @@ export function AiChat() {
             </div>
             <h3 className="text-sm font-semibold text-slate-900 mb-1">Studio AI</h3>
             <p className="text-xs text-slate-500 max-w-[260px] leading-relaxed">
-              Describe what you want to build. I'll create files, run commands, and set up your project in a real Linux sandbox.
+              Describe what you want to build. I'll handle everything behind the scenes.
             </p>
             <div className="mt-4 space-y-1.5">
               {[
@@ -471,45 +465,31 @@ export function AiChat() {
             >
               {msg.role === 'assistant' ? (
                 <div className="space-y-2">
-                  {/* Text content */}
+                  {/* AI's text response */}
                   {msg.content && (
                     <div className="whitespace-pre-wrap break-words text-xs">
                       {msg.content}
                     </div>
                   )}
 
-                  {/* Tool calls section */}
+                  {/* Compact working indicator — ONE line, not a dump */}
                   {msg.toolCalls && msg.toolCalls.length > 0 && (
-                    <div className="space-y-1.5 pt-1">
-                      {msg.toolCalls.map((tc, idx) => (
-                        <ToolCallBadge key={`${tc.toolCallId}-${idx}`} toolCall={tc} />
+                    <WorkingIndicator toolCalls={msg.toolCalls} />
+                  )}
+
+                  {/* Files changed — compact chips at the end (only after done) */}
+                  {!msg.isStreaming && msg.filesChanged && msg.filesChanged.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {[...new Set(msg.filesChanged)].map((f) => (
+                        <FileChip key={f} path={f} />
                       ))}
                     </div>
                   )}
 
-                  {/* Files changed summary */}
-                  {!msg.isStreaming && msg.filesChanged && msg.filesChanged.length > 0 && (
-                    <div className="pt-1">
-                      <p className="text-2xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Files Changed</p>
-                      <div className="flex flex-wrap gap-1">
-                        {[...new Set(msg.filesChanged)].map((f) => (
-                          <FileChangedBadge key={f} path={f} />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Loading state */}
+                  {/* Initial thinking state — before any text or tools */}
                   {msg.isStreaming && !msg.content && (!msg.toolCalls || msg.toolCalls.length === 0) && (
-                    <span className="inline-flex items-center gap-1 text-slate-400 text-xs">
+                    <span className="inline-flex items-center gap-1.5 text-slate-400 text-xs">
                       <Loader2 size={12} className="animate-spin" /> Thinking...
-                    </span>
-                  )}
-
-                  {/* Streaming with active tool call */}
-                  {msg.isStreaming && msg.toolCalls && msg.toolCalls.some(tc => tc.status === 'running') && (
-                    <span className="inline-flex items-center gap-1 text-amber-600 text-2xs mt-1">
-                      <Loader2 size={10} className="animate-spin" /> Executing...
                     </span>
                   )}
 
@@ -517,7 +497,7 @@ export function AiChat() {
                   {!msg.isStreaming && msg.content && (
                     <button
                       onClick={() => handleCopy(msg.id, msg.content)}
-                      className="mt-1.5 flex items-center gap-1 text-2xs text-slate-400 hover:text-slate-600 transition-colors"
+                      className="mt-1 flex items-center gap-1 text-2xs text-slate-400 hover:text-slate-600 transition-colors"
                     >
                       {copiedId === msg.id ? <Check size={10} /> : <Copy size={10} />}
                       {copiedId === msg.id ? 'Copied' : 'Copy'}
@@ -570,7 +550,7 @@ export function AiChat() {
           </Button>
         </div>
         <p className="text-2xs text-slate-400 mt-1.5 text-center">
-          AI executes in a real sandbox. Shift+Enter for new line.
+          Shift+Enter for new line
         </p>
       </div>
     </div>
