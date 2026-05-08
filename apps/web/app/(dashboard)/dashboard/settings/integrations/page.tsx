@@ -13,7 +13,7 @@ import { getAccessToken } from '@/lib/api-client';
 import {
   ArrowLeft, Github, Cloud, Triangle, Globe2, Database,
   Check, Loader2, ExternalLink, Unplug, Link2, RefreshCw,
-  Shield, Clock, AlertCircle,
+  Shield, Clock, AlertCircle, Server, Flame,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -67,6 +67,24 @@ const PROVIDERS = [
     connectType: 'oauth' as const,
   },
   {
+    id: 'aws',
+    name: 'AWS (S3 + CloudFront)',
+    description: 'Deploy static sites to S3 with optional CloudFront CDN.',
+    icon: Server,
+    color: 'text-yellow-600',
+    bg: 'bg-yellow-50',
+    connectType: 'token' as const,
+  },
+  {
+    id: 'gcp',
+    name: 'Google Cloud',
+    description: 'Deploy to Firebase Hosting or Google Cloud Storage.',
+    icon: Flame,
+    color: 'text-blue-600',
+    bg: 'bg-blue-50',
+    connectType: 'token' as const,
+  },
+  {
     id: 'supabase',
     name: 'Supabase',
     description: 'Backend-as-a-service: Postgres, Auth, Storage, Realtime.',
@@ -112,6 +130,19 @@ export default function IntegrationsPage() {
   const [sbServiceKey, setSbServiceKey] = useState('');
   const [sbConnecting, setSbConnecting] = useState(false);
   const [showSbForm, setShowSbForm] = useState(false);
+
+  // AWS form
+  const [awsAccessKey, setAwsAccessKey] = useState('');
+  const [awsSecretKey, setAwsSecretKey] = useState('');
+  const [awsRegion, setAwsRegion] = useState('us-east-1');
+  const [awsConnecting, setAwsConnecting] = useState(false);
+  const [showAwsForm, setShowAwsForm] = useState(false);
+
+  // GCP form
+  const [gcpSaKey, setGcpSaKey] = useState('');
+  const [gcpProjectIdInput, setGcpProjectIdInput] = useState('');
+  const [gcpConnecting, setGcpConnecting] = useState(false);
+  const [showGcpForm, setShowGcpForm] = useState(false);
 
   useEffect(() => {
     loadConnections();
@@ -213,6 +244,52 @@ export default function IntegrationsPage() {
       toast('error', 'Connection failed', err.message);
     } finally {
       setSbConnecting(false);
+    }
+  };
+
+  const handleAwsConnect = async () => {
+    if (!awsAccessKey.trim() || !awsSecretKey.trim()) {
+      toast('error', 'Enter your Access Key ID and Secret Access Key');
+      return;
+    }
+    setAwsConnecting(true);
+    try {
+      await apiFetch('/api/v1/projects/connect/aws', {
+        method: 'POST',
+        body: JSON.stringify({ accessKeyId: awsAccessKey.trim(), secretAccessKey: awsSecretKey.trim(), region: awsRegion }),
+      });
+      toast('success', 'AWS connected!');
+      setAwsAccessKey('');
+      setAwsSecretKey('');
+      setShowAwsForm(false);
+      loadConnections();
+    } catch (err: any) {
+      toast('error', 'Connection failed', err.message);
+    } finally {
+      setAwsConnecting(false);
+    }
+  };
+
+  const handleGcpConnect = async () => {
+    if (!gcpSaKey.trim()) {
+      toast('error', 'Paste your service account JSON key');
+      return;
+    }
+    setGcpConnecting(true);
+    try {
+      await apiFetch('/api/v1/projects/connect/gcp', {
+        method: 'POST',
+        body: JSON.stringify({ serviceAccountKey: gcpSaKey.trim(), projectId: gcpProjectIdInput.trim() || undefined }),
+      });
+      toast('success', 'Google Cloud connected!');
+      setGcpSaKey('');
+      setGcpProjectIdInput('');
+      setShowGcpForm(false);
+      loadConnections();
+    } catch (err: any) {
+      toast('error', 'Connection failed', err.message);
+    } finally {
+      setGcpConnecting(false);
     }
   };
 
@@ -321,6 +398,26 @@ export default function IntegrationsPage() {
                               {showSbForm ? 'Cancel' : 'Connect'}
                             </Button>
                           )}
+                          {provider.id === 'aws' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setShowAwsForm(!showAwsForm)}
+                              icon={<Link2 size={13} />}
+                            >
+                              {showAwsForm ? 'Cancel' : 'Connect'}
+                            </Button>
+                          )}
+                          {provider.id === 'gcp' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setShowGcpForm(!showGcpForm)}
+                              icon={<Link2 size={13} />}
+                            >
+                              {showGcpForm ? 'Cancel' : 'Connect'}
+                            </Button>
+                          )}
                         </>
                       )}
                     </div>
@@ -408,6 +505,83 @@ export default function IntegrationsPage() {
                       </div>
                       <Button size="sm" onClick={handleSupabaseConnect} loading={sbConnecting}>
                         Connect Supabase
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* AWS form */}
+                  {provider.id === 'aws' && showAwsForm && !conn && (
+                    <div className="mt-4 pl-14 space-y-3">
+                      <div className="p-3 rounded-lg bg-yellow-50 border border-yellow-100">
+                        <p className="text-xs text-yellow-700 font-medium mb-1">Create an IAM Access Key:</p>
+                        <ol className="text-xs text-yellow-600 list-decimal list-inside space-y-0.5">
+                          <li>Go to <a href="https://console.aws.amazon.com/iam/home#/users" target="_blank" rel="noopener noreferrer" className="underline hover:text-yellow-800">AWS IAM Users</a></li>
+                          <li>Select your user → Security credentials → Create access key</li>
+                          <li>Ensure the user has <strong>AmazonS3FullAccess</strong> and optionally <strong>CloudFrontFullAccess</strong></li>
+                        </ol>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={awsAccessKey}
+                          onChange={(e) => setAwsAccessKey(e.target.value)}
+                          placeholder="Access Key ID (AKIA...)"
+                          className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        />
+                        <input
+                          type="password"
+                          value={awsSecretKey}
+                          onChange={(e) => setAwsSecretKey(e.target.value)}
+                          placeholder="Secret Access Key"
+                          className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        />
+                      </div>
+                      <select
+                        value={awsRegion}
+                        onChange={(e) => setAwsRegion(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      >
+                        <option value="us-east-1">US East (N. Virginia)</option>
+                        <option value="us-west-2">US West (Oregon)</option>
+                        <option value="eu-west-1">EU (Ireland)</option>
+                        <option value="eu-central-1">EU (Frankfurt)</option>
+                        <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
+                        <option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
+                      </select>
+                      <Button size="sm" onClick={handleAwsConnect} loading={awsConnecting}>
+                        Verify &amp; Connect AWS
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* GCP form */}
+                  {provider.id === 'gcp' && showGcpForm && !conn && (
+                    <div className="mt-4 pl-14 space-y-3">
+                      <div className="p-3 rounded-lg bg-blue-50 border border-blue-100">
+                        <p className="text-xs text-blue-700 font-medium mb-1">Create a Service Account Key:</p>
+                        <ol className="text-xs text-blue-600 list-decimal list-inside space-y-0.5">
+                          <li>Go to <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-800">GCP Service Accounts</a></li>
+                          <li>Create or select a service account</li>
+                          <li>Grant roles: <strong>Firebase Hosting Admin</strong> and/or <strong>Storage Admin</strong></li>
+                          <li>Keys tab → Add key → JSON → Paste below</li>
+                        </ol>
+                      </div>
+                      <textarea
+                        value={gcpSaKey}
+                        onChange={(e) => setGcpSaKey(e.target.value)}
+                        placeholder='{"type": "service_account", "project_id": "...", ...}'
+                        rows={3}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+                      />
+                      <input
+                        type="text"
+                        value={gcpProjectIdInput}
+                        onChange={(e) => setGcpProjectIdInput(e.target.value)}
+                        placeholder="GCP Project ID (optional — auto-detected from key)"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                      <Button size="sm" onClick={handleGcpConnect} loading={gcpConnecting}>
+                        Connect Google Cloud
                       </Button>
                     </div>
                   )}

@@ -16,7 +16,7 @@ import {
   Check, Loader2, FolderArchive, GitBranch,
   Link2, Unplug, ChevronDown, Plus, Trash2,
   Eye, EyeOff, Key, Database, Triangle, Globe2,
-  RefreshCw, Search, Lock,
+  RefreshCw, Search, Lock, Server, Flame,
 } from 'lucide-react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -61,11 +61,13 @@ interface EnvVar {
   updatedAt: string;
 }
 
-type Tab = 'github' | 'cloudflare' | 'vercel' | 'netlify' | 'download' | 'env';
+type Tab = 'github' | 'cloudflare' | 'vercel' | 'netlify' | 'aws' | 'gcp' | 'download' | 'env';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'github', label: 'GitHub', icon: <Github size={14} /> },
   { id: 'cloudflare', label: 'Cloudflare', icon: <Cloud size={14} /> },
+  { id: 'aws', label: 'AWS', icon: <Server size={14} /> },
+  { id: 'gcp', label: 'Google Cloud', icon: <Flame size={14} /> },
   { id: 'vercel', label: 'Vercel', icon: <Triangle size={14} /> },
   { id: 'netlify', label: 'Netlify', icon: <Globe2 size={14} /> },
   { id: 'download', label: 'Download', icon: <Download size={14} /> },
@@ -175,7 +177,9 @@ export function ShipPanel({ onClose }: ShipPanelProps) {
               {(tab.id === 'github' && getConnection('github_repo')) ||
                (tab.id === 'cloudflare' && getConnection('cloudflare')) ||
                (tab.id === 'vercel' && getConnection('vercel')) ||
-               (tab.id === 'netlify' && getConnection('netlify')) ? (
+               (tab.id === 'netlify' && getConnection('netlify')) ||
+               (tab.id === 'aws' && getConnection('aws')) ||
+               (tab.id === 'gcp' && getConnection('gcp')) ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
               ) : null}
             </button>
@@ -219,6 +223,22 @@ export function ShipPanel({ onClose }: ShipPanelProps) {
                   projectId={project?.id || ''}
                   connection={getConnection('netlify')}
                   integration={getIntegration('netlify')}
+                  onRefresh={loadData}
+                />
+              )}
+              {activeTab === 'aws' && (
+                <AwsTab
+                  projectId={project?.id || ''}
+                  connection={getConnection('aws')}
+                  integration={getIntegration('aws')}
+                  onRefresh={loadData}
+                />
+              )}
+              {activeTab === 'gcp' && (
+                <GcpTab
+                  projectId={project?.id || ''}
+                  connection={getConnection('gcp')}
+                  integration={getIntegration('gcp')}
                   onRefresh={loadData}
                 />
               )}
@@ -826,6 +846,397 @@ function NetlifyTab({
 
       <Button onClick={handleDeploy} loading={deploying} icon={<Globe2 size={14} />} className="w-full">
         Deploy to Netlify
+      </Button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AWS TAB — Access Key + S3/CloudFront deploy
+// ═══════════════════════════════════════════════════════════════
+
+function AwsTab({
+  projectId,
+  connection,
+  integration,
+  onRefresh,
+}: {
+  projectId: string;
+  connection?: Connection;
+  integration?: ProjectIntegration;
+  onRefresh: () => void;
+}) {
+  const [accessKeyId, setAccessKeyId] = useState('');
+  const [secretAccessKey, setSecretAccessKey] = useState('');
+  const [region, setRegion] = useState(integration?.config?.region || 'us-east-1');
+  const [connecting, setConnecting] = useState(false);
+  const [bucketName, setBucketName] = useState(integration?.config?.bucketName || '');
+  const [distributionId, setDistributionId] = useState(integration?.config?.distributionId || '');
+  const [deploying, setDeploying] = useState(false);
+
+  const handleConnect = async () => {
+    if (!accessKeyId.trim() || !secretAccessKey.trim()) {
+      toast('error', 'Enter your Access Key ID and Secret Access Key');
+      return;
+    }
+    setConnecting(true);
+    try {
+      await shipFetch('/api/v1/projects/connect/aws', {
+        method: 'POST',
+        body: JSON.stringify({ accessKeyId: accessKeyId.trim(), secretAccessKey: secretAccessKey.trim(), region }),
+      });
+      toast('success', 'AWS connected!');
+      setAccessKeyId('');
+      setSecretAccessKey('');
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Connection failed', err.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await shipFetch('/api/v1/projects/connections/aws', { method: 'DELETE' });
+      toast('success', 'AWS disconnected');
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Failed', err.message);
+    }
+  };
+
+  const handleDeploy = async () => {
+    if (!bucketName.trim()) { toast('error', 'Enter an S3 bucket name'); return; }
+    setDeploying(true);
+    try {
+      const result = await shipFetch<{ status: string; url: string; filesCount: number }>(
+        `/api/v1/projects/${projectId}/aws/deploy`,
+        { method: 'POST', body: JSON.stringify({ bucketName: bucketName.trim(), region, distributionId: distributionId.trim() || undefined }) }
+      );
+      toast('success', 'Deployed to AWS!', result.url);
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Deploy failed', err.message);
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  if (!connection) {
+    return (
+      <div className="space-y-5">
+        <div className="p-5 rounded-xl bg-slate-500/10 border border-white/10">
+          <Server size={28} className="text-yellow-500 mb-3" />
+          <p className="text-sm text-slate-300 mb-1">Connect AWS</p>
+          <p className="text-xs text-slate-500 mb-4">Deploy static sites to S3 + CloudFront.</p>
+        </div>
+
+        <div className="p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/10 space-y-3">
+          <p className="text-xs font-medium text-yellow-300">Create an IAM Access Key:</p>
+          <ol className="text-2xs text-slate-400 space-y-1.5 list-decimal list-inside">
+            <li>Go to <a href="https://console.aws.amazon.com/iam/home#/users" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">AWS IAM Users</a></li>
+            <li>Select your user → Security credentials → Create access key</li>
+            <li>Choose "Application running outside AWS"</li>
+            <li>Ensure the user has <strong>AmazonS3FullAccess</strong> and optionally <strong>CloudFrontFullAccess</strong></li>
+            <li>Copy the Access Key ID and Secret below</li>
+          </ol>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">Access Key ID</label>
+            <input type="text" value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)}
+              placeholder="AKIAIOSFODNN7EXAMPLE"
+              className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">Secret Access Key</label>
+            <input type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)}
+              placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+              className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">Region</label>
+            <select value={region} onChange={(e) => setRegion(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50">
+              <option value="us-east-1">US East (N. Virginia)</option>
+              <option value="us-west-2">US West (Oregon)</option>
+              <option value="eu-west-1">EU (Ireland)</option>
+              <option value="eu-central-1">EU (Frankfurt)</option>
+              <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
+              <option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
+            </select>
+          </div>
+        </div>
+
+        <Button onClick={handleConnect} loading={connecting} icon={<Link2 size={14} />} className="w-full">
+          Connect AWS
+        </Button>
+      </div>
+    );
+  }
+
+  // Connected — deploy form
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
+        <div className="flex items-center gap-2">
+          <Check size={14} className="text-yellow-400" />
+          <span className="text-sm text-yellow-300">AWS connected</span>
+          {connection.accountId && <span className="text-2xs text-slate-500">(Account {connection.accountId})</span>}
+        </div>
+        <button onClick={handleDisconnect} className="text-xs text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1">
+          <Unplug size={12} /> Disconnect
+        </button>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1.5">S3 Bucket Name</label>
+        <input type="text" value={bucketName} onChange={(e) => setBucketName(e.target.value)}
+          placeholder="my-website-bucket"
+          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50" />
+        <p className="text-2xs text-slate-500 mt-1">We'll create the bucket if it doesn't exist and configure it for static hosting.</p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1.5">Region</label>
+        <select value={region} onChange={(e) => setRegion(e.target.value)}
+          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50">
+          <option value="us-east-1">US East (N. Virginia)</option>
+          <option value="us-west-2">US West (Oregon)</option>
+          <option value="eu-west-1">EU (Ireland)</option>
+          <option value="eu-central-1">EU (Frankfurt)</option>
+          <option value="ap-southeast-1">Asia Pacific (Singapore)</option>
+          <option value="ap-northeast-1">Asia Pacific (Tokyo)</option>
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1.5">CloudFront Distribution ID (optional)</label>
+        <input type="text" value={distributionId} onChange={(e) => setDistributionId(e.target.value)}
+          placeholder="E1A2B3C4D5E6F7"
+          className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50" />
+        <p className="text-2xs text-slate-500 mt-1">If provided, we'll invalidate the CloudFront cache after deploy.</p>
+      </div>
+
+      {integration?.lastActionResult?.url && (
+        <a href={integration.lastActionResult.url as string} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300">
+          <ExternalLink size={12} /> {integration.lastActionResult.url as string}
+        </a>
+      )}
+
+      <Button onClick={handleDeploy} loading={deploying} icon={<Server size={14} />} className="w-full">
+        Deploy to S3
+      </Button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GCP TAB — Service Account JSON + Firebase Hosting / Cloud Storage
+// ═══════════════════════════════════════════════════════════════
+
+function GcpTab({
+  projectId,
+  connection,
+  integration,
+  onRefresh,
+}: {
+  projectId: string;
+  connection?: Connection;
+  integration?: ProjectIntegration;
+  onRefresh: () => void;
+}) {
+  const [saKey, setSaKey] = useState('');
+  const [gcpProjectId, setGcpProjectId] = useState('');
+  const [connecting, setConnecting] = useState(false);
+  const [target, setTarget] = useState<'firebase_hosting' | 'cloud_storage'>(integration?.config?.target || 'firebase_hosting');
+  const [siteId, setSiteId] = useState(integration?.config?.siteId || '');
+  const [bucketName, setBucketName] = useState(integration?.config?.bucketName || '');
+  const [deploying, setDeploying] = useState(false);
+
+  const handleConnect = async () => {
+    if (!saKey.trim()) {
+      toast('error', 'Paste your service account JSON key');
+      return;
+    }
+    setConnecting(true);
+    try {
+      await shipFetch('/api/v1/projects/connect/gcp', {
+        method: 'POST',
+        body: JSON.stringify({ serviceAccountKey: saKey.trim(), projectId: gcpProjectId.trim() || undefined }),
+      });
+      toast('success', 'Google Cloud connected!');
+      setSaKey('');
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Connection failed', err.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await shipFetch('/api/v1/projects/connections/gcp', { method: 'DELETE' });
+      toast('success', 'Google Cloud disconnected');
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Failed', err.message);
+    }
+  };
+
+  const handleDeploy = async () => {
+    if (target === 'firebase_hosting' && !siteId.trim() && !connection?.accountId) {
+      toast('error', 'Enter a Firebase Hosting site ID');
+      return;
+    }
+    if (target === 'cloud_storage' && !bucketName.trim()) {
+      toast('error', 'Enter a Cloud Storage bucket name');
+      return;
+    }
+    setDeploying(true);
+    try {
+      const result = await shipFetch<{ status: string; url: string; filesCount: number }>(
+        `/api/v1/projects/${projectId}/gcp/deploy`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            target,
+            siteId: siteId.trim() || undefined,
+            bucketName: bucketName.trim() || undefined,
+          }),
+        }
+      );
+      toast('success', 'Deployed to Google Cloud!', result.url);
+      onRefresh();
+    } catch (err: any) {
+      toast('error', 'Deploy failed', err.message);
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  if (!connection) {
+    return (
+      <div className="space-y-5">
+        <div className="p-5 rounded-xl bg-slate-500/10 border border-white/10">
+          <Flame size={28} className="text-blue-400 mb-3" />
+          <p className="text-sm text-slate-300 mb-1">Connect Google Cloud</p>
+          <p className="text-xs text-slate-500 mb-4">Deploy to Firebase Hosting or Google Cloud Storage.</p>
+        </div>
+
+        <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/10 space-y-3">
+          <p className="text-xs font-medium text-blue-300">Create a Service Account Key:</p>
+          <ol className="text-2xs text-slate-400 space-y-1.5 list-decimal list-inside">
+            <li>Go to <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">GCP Service Accounts</a></li>
+            <li>Create a new service account or select an existing one</li>
+            <li>Grant roles: <strong>Firebase Hosting Admin</strong> and/or <strong>Storage Admin</strong></li>
+            <li>Go to Keys tab → Add key → JSON</li>
+            <li>Paste the entire JSON file contents below</li>
+          </ol>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">Service Account JSON Key</label>
+          <textarea value={saKey} onChange={(e) => setSaKey(e.target.value)}
+            placeholder='{"type": "service_account", "project_id": "...", ...}'
+            rows={4}
+            className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 resize-none" />
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">GCP Project ID (optional — auto-detected from key)</label>
+          <input type="text" value={gcpProjectId} onChange={(e) => setGcpProjectId(e.target.value)}
+            placeholder="my-project-123"
+            className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50" />
+        </div>
+
+        <Button onClick={handleConnect} loading={connecting} icon={<Link2 size={14} />} className="w-full">
+          Connect Google Cloud
+        </Button>
+      </div>
+    );
+  }
+
+  // Connected — deploy form
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
+        <div className="flex items-center gap-2">
+          <Check size={14} className="text-blue-400" />
+          <span className="text-sm text-blue-300">Google Cloud connected</span>
+          {connection.accountId && <span className="text-2xs text-slate-500">({connection.accountId})</span>}
+        </div>
+        <button onClick={handleDisconnect} className="text-xs text-slate-400 hover:text-red-400 transition-colors flex items-center gap-1">
+          <Unplug size={12} /> Disconnect
+        </button>
+      </div>
+
+      {/* Deploy target selector */}
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-2">Deploy Target</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => setTarget('firebase_hosting')}
+            className={clsx(
+              'p-3 rounded-lg border text-left transition-colors',
+              target === 'firebase_hosting'
+                ? 'border-brand-500/50 bg-brand-500/10'
+                : 'border-white/10 bg-white/5 hover:border-white/20',
+            )}
+          >
+            <Flame size={16} className={target === 'firebase_hosting' ? 'text-brand-400' : 'text-slate-400'} />
+            <p className="text-xs font-medium text-white mt-1">Firebase Hosting</p>
+            <p className="text-2xs text-slate-500">Global CDN, SSL, custom domains</p>
+          </button>
+          <button
+            onClick={() => setTarget('cloud_storage')}
+            className={clsx(
+              'p-3 rounded-lg border text-left transition-colors',
+              target === 'cloud_storage'
+                ? 'border-brand-500/50 bg-brand-500/10'
+                : 'border-white/10 bg-white/5 hover:border-white/20',
+            )}
+          >
+            <Database size={16} className={target === 'cloud_storage' ? 'text-brand-400' : 'text-slate-400'} />
+            <p className="text-xs font-medium text-white mt-1">Cloud Storage</p>
+            <p className="text-2xs text-slate-500">GCS static website hosting</p>
+          </button>
+        </div>
+      </div>
+
+      {target === 'firebase_hosting' && (
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">Firebase Site ID (optional — defaults to project ID)</label>
+          <input type="text" value={siteId} onChange={(e) => setSiteId(e.target.value)}
+            placeholder={connection.accountId || 'my-project'}
+            className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50" />
+          <p className="text-2xs text-slate-500 mt-1">Deploys to <code>{siteId || connection.accountId || 'my-project'}.web.app</code></p>
+        </div>
+      )}
+
+      {target === 'cloud_storage' && (
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">Bucket Name</label>
+          <input type="text" value={bucketName} onChange={(e) => setBucketName(e.target.value)}
+            placeholder={`${connection.accountId}-website`}
+            className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50" />
+          <p className="text-2xs text-slate-500 mt-1">Bucket will be created if it doesn't exist. Configured for static website hosting.</p>
+        </div>
+      )}
+
+      {integration?.lastActionResult?.url && (
+        <a href={integration.lastActionResult.url as string} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-2 text-xs text-blue-400 hover:text-blue-300">
+          <ExternalLink size={12} /> {integration.lastActionResult.url as string}
+        </a>
+      )}
+
+      <Button onClick={handleDeploy} loading={deploying} icon={<Flame size={14} />} className="w-full">
+        Deploy to {target === 'firebase_hosting' ? 'Firebase Hosting' : 'Cloud Storage'}
       </Button>
     </div>
   );

@@ -1136,6 +1136,640 @@ integrationsRoutes.post('/:id/netlify/deploy', async (c) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// AWS — User pastes Access Key ID + Secret Access Key
+// ═══════════════════════════════════════════════════════════════
+
+const awsConnectSchema = z.object({
+  accessKeyId: z.string().min(16).max(128),
+  secretAccessKey: z.string().min(16),
+  region: z.string().default('us-east-1'),
+});
+
+integrationsRoutes.post('/connect/aws', async (c) => {
+  const session = c.get('session');
+  const body = await c.req.json();
+  const { accessKeyId, secretAccessKey, region } = awsConnectSchema.parse(body);
+
+  // Validate by calling STS GetCallerIdentity
+  try {
+    const stsRes = await awsSignedRequest({
+      service: 'sts',
+      region,
+      accessKeyId,
+      secretAccessKey,
+      method: 'POST',
+      path: '/',
+      body: 'Action=GetCallerIdentity&Version=2011-06-15',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+
+    if (!stsRes.ok) {
+      throw new AppError(400, 'AWS_INVALID_CREDENTIALS', 'AWS credentials are invalid. Check your Access Key ID and Secret.');
+    }
+
+    const stsText = await stsRes.text();
+    // Extract Account ID from XML response
+    const accountMatch = stsText.match(/<Account>(\d+)<\/Account>/);
+    const arnMatch = stsText.match(/<Arn>([^<]+)<\/Arn>/);
+    const awsAccountId = accountMatch?.[1] || '';
+    const arn = arnMatch?.[1] || '';
+
+    const db = getDb();
+    const existing = await db.query.userConnections.findFirst({
+      where: and(eq(userConnections.userId, session.userId), eq(userConnections.provider, 'aws')),
+    });
+
+    const connectionData = {
+      userId: session.userId,
+      provider: 'aws',
+      displayName: awsAccountId ? `AWS ${awsAccountId}` : 'AWS',
+      accessToken: encrypt(JSON.stringify({ accessKeyId, secretAccessKey })),
+      refreshToken: null,
+      tokenExpiresAt: null,
+      accountId: awsAccountId,
+      metadata: {
+        region,
+        arn,
+        verifiedAt: new Date().toISOString(),
+      },
+      updatedAt: new Date(),
+    };
+
+    if (existing) {
+      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
+    } else {
+      await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
+    }
+
+    logger.info(`AWS connected: account ${awsAccountId} (user ${session.userId})`);
+    return c.json({ success: true, data: { message: 'AWS connected.', accountId: awsAccountId, region } });
+  } catch (err: any) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(400, 'AWS_CONNECT_FAILED', `AWS connection failed: ${err.message}`);
+  }
+});
+
+// ─── POST /projects/:id/aws/deploy — Deploy to S3 + CloudFront
+const awsDeploySchema = z.object({
+  bucketName: z.string().min(3).max(63),
+  region: z.string().default('us-east-1'),
+  distributionId: z.string().optional(), // CloudFront distribution ID for cache invalidation
+});
+
+integrationsRoutes.post('/:id/aws/deploy', async (c) => {
+  const session = c.get('session');
+  const projectId = c.req.param('id');
+  await getOwnedProject(session.userId, projectId);
+
+  const body = await c.req.json();
+  const { bucketName, region, distributionId } = awsDeploySchema.parse(body);
+
+  const db = getDb();
+
+  const connection = await db.query.userConnections.findFirst({
+    where: and(eq(userConnections.userId, session.userId), eq(userConnections.provider, 'aws')),
+  });
+
+  if (!connection?.accessToken) {
+    throw new AppError(401, 'AWS_NOT_CONNECTED', 'Connect your AWS account first.');
+  }
+
+  const { accessKeyId, secretAccessKey } = JSON.parse(decrypt(connection.accessToken));
+
+  const files = await db.query.projectFiles.findMany({
+    where: eq(projectFiles.projectId, projectId),
+  });
+
+  if (files.length === 0) {
+    throw new AppError(400, 'NO_FILES', 'Project has no files to deploy.');
+  }
+
+  try {
+    // Upload each file to S3
+    let uploadedCount = 0;
+    for (const file of files) {
+      const contentType = getS3ContentType(file.path);
+      const s3Res = await awsSignedRequest({
+        service: 's3',
+        region,
+        accessKeyId,
+        secretAccessKey,
+        method: 'PUT',
+        path: `/${bucketName}/${file.path}`,
+        body: file.content || '',
+        headers: {
+          'Content-Type': contentType,
+          'x-amz-acl': 'public-read',
+        },
+        host: `${bucketName}.s3.${region}.amazonaws.com`,
+      });
+
+      if (!s3Res.ok) {
+        const errText = await s3Res.text();
+        // If bucket doesn't exist, try to create it
+        if (s3Res.status === 404 && uploadedCount === 0) {
+          // Create bucket
+          const createBody = region === 'us-east-1' ? '' :
+            `<CreateBucketConfiguration><LocationConstraint>${region}</LocationConstraint></CreateBucketConfiguration>`;
+          const createRes = await awsSignedRequest({
+            service: 's3',
+            region,
+            accessKeyId,
+            secretAccessKey,
+            method: 'PUT',
+            path: `/${bucketName}`,
+            body: createBody,
+            headers: createBody ? { 'Content-Type': 'application/xml' } : {},
+            host: `${bucketName}.s3.${region}.amazonaws.com`,
+          });
+          if (!createRes.ok) {
+            throw new Error(`Bucket creation failed: ${await createRes.text()}`);
+          }
+
+          // Configure as static website
+          const websiteConfig = `<WebsiteConfiguration><IndexDocument><Suffix>index.html</Suffix></IndexDocument><ErrorDocument><Key>index.html</Key></ErrorDocument></WebsiteConfiguration>`;
+          await awsSignedRequest({
+            service: 's3',
+            region,
+            accessKeyId,
+            secretAccessKey,
+            method: 'PUT',
+            path: `/${bucketName}?website`,
+            body: websiteConfig,
+            headers: { 'Content-Type': 'application/xml' },
+            host: `${bucketName}.s3.${region}.amazonaws.com`,
+          });
+
+          // Retry the file upload
+          const retryRes = await awsSignedRequest({
+            service: 's3',
+            region,
+            accessKeyId,
+            secretAccessKey,
+            method: 'PUT',
+            path: `/${bucketName}/${file.path}`,
+            body: file.content || '',
+            headers: { 'Content-Type': contentType, 'x-amz-acl': 'public-read' },
+            host: `${bucketName}.s3.${region}.amazonaws.com`,
+          });
+          if (!retryRes.ok) throw new Error(`Upload failed after bucket creation: ${file.path}`);
+        } else {
+          throw new Error(`S3 upload failed for ${file.path}: ${errText.slice(0, 200)}`);
+        }
+      }
+      uploadedCount++;
+    }
+
+    // Invalidate CloudFront cache if distribution provided
+    if (distributionId) {
+      const invalidationBody = `<InvalidationBatch><Paths><Quantity>1</Quantity><Items><Path>/*</Path></Items></Paths><CallerReference>${Date.now()}</CallerReference></InvalidationBatch>`;
+      await awsSignedRequest({
+        service: 'cloudfront',
+        region: 'us-east-1', // CloudFront is always us-east-1
+        accessKeyId,
+        secretAccessKey,
+        method: 'POST',
+        path: `/2020-05-31/distribution/${distributionId}/invalidation`,
+        body: invalidationBody,
+        headers: { 'Content-Type': 'application/xml' },
+      });
+    }
+
+    const deployUrl = distributionId
+      ? `CloudFront distribution ${distributionId}`
+      : `http://${bucketName}.s3-website-${region}.amazonaws.com`;
+
+    const actionResult = { status: 'success', url: deployUrl, filesCount: files.length, bucketName, region };
+
+    // Record action
+    const existing = await db.query.projectIntegrations.findFirst({
+      where: and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, 'aws')),
+    });
+
+    if (existing) {
+      await db.update(projectIntegrations).set({
+        lastActionAt: new Date(), lastActionResult: actionResult,
+        config: { ...(existing.config as any), bucketName, region, distributionId },
+        updatedAt: new Date(),
+      }).where(eq(projectIntegrations.id, existing.id));
+    } else {
+      await db.insert(projectIntegrations).values({
+        projectId, provider: 'aws', connectionId: connection.id,
+        config: { bucketName, region, distributionId },
+        lastActionAt: new Date(), lastActionResult: actionResult,
+      });
+    }
+
+    logger.info(`AWS S3 deploy: ${bucketName} (${region}) — ${files.length} files → ${deployUrl}`);
+    return c.json({ success: true, data: actionResult });
+  } catch (err: any) {
+    logger.error(`AWS deploy failed: ${err.message}`);
+    throw new AppError(502, 'AWS_DEPLOY_FAILED', err.message);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// GOOGLE CLOUD — Service Account JSON key or OAuth
+// ═══════════════════════════════════════════════════════════════
+
+const gcpConnectSchema = z.object({
+  serviceAccountKey: z.string().min(10), // JSON key content
+  projectId: z.string().optional(),
+});
+
+integrationsRoutes.post('/connect/gcp', async (c) => {
+  const session = c.get('session');
+  const body = await c.req.json();
+  const { serviceAccountKey, projectId: gcpProjectId } = gcpConnectSchema.parse(body);
+
+  try {
+    // Parse and validate the service account key
+    const keyData = JSON.parse(serviceAccountKey);
+    if (!keyData.client_email || !keyData.private_key || !keyData.project_id) {
+      throw new AppError(400, 'INVALID_SA_KEY', 'Invalid service account key. Must contain client_email, private_key, and project_id.');
+    }
+
+    const resolvedProjectId = gcpProjectId || keyData.project_id;
+
+    // Validate by getting an access token
+    const accessToken = await getGcpAccessToken(keyData);
+    if (!accessToken) {
+      throw new AppError(400, 'GCP_AUTH_FAILED', 'Could not authenticate with the provided service account key.');
+    }
+
+    // Verify project access
+    const projectRes = await fetch(`https://cloudresourcemanager.googleapis.com/v1/projects/${resolvedProjectId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!projectRes.ok) {
+      throw new AppError(400, 'GCP_PROJECT_ACCESS', `Cannot access GCP project "${resolvedProjectId}". Ensure the service account has the required permissions.`);
+    }
+
+    const projectData = await projectRes.json() as any;
+
+    const db = getDb();
+    const existing = await db.query.userConnections.findFirst({
+      where: and(eq(userConnections.userId, session.userId), eq(userConnections.provider, 'gcp')),
+    });
+
+    const connectionData = {
+      userId: session.userId,
+      provider: 'gcp',
+      displayName: `${resolvedProjectId} (${keyData.client_email.split('@')[0]})`,
+      accessToken: encrypt(serviceAccountKey),
+      refreshToken: null,
+      tokenExpiresAt: null,
+      accountId: resolvedProjectId,
+      metadata: {
+        projectId: resolvedProjectId,
+        projectName: projectData.name,
+        clientEmail: keyData.client_email,
+        verifiedAt: new Date().toISOString(),
+      },
+      updatedAt: new Date(),
+    };
+
+    if (existing) {
+      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
+    } else {
+      await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
+    }
+
+    logger.info(`GCP connected: project ${resolvedProjectId} (user ${session.userId})`);
+    return c.json({ success: true, data: { message: 'Google Cloud connected.', projectId: resolvedProjectId } });
+  } catch (err: any) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(400, 'GCP_CONNECT_FAILED', `GCP connection failed: ${err.message}`);
+  }
+});
+
+// ─── POST /projects/:id/gcp/deploy — Deploy to Firebase Hosting or Cloud Storage
+const gcpDeploySchema = z.object({
+  target: z.enum(['firebase_hosting', 'cloud_storage']),
+  // Firebase Hosting
+  siteId: z.string().optional(), // Firebase Hosting site ID
+  // Cloud Storage
+  bucketName: z.string().optional(),
+});
+
+integrationsRoutes.post('/:id/gcp/deploy', async (c) => {
+  const session = c.get('session');
+  const projectId = c.req.param('id');
+  await getOwnedProject(session.userId, projectId);
+
+  const body = await c.req.json();
+  const { target, siteId, bucketName } = gcpDeploySchema.parse(body);
+
+  const db = getDb();
+
+  const connection = await db.query.userConnections.findFirst({
+    where: and(eq(userConnections.userId, session.userId), eq(userConnections.provider, 'gcp')),
+  });
+
+  if (!connection?.accessToken) {
+    throw new AppError(401, 'GCP_NOT_CONNECTED', 'Connect your Google Cloud account first.');
+  }
+
+  const keyData = JSON.parse(decrypt(connection.accessToken));
+  const gcpProjectId = connection.accountId || keyData.project_id;
+
+  const files = await db.query.projectFiles.findMany({
+    where: eq(projectFiles.projectId, projectId),
+  });
+
+  if (files.length === 0) {
+    throw new AppError(400, 'NO_FILES', 'Project has no files to deploy.');
+  }
+
+  try {
+    const accessToken = await getGcpAccessToken(keyData);
+    if (!accessToken) throw new Error('Failed to get GCP access token');
+
+    let deployUrl = '';
+
+    if (target === 'firebase_hosting') {
+      // ─── Firebase Hosting Deploy ──────────────────────
+      const resolvedSiteId = siteId || gcpProjectId;
+
+      // 1. Create a new version
+      const versionRes = await fetch(
+        `https://firebasehosting.googleapis.com/v1beta1/sites/${resolvedSiteId}/versions`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: { rewrites: [{ glob: '**', destination: '/index.html' }] } }),
+        }
+      );
+      if (!versionRes.ok) {
+        const err = await versionRes.json() as any;
+        throw new Error(`Firebase version creation failed: ${err.error?.message || JSON.stringify(err)}`);
+      }
+      const versionData = await versionRes.json() as any;
+      const versionName = versionData.name; // sites/{siteId}/versions/{versionId}
+
+      // 2. Populate files — get upload URLs
+      const fileHashes: Record<string, string> = {};
+      for (const file of files) {
+        const hash = crypto.createHash('sha256').update(file.content || '').digest('hex');
+        fileHashes[`/${file.path}`] = hash;
+      }
+
+      const populateRes = await fetch(
+        `https://firebasehosting.googleapis.com/v1beta1/${versionName}:populateFiles`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: fileHashes }),
+        }
+      );
+      if (!populateRes.ok) throw new Error('Firebase populateFiles failed');
+      const populateData = await populateRes.json() as any;
+
+      // 3. Upload required files
+      if (populateData.uploadRequiredHashes?.length > 0 && populateData.uploadUrl) {
+        for (const file of files) {
+          const hash = crypto.createHash('sha256').update(file.content || '').digest('hex');
+          if (populateData.uploadRequiredHashes.includes(hash)) {
+            // gzip the content
+            const { gzipSync } = await import('zlib');
+            const compressed = gzipSync(Buffer.from(file.content || ''));
+            await fetch(`${populateData.uploadUrl}/${hash}`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/octet-stream' },
+              body: compressed,
+            });
+          }
+        }
+      }
+
+      // 4. Finalize the version
+      const finalizeRes = await fetch(
+        `https://firebasehosting.googleapis.com/v1beta1/${versionName}?update_mask=status`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'FINALIZED' }),
+        }
+      );
+      if (!finalizeRes.ok) throw new Error('Firebase version finalize failed');
+
+      // 5. Release the version
+      await fetch(
+        `https://firebasehosting.googleapis.com/v1beta1/sites/${resolvedSiteId}/releases?versionName=${versionName}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        }
+      );
+
+      deployUrl = `https://${resolvedSiteId}.web.app`;
+
+    } else if (target === 'cloud_storage') {
+      // ─── GCS Static Website Deploy ────────────────────
+      const resolvedBucket = bucketName || `${gcpProjectId}-website`;
+
+      // Ensure bucket exists
+      const bucketCheckRes = await fetch(
+        `https://storage.googleapis.com/storage/v1/b/${resolvedBucket}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+
+      if (!bucketCheckRes.ok) {
+        // Create bucket
+        const createRes = await fetch(
+          `https://storage.googleapis.com/storage/v1/b?project=${gcpProjectId}`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: resolvedBucket,
+              website: { mainPageSuffix: 'index.html', notFoundPage: '404.html' },
+              iamConfiguration: { uniformBucketLevelAccess: { enabled: true } },
+            }),
+          }
+        );
+        if (!createRes.ok) {
+          const err = await createRes.json() as any;
+          throw new Error(`GCS bucket creation failed: ${err.error?.message}`);
+        }
+
+        // Make bucket publicly readable
+        await fetch(
+          `https://storage.googleapis.com/storage/v1/b/${resolvedBucket}/iam`,
+          {
+            method: 'PUT',
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              bindings: [{ role: 'roles/storage.objectViewer', members: ['allUsers'] }],
+            }),
+          }
+        );
+      }
+
+      // Upload files
+      for (const file of files) {
+        const contentType = getS3ContentType(file.path); // reuse mime helper
+        await fetch(
+          `https://storage.googleapis.com/upload/storage/v1/b/${resolvedBucket}/o?uploadType=media&name=${encodeURIComponent(file.path)}`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': contentType,
+            },
+            body: file.content || '',
+          }
+        );
+      }
+
+      deployUrl = `https://storage.googleapis.com/${resolvedBucket}/index.html`;
+    }
+
+    const actionResult = { status: 'success', url: deployUrl, filesCount: files.length, target };
+
+    const existing = await db.query.projectIntegrations.findFirst({
+      where: and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, 'gcp')),
+    });
+
+    if (existing) {
+      await db.update(projectIntegrations).set({
+        lastActionAt: new Date(), lastActionResult: actionResult,
+        config: { ...(existing.config as any), target, siteId, bucketName },
+        updatedAt: new Date(),
+      }).where(eq(projectIntegrations.id, existing.id));
+    } else {
+      await db.insert(projectIntegrations).values({
+        projectId, provider: 'gcp', connectionId: connection.id,
+        config: { target, siteId, bucketName },
+        lastActionAt: new Date(), lastActionResult: actionResult,
+      });
+    }
+
+    logger.info(`GCP deploy (${target}): ${deployUrl} — ${files.length} files`);
+    return c.json({ success: true, data: actionResult });
+  } catch (err: any) {
+    logger.error(`GCP deploy failed: ${err.message}`);
+    throw new AppError(502, 'GCP_DEPLOY_FAILED', err.message);
+  }
+});
+
+// ─── AWS Signature V4 helper ─────────────────────────────────
+interface AwsRequestOptions {
+  service: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  method: string;
+  path: string;
+  body?: string;
+  headers?: Record<string, string>;
+  host?: string;
+}
+
+async function awsSignedRequest(opts: AwsRequestOptions): Promise<Response> {
+  const { service, region, accessKeyId, secretAccessKey, method, path, body = '', headers = {} } = opts;
+  const host = opts.host || `${service}.${region}.amazonaws.com`;
+  const url = `https://${host}${path}`;
+
+  const now = new Date();
+  const dateStamp = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  const shortDate = dateStamp.slice(0, 8);
+
+  const payloadHash = crypto.createHash('sha256').update(body).digest('hex');
+
+  const canonicalHeaders: Record<string, string> = {
+    host,
+    'x-amz-date': dateStamp,
+    'x-amz-content-sha256': payloadHash,
+    ...headers,
+  };
+
+  const signedHeaderKeys = Object.keys(canonicalHeaders).sort();
+  const signedHeaders = signedHeaderKeys.join(';');
+  const canonicalHeaderStr = signedHeaderKeys.map(k => `${k.toLowerCase()}:${canonicalHeaders[k]}\n`).join('');
+
+  const canonicalRequest = [method, path.split('?')[0], path.includes('?') ? path.split('?')[1] : '',
+    canonicalHeaderStr, signedHeaders, payloadHash].join('\n');
+
+  const scope = `${shortDate}/${region}/${service}/aws4_request`;
+  const stringToSign = ['AWS4-HMAC-SHA256', dateStamp, scope,
+    crypto.createHash('sha256').update(canonicalRequest).digest('hex')].join('\n');
+
+  const kDate = crypto.createHmac('sha256', `AWS4${secretAccessKey}`).update(shortDate).digest();
+  const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
+  const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
+  const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
+  const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
+
+  const authHeader = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  const fetchHeaders: Record<string, string> = {
+    ...headers,
+    host,
+    'x-amz-date': dateStamp,
+    'x-amz-content-sha256': payloadHash,
+    Authorization: authHeader,
+  };
+
+  return fetch(url, { method, headers: fetchHeaders, body: method !== 'GET' ? body : undefined });
+}
+
+// ─── GCP JWT + Access Token helper ───────────────────────────
+async function getGcpAccessToken(keyData: { client_email: string; private_key: string }): Promise<string | null> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      iss: keyData.client_email,
+      scope: 'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/firebase',
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: now,
+      exp: now + 3600,
+    })).toString('base64url');
+
+    const signInput = `${header}.${payload}`;
+    const sign = crypto.createSign('RSA-SHA256');
+    sign.update(signInput);
+    const signature = sign.sign(keyData.private_key, 'base64url');
+    const jwt = `${signInput}.${signature}`;
+
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+    });
+
+    const tokenData = await tokenRes.json() as any;
+    return tokenData.access_token || null;
+  } catch (err) {
+    logger.error(`GCP token error: ${(err as any).message}`);
+    return null;
+  }
+}
+
+// ─── Content-type helper for S3/GCS ─────────────────────────
+function getS3ContentType(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase();
+  const mimeMap: Record<string, string> = {
+    html: 'text/html', htm: 'text/html',
+    css: 'text/css', js: 'application/javascript',
+    json: 'application/json', xml: 'application/xml',
+    svg: 'image/svg+xml', png: 'image/png',
+    jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp',
+    ico: 'image/x-icon', woff: 'font/woff',
+    woff2: 'font/woff2', ttf: 'font/ttf',
+    txt: 'text/plain', md: 'text/markdown',
+    pdf: 'application/pdf', zip: 'application/zip',
+    ts: 'text/typescript', tsx: 'text/typescript',
+    jsx: 'text/javascript', mjs: 'application/javascript',
+    map: 'application/json', webmanifest: 'application/manifest+json',
+  };
+  return mimeMap[ext || ''] || 'application/octet-stream';
+}
+
+// ═══════════════════════════════════════════════════════════════
 // EXPORT — Download project as zip
 // ═══════════════════════════════════════════════════════════════
 
