@@ -19,11 +19,12 @@ import { aiRoutes } from './routes/ai';
 import { previewRoutes } from './routes/preview';
 import { buildRoutes } from './routes/build';
 import { deployRoutes } from './routes/deploy';
-import { billingRoutes } from './routes/billing';
+import { billingRoutes, billingWebhookRoute } from './routes/billing';
 import { healthRoutes } from './routes/health';
 import { orgRoutes } from './routes/organizations';
 import { mfaRoutes } from './routes/mfa';
 import { adminRoutes } from './routes/admin';
+import { sitesRoutes } from './routes/sites';
 import { errorHandler } from './middleware/error-handler';
 import { rateLimiter } from './middleware/rate-limiter';
 import { requestLogger } from './middleware/request-logger';
@@ -63,10 +64,23 @@ app.route('/api/v1/preview', previewRoutes);
 app.route('/api/v1/build', buildRoutes);
 app.route('/api/v1/deploy', deployRoutes);
 app.route('/api/v1/billing', billingRoutes);
+app.route('/api/v1/billing', billingWebhookRoute); // Stripe webhook (no auth)
 app.route('/api/v1/organizations', orgRoutes);
 app.route('/api/v1/mfa', mfaRoutes);
 app.route('/api/v1/admin', adminRoutes);
 app.route('/health', healthRoutes);
+
+// ─── Sites Serving (*.sites.simplebuildpro.com via host header) ──
+// This middleware checks if the request is for a deployed site
+// and routes it to the sites handler before API routes
+app.use('*', async (c, next) => {
+  const host = c.req.header('host') || '';
+  if (host.includes('.sites.') || host.includes('.sites.simplebuildpro.com')) {
+    // Route to sites handler
+    return sitesRoutes.fetch(c.req.raw, c.env);
+  }
+  return next();
+});
 
 // ─── Internal Metrics (protected) ────────────────────────────
 app.get('/internal/metrics', (c) => {

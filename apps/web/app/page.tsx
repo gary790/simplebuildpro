@@ -121,72 +121,89 @@ export default function HomePage() {
         <div className="max-w-5xl mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight mb-4">
-              Simple, transparent pricing
+              Pay only for what you use
             </h2>
-            <p className="text-lg text-slate-500">Start free. Upgrade when you&apos;re ready.</p>
+            <p className="text-lg text-slate-500">Start free, no credit card required. Pay as you grow.</p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-6">
-            {/* Free */}
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {/* Free Tier */}
             <div className="p-8 rounded-2xl border border-slate-200 bg-white">
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Free</h3>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Free Tier</h3>
               <div className="mb-6">
                 <span className="text-4xl font-extrabold text-slate-900">$0</span>
-                <span className="text-slate-500 text-sm">/month</span>
+                <span className="text-slate-500 text-sm"> to start</span>
               </div>
+              <p className="text-sm text-slate-500 mb-6">No credit card required. Build and deploy instantly.</p>
               <ul className="space-y-3 mb-8 text-sm text-slate-600">
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 3 projects</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 50 AI messages / month</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 100 MB storage</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Live preview</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 10 deploys / month</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 2 projects</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 10 AI messages / day</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 50 MB storage</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 3 deploys / day</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 5 min live preview / day</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 100 MB bandwidth / day</li>
               </ul>
               <Link href="/signup" className="block text-center px-6 py-2.5 rounded-lg border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors">
-                Get Started
+                Get Started Free
               </Link>
             </div>
 
-            {/* Pro */}
+            {/* Pay-As-You-Go */}
             <div className="relative p-8 rounded-2xl border-2 border-brand-600 bg-white shadow-lg shadow-brand-600/5">
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-brand-600 text-white text-xs font-bold rounded-full">
-                Most Popular
+                Recommended
               </span>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Pro</h3>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Pay As You Go</h3>
               <div className="mb-6">
-                <span className="text-4xl font-extrabold text-slate-900">$19</span>
-                <span className="text-slate-500 text-sm">/month</span>
+                <span className="text-4xl font-extrabold text-slate-900">~$0.01</span>
+                <span className="text-slate-500 text-sm"> / AI message</span>
               </div>
-              <ul className="space-y-3 mb-8 text-sm text-slate-600">
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 25 projects</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 500 AI messages / month</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 5 GB storage</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 3 custom domains</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Unlimited deploys</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Priority support</li>
-              </ul>
-              <Link href="/signup?plan=pro" className="block text-center px-6 py-2.5 rounded-lg bg-brand-600 text-white font-semibold text-sm hover:bg-brand-700 transition-all shadow-sm">
-                Start Free Trial
-              </Link>
-            </div>
-
-            {/* Business */}
-            <div className="p-8 rounded-2xl border border-slate-200 bg-white">
-              <h3 className="text-lg font-bold text-slate-900 mb-2">Business</h3>
-              <div className="mb-6">
-                <span className="text-4xl font-extrabold text-slate-900">$49</span>
-                <span className="text-slate-500 text-sm">/month</span>
-              </div>
+              <p className="text-sm text-slate-500 mb-6">Add a card, unlock unlimited usage. Charged daily.</p>
               <ul className="space-y-3 mb-8 text-sm text-slate-600">
                 <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Unlimited projects</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 2,000 AI messages / month</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 25 GB storage</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 10 custom domains</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Team collaboration</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Dedicated support</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Unlimited AI messages</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Unlimited deploys</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Custom domains ($5/mo each)</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Storage at $0.50/GB/mo</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Configurable daily spend limit</li>
+                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Priority support</li>
               </ul>
-              <Link href="/signup?plan=business" className="block text-center px-6 py-2.5 rounded-lg border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors">
-                Contact Sales
+              <Link href="/signup" className="block text-center px-6 py-2.5 rounded-lg bg-brand-600 text-white font-semibold text-sm hover:bg-brand-700 transition-all shadow-sm">
+                Start Building →
               </Link>
+            </div>
+          </div>
+
+          {/* Pricing Details */}
+          <div className="mt-12 max-w-3xl mx-auto">
+            <div className="bg-slate-50 rounded-2xl p-8 border border-slate-200">
+              <h3 className="text-base font-bold text-slate-900 mb-4 text-center">Usage-Based Pricing</h3>
+              <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                <div className="flex justify-between py-2 border-b border-slate-200">
+                  <span className="text-slate-600">AI Messages</span>
+                  <span className="font-medium text-slate-900">~$0.01 each</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-slate-200">
+                  <span className="text-slate-600">Deploys</span>
+                  <span className="font-medium text-slate-900">$0.0075 each</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-slate-200">
+                  <span className="text-slate-600">Storage</span>
+                  <span className="font-medium text-slate-900">$0.50 / GB / month</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-slate-200">
+                  <span className="text-slate-600">Live Preview</span>
+                  <span className="font-medium text-slate-900">$0.075 / minute</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-slate-200">
+                  <span className="text-slate-600">Bandwidth</span>
+                  <span className="font-medium text-slate-900">$0.18 / GB</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-slate-200">
+                  <span className="text-slate-600">Custom Domains</span>
+                  <span className="font-medium text-slate-900">$5 / domain / month</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

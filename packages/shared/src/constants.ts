@@ -117,10 +117,79 @@ export const RATE_LIMITS = {
   upload: { windowMs: 60 * 1000, max: 30 },              // 30 per minute
 } as const;
 
+// ─── Billing: Pay-As-You-Go Pricing ─────────────────────────
+// All costs in USD cents. Customer price = cost * 1.5 (50% markup)
+export const USAGE_COSTS = {
+  // AI Tokens (Claude Sonnet 4)
+  ai_input_token: {
+    costPer1M: 300,       // $3.00 per 1M input tokens (our cost)
+    pricePer1M: 450,      // $4.50 per 1M input tokens (customer pays)
+  },
+  ai_output_token: {
+    costPer1M: 1500,      // $15.00 per 1M output tokens (our cost)
+    pricePer1M: 2250,     // $22.50 per 1M output tokens (customer pays)
+  },
+  // Simplified: per-message pricing (average ~2K input + 1K output tokens)
+  ai_message: {
+    costCents: 0.6,       // ~$0.006 per message (our cost)
+    priceCents: 0.9,      // ~$0.009 per message (customer pays)
+  },
+  // Deploys
+  deploy: {
+    costCents: 0.5,       // $0.005 per deploy (GCS writes)
+    priceCents: 0.75,     // $0.0075 per deploy (customer pays)
+  },
+  // Storage (per GB per day)
+  storage_gb_day: {
+    costCents: 0.07,      // ~$0.002/GB/day (GCS)
+    priceCents: 0.10,     // ~$0.003/GB/day (customer pays)
+  },
+  // Preview sessions (per minute)
+  preview_minute: {
+    costCents: 5,         // $0.05/min (Novita sandbox)
+    priceCents: 7.5,      // $0.075/min (customer pays)
+  },
+  // Custom domains (per domain per day)
+  custom_domain_day: {
+    costCents: 0,         // Free for us (DNS only)
+    priceCents: 16.7,     // ~$5/month per domain ($0.167/day)
+  },
+  // Bandwidth (per GB)
+  bandwidth_gb: {
+    costCents: 12,        // $0.12/GB (CDN egress)
+    priceCents: 18,       // $0.18/GB (customer pays)
+  },
+} as const;
+
+// Free tier daily limits (no card required)
+export const FREE_TIER_LIMITS = {
+  ai_messages: 10,            // 10 AI messages per day
+  deploys: 3,                 // 3 deploys per day
+  storage_mb: 50,             // 50 MB total storage
+  preview_minutes: 5,         // 5 minutes of preview per day
+  projects: 2,                // 2 projects total
+  custom_domains: 0,          // No custom domains
+  bandwidth_mb: 100,          // 100 MB bandwidth per day
+} as const;
+
+// Spending alerts (in cents)
+export const SPENDING_ALERTS = {
+  warning: 500,     // $5.00 daily spend warning
+  pause: 2000,      // $20.00 daily spend — pause account, notify
+  hardLimit: 5000,  // $50.00 daily spend — hard stop
+} as const;
+
+// Legacy plan limits (kept for backward compat, but PAYG is primary)
+export const PLAN_LIMITS_LEGACY = PLAN_LIMITS;
+
 // ─── Stripe ──────────────────────────────────────────────────
+// Metered billing — usage reported daily to Stripe
 export const STRIPE_PRICE_IDS = {
-  pro_monthly: 'price_pro_monthly',         // Placeholder — replace with real Stripe price IDs
-  pro_yearly: 'price_pro_yearly',
-  business_monthly: 'price_business_monthly',
-  business_yearly: 'price_business_yearly',
+  // Metered prices (created via Stripe API on first deploy)
+  payg_ai_tokens: '',         // Will be set after Stripe product creation
+  payg_deploys: '',
+  payg_storage: '',
+  payg_preview: '',
+  payg_bandwidth: '',
+  payg_domains: '',
 } as const;

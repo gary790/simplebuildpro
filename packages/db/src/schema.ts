@@ -45,12 +45,20 @@ export const users = pgTable('users', {
   plan: userPlanEnum('plan').notNull().default('free'),
   organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
   emailVerified: boolean('email_verified').notNull().default(false),
+  // Billing fields (PAYG)
+  stripeCustomerId: varchar('stripe_customer_id', { length: 128 }),
+  billingStatus: varchar('billing_status', { length: 32 }).notNull().default('free'),
+  dailySpendLimitCents: integer('daily_spend_limit_cents').default(5000),
+  paymentMethodAdded: boolean('payment_method_added').notNull().default(false),
+  creditBalanceCents: integer('credit_balance_cents').notNull().default(0),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   emailIdx: uniqueIndex('users_email_idx').on(table.email),
   orgIdx: index('users_org_idx').on(table.organizationId),
+  stripeIdx: index('users_stripe_idx').on(table.stripeCustomerId),
+  billingStatusIdx: index('users_billing_status_idx').on(table.billingStatus),
 }));
 
 // ─── OAuth Accounts ──────────────────────────────────────────
@@ -278,14 +286,57 @@ export const usageLogs = pgTable('usage_logs', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'cascade' }),
-  type: varchar('type', { length: 32 }).notNull(), // 'ai_tokens' | 'deploy' | 'storage' | 'preview'
+  type: varchar('type', { length: 32 }).notNull(), // 'ai_input_tokens' | 'ai_output_tokens' | 'deploy' | 'storage' | 'preview' | 'bandwidth'
   quantity: bigint('quantity', { mode: 'number' }).notNull(),
+  costCents: text('cost_cents').default('0'),       // Our actual cost
+  priceCents: text('price_cents').default('0'),     // What customer pays (cost * 1.5)
+  billed: boolean('billed').notNull().default(false),
+  billingPeriod: text('billing_period'),            // YYYY-MM-DD date string
   metadata: jsonb('metadata').default('{}'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   userTypeIdx: index('usage_user_type_idx').on(table.userId, table.type),
   orgTypeIdx: index('usage_org_type_idx').on(table.organizationId, table.type),
   createdIdx: index('usage_created_idx').on(table.createdAt),
+  billedIdx: index('usage_billed_idx').on(table.billed, table.billingPeriod),
+  userPeriodIdx: index('usage_user_period_idx').on(table.userId, table.billingPeriod),
+}));
+
+// ─── Daily Usage Summary ─────────────────────────────────────
+export const dailyUsageSummary = pgTable('daily_usage_summary', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  date: text('date').notNull(),                     // YYYY-MM-DD
+  aiInputTokens: bigint('ai_input_tokens', { mode: 'number' }).notNull().default(0),
+  aiOutputTokens: bigint('ai_output_tokens', { mode: 'number' }).notNull().default(0),
+  aiMessages: integer('ai_messages').notNull().default(0),
+  deploys: integer('deploys').notNull().default(0),
+  storageBytes: bigint('storage_bytes', { mode: 'number' }).notNull().default(0),
+  previewSeconds: integer('preview_seconds').notNull().default(0),
+  bandwidthBytes: bigint('bandwidth_bytes', { mode: 'number' }).notNull().default(0),
+  totalCostCents: text('total_cost_cents').notNull().default('0'),
+  totalPriceCents: text('total_price_cents').notNull().default('0'),
+  stripeReported: boolean('stripe_reported').notNull().default(false),
+  stripeInvoiceItemId: varchar('stripe_invoice_item_id', { length: 128 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  userDateIdx: uniqueIndex('daily_usage_user_date_idx').on(table.userId, table.date),
+  unreportedIdx: index('daily_usage_unreported_idx').on(table.stripeReported, table.date),
+}));
+
+// ─── Billing Events ──────────────────────────────────────────
+export const billingEvents = pgTable('billing_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: varchar('type', { length: 64 }).notNull(),
+  amountCents: integer('amount_cents'),
+  stripeEventId: varchar('stripe_event_id', { length: 128 }),
+  metadata: jsonb('metadata').default('{}'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index('billing_events_user_idx').on(table.userId),
+  typeIdx: index('billing_events_type_idx').on(table.type),
 }));
 
 // ─── Relations ───────────────────────────────────────────────
