@@ -30,15 +30,15 @@ export default function HomePage() {
       <header className="relative overflow-hidden bg-gradient-to-b from-slate-50 to-white pt-24 pb-20">
         <div className="max-w-4xl mx-auto text-center px-6">
           <span className="inline-block px-3 py-1 bg-brand-50 text-brand-700 text-xs font-semibold rounded-full mb-6 border border-brand-100">
-            Enterprise Website Builder
+            AI-Powered Creation Studio
           </span>
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-slate-900 leading-[1.08] mb-6">
-            Build websites<br />
-            <span className="bg-gradient-to-r from-brand-600 to-blue-500 bg-clip-text text-transparent">at enterprise scale</span>
+            Build anything<br />
+            <span className="bg-gradient-to-r from-brand-600 to-blue-500 bg-clip-text text-transparent">with AI power</span>
           </h1>
           <p className="text-xl text-slate-500 max-w-2xl mx-auto mb-10 leading-relaxed">
             Code editor, AI assistant, live preview, one-click deploy.
-            Everything you need to ship production websites — fast.
+            Everything you need to ship production apps, sites, and software — fast.
           </p>
           <div className="flex items-center justify-center gap-4 flex-wrap">
             <Link href="/signup" className="px-8 py-3.5 bg-brand-600 text-white font-semibold rounded-xl text-base hover:bg-brand-700 transition-all hover:-translate-y-0.5 shadow-lg shadow-brand-600/20 hover:shadow-brand-600/30">
@@ -63,7 +63,7 @@ export default function HomePage() {
               Everything you need to build
             </h2>
             <p className="text-lg text-slate-500 max-w-xl mx-auto">
-              A complete platform for building, previewing, and deploying websites.
+              A complete platform for building, previewing, and deploying anything.
             </p>
           </div>
 
@@ -216,7 +216,7 @@ export default function HomePage() {
             Ready to build?
           </h2>
           <p className="text-lg text-slate-400 mb-10">
-            Join developers and teams shipping production websites with SimpleBuild Pro.
+            Join developers and teams shipping production software with SimpleBuild Pro.
           </p>
           <Link href="/signup" className="inline-block px-10 py-4 bg-brand-600 text-white font-semibold rounded-xl text-lg hover:bg-brand-500 transition-all hover:-translate-y-0.5 shadow-lg shadow-brand-600/30">
             Start Building Free →

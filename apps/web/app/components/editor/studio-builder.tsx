@@ -1,6 +1,6 @@
 // ============================================================
-// SimpleBuild Pro — Website Builder Component
-// Visual drag-and-drop website builder integrated into editor
+// SimpleBuild Pro — Studio Builder Component
+// Visual drag-and-drop component library integrated into editor
 // Provides a WYSIWYG layer on top of the code editor
 // ============================================================
 
@@ -110,12 +110,12 @@ const DEVICE_WIDTHS: Record<DeviceMode, string> = {
 };
 
 // ─── Props ────────────────────────────────────────────────────
-interface WebsiteBuilderProps {
+interface StudioBuilderProps {
   onInsertHtml: (html: string) => void;
   onSwitchToCode: () => void;
 }
 
-export function WebsiteBuilder({ onInsertHtml, onSwitchToCode }: WebsiteBuilderProps) {
+export function StudioBuilder({ onInsertHtml, onSwitchToCode }: StudioBuilderProps) {
   const { files, activeFile, project } = useEditorStore();
 
   const [activeCategory, setActiveCategory] = useState<string>('layout');
@@ -213,7 +213,7 @@ export function WebsiteBuilder({ onInsertHtml, onSwitchToCode }: WebsiteBuilderP
         <div className="text-center">
           <Layout size={32} className="mx-auto mb-3 text-slate-600" />
           <p className="text-sm mb-2">Visual Builder is only available for HTML files.</p>
-          <p className="text-xs text-slate-600">Open an .html file to use the visual builder.</p>
+          <p className="text-xs text-slate-600">Open an .html file to use the visual component library.</p>
         </div>
       </div>
     );
@@ -357,7 +357,7 @@ export function WebsiteBuilder({ onInsertHtml, onSwitchToCode }: WebsiteBuilderP
             <iframe
               ref={iframeRef}
               className="w-full h-full min-h-[600px] border-0"
-              title="Website Preview"
+              title="Studio Preview"
               sandbox="allow-scripts allow-same-origin"
             />
           </div>

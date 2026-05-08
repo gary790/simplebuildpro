@@ -318,16 +318,16 @@ export function AiChat() {
             <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center mb-3">
               <Bot size={20} className="text-brand-600" />
             </div>
-            <h3 className="text-sm font-semibold text-slate-900 mb-1">AI Website Builder</h3>
+            <h3 className="text-sm font-semibold text-slate-900 mb-1">Studio AI</h3>
             <p className="text-xs text-slate-500 max-w-[260px] leading-relaxed">
-              Describe what you want to build. I'll generate the code directly into the editor with a live preview.
+              Describe what you want to create. I'll generate code, apps, documents, or anything — directly into the editor with a live preview.
             </p>
             <div className="mt-4 space-y-1.5">
               {[
-                'Build a landing page for a coffee shop',
-                'Create a portfolio website with dark theme',
-                'Make a contact form with validation',
-                'Build a pricing page with 3 tiers',
+                'Build a landing page for my business',
+                'Create a React dashboard with charts',
+                'Generate a Python data processing script',
+                'Build a full-stack todo app with API',
               ].map((suggestion) => (
                 <button
                   key={suggestion}

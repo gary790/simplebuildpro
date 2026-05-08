@@ -5,14 +5,14 @@ import { ToastContainer } from '@/components/ui/toast';
 
 export const metadata: Metadata = {
   title: {
-    default: 'SimpleBuild Pro — Enterprise Website Builder',
+    default: 'SimpleBuild Pro — Studio',
     template: '%s | SimpleBuild Pro',
   },
-  description: 'Build, preview, and deploy production websites at enterprise scale. AI-powered code editor, real-time preview, one-click deploy.',
+  description: 'Build, preview, and deploy production apps, websites, and software at scale. AI-powered studio with code editor, real-time preview, one-click deploy.',
   metadataBase: new URL('https://simplebuildpro.com'),
   openGraph: {
     title: 'SimpleBuild Pro',
-    description: 'Enterprise Website Builder',
+    description: 'AI-Powered Creation Studio',
     url: 'https://simplebuildpro.com',
     siteName: 'SimpleBuild Pro',
     type: 'website',
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'SimpleBuild Pro',
-    description: 'Enterprise Website Builder',
+    description: 'AI-Powered Creation Studio',
   },
   robots: { index: true, follow: true },
 };

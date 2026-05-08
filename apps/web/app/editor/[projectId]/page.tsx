@@ -1,7 +1,7 @@
 // ============================================================
 // SimpleBuild Pro — Editor Workspace
 // Full IDE: file tree, Monaco editor, preview, AI chat
-// Integrated with visual Website Builder for HTML files
+// Integrated with Studio Builder for HTML files
 // ============================================================
 
 'use client';
@@ -18,7 +18,7 @@ import { CodeEditor } from '@/components/editor/code-editor';
 import { TabBar } from '@/components/editor/tab-bar';
 import { PreviewPanel } from '@/components/editor/preview-panel';
 import { AiChat } from '@/components/editor/ai-chat';
-import { WebsiteBuilder } from '@/components/editor/website-builder';
+import { StudioBuilder } from '@/components/editor/studio-builder';
 import {
   ArrowLeft, Save, Play, Rocket, Sparkles, FolderTree,
   Eye, Terminal, Image, Settings, Loader2, ChevronDown,
@@ -533,7 +533,7 @@ export default function EditorPage() {
         <div className="flex flex-1 overflow-hidden">
           {/* Editor Panel — Code or Visual Builder */}
           {editorMode === 'visual' && isHtmlFile ? (
-            <WebsiteBuilder
+            <StudioBuilder
               onInsertHtml={handleInsertHtml}
               onSwitchToCode={() => setEditorMode('code')}
             />
@@ -586,7 +586,7 @@ export default function EditorPage() {
             <span className="text-white/70">{activeFile}</span>
           )}
           {editorMode === 'visual' && (
-            <span className="bg-white/20 px-1.5 py-0.5 rounded text-white/90 font-medium">Visual Builder</span>
+            <span className="bg-white/20 px-1.5 py-0.5 rounded text-white/90 font-medium">Studio Builder</span>
           )}
         </div>
         <div className="flex items-center gap-3">
