@@ -288,7 +288,7 @@ export const assetsApi = {
 
 // ─── AI Chat API — Structured Streaming Protocol ─────────────
 export interface AIStreamEvent {
-  type: 'stream_start' | 'plan' | 'file_start' | 'file_chunk' | 'file_end' | 'plan_progress' | 'explanation' | 'text_token' | 'stream_end' | 'error';
+  type: 'stream_start' | 'plan' | 'file_start' | 'file_chunk' | 'file_end' | 'plan_progress' | 'explanation' | 'text_token' | 'stream_end' | 'error' | 'action_start' | 'action_result';
   conversationId?: string;
   items?: string[];
   path?: string;
@@ -300,6 +300,12 @@ export interface AIStreamEvent {
   filesPaths?: string[];
   tokensUsed?: number;
   message?: string;
+  // Action events (tool use)
+  tool?: string;
+  input?: Record<string, any>;
+  success?: boolean;
+  result?: any;
+  error?: string;
 }
 
 export type AIStreamCallback = (event: AIStreamEvent) => void;

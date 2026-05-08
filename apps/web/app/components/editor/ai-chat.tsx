@@ -52,6 +52,15 @@ function FileBadge({ path, isStreaming }: { path: string; isStreaming?: boolean 
   );
 }
 
+// ─── Action Result Type ─────────────────────────────────────
+interface ActionEvent {
+  tool: string;
+  status: 'running' | 'success' | 'error';
+  input?: Record<string, any>;
+  result?: any;
+  error?: string;
+}
+
 // ─── Chat Message Types ──────────────────────────────────────
 interface ChatMessage {
   id: string;
@@ -64,6 +73,71 @@ interface ChatMessage {
   files?: string[];
   streamingFile?: string;
   explanation?: string;
+  actions?: ActionEvent[];
+}
+
+// ─── Tool Display Names ─────────────────────────────────────
+function getToolDisplayName(tool: string): string {
+  const names: Record<string, string> = {
+    github_push: 'GitHub Push',
+    cloudflare_deploy: 'Cloudflare Deploy',
+    vercel_deploy: 'Vercel Deploy',
+    netlify_deploy: 'Netlify Deploy',
+    aws_deploy: 'AWS Deploy',
+    gcp_deploy: 'Google Cloud Deploy',
+    export_project: 'Export',
+    list_connections: 'Check Connections',
+  };
+  return names[tool] || tool;
+}
+
+function getToolIcon(tool: string): string {
+  const icons: Record<string, string> = {
+    github_push: '🐙',
+    cloudflare_deploy: '☁️',
+    vercel_deploy: '▲',
+    netlify_deploy: '◆',
+    aws_deploy: '🟠',
+    gcp_deploy: '🔵',
+    export_project: '📦',
+    list_connections: '🔗',
+  };
+  return icons[tool] || '⚡';
+}
+
+// ─── Action Badge Component ─────────────────────────────────
+function ActionBadge({ action }: { action: ActionEvent }) {
+  return (
+    <div className={clsx(
+      'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs border',
+      action.status === 'running' && 'bg-amber-50 border-amber-200 text-amber-800',
+      action.status === 'success' && 'bg-green-50 border-green-200 text-green-800',
+      action.status === 'error' && 'bg-red-50 border-red-200 text-red-800',
+    )}>
+      <span>{getToolIcon(action.tool)}</span>
+      <span className="font-medium">{getToolDisplayName(action.tool)}</span>
+      {action.status === 'running' && <Loader2 size={12} className="animate-spin" />}
+      {action.status === 'success' && <CheckCircle2 size={12} className="text-green-600" />}
+      {action.status === 'error' && <X size={12} className="text-red-600" />}
+      {action.status === 'success' && action.result?.url && (
+        <a
+          href={action.result.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-1 underline text-green-700 hover:text-green-900 truncate max-w-[180px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {action.result.url.replace('https://', '').slice(0, 40)}
+        </a>
+      )}
+      {action.status === 'success' && action.result?.commitSha && (
+        <span className="ml-1 font-mono text-2xs text-green-600">{action.result.commitSha.slice(0, 7)}</span>
+      )}
+      {action.status === 'error' && action.error && (
+        <span className="ml-1 truncate max-w-[180px]">{action.error}</span>
+      )}
+    </div>
+  );
 }
 
 export function AiChat() {
@@ -243,6 +317,42 @@ export function AiChat() {
               }
               break;
 
+            case 'action_start':
+              setMessages(prev => prev.map(m =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      actions: [
+                        ...(m.actions || []),
+                        { tool: event.tool || '', status: 'running', input: event.input },
+                      ],
+                    }
+                  : m
+              ));
+              break;
+
+            case 'action_result':
+              setMessages(prev => prev.map(m => {
+                if (m.id !== assistantMsgId) return m;
+                const actions = [...(m.actions || [])];
+                const idx = actions.findLastIndex(a => a.tool === event.tool && a.status === 'running');
+                if (idx !== -1) {
+                  actions[idx] = {
+                    ...actions[idx],
+                    status: event.success ? 'success' : 'error',
+                    result: event.result,
+                    error: event.error,
+                  };
+                }
+                return { ...m, actions };
+              }));
+              if (event.success && event.result?.url) {
+                toast('success', `${getToolDisplayName(event.tool || '')} complete`, event.result.url);
+              } else if (!event.success) {
+                toast('error', `${getToolDisplayName(event.tool || '')} failed`, event.error || 'Unknown error');
+              }
+              break;
+
             case 'error':
               setMessages(prev => prev.map(m =>
                 m.id === assistantMsgId
@@ -370,6 +480,15 @@ export function AiChat() {
                           text={item}
                           completed={(msg.planCompleted || []).includes(idx)}
                         />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Actions section (tool use results) */}
+                  {msg.actions && msg.actions.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      {msg.actions.map((action, idx) => (
+                        <ActionBadge key={`${action.tool}-${idx}`} action={action} />
                       ))}
                     </div>
                   )}
