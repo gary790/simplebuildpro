@@ -26,6 +26,15 @@ const nextConfig = {
         { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
       ],
     },
+    {
+      // Cross-origin isolation for WebContainer (SharedArrayBuffer)
+      // Only on editor routes to avoid breaking third-party resources elsewhere
+      source: '/editor/:path*',
+      headers: [
+        { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+        { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+      ],
+    },
   ],
 
   webpack: (config) => {
