@@ -1,100 +1,121 @@
-# ============================================================
-# SimpleBuild Pro — Cloud Build CI/CD Pipeline
-# Triggered on push to main branch
-# Builds and deploys both API and Web services
-# ============================================================
+# SimpleBuild Pro — Full CI/CD Pipeline
+# Triggers on push to main branch
+# Builds & deploys both API and Web services to Cloud Run
 
 steps:
-  # Step 1: Build API Docker image
+  # ─── Step 1: Build API Docker image ─────────────────────────
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-api'
     args:
       - 'build'
       - '-t'
-      - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:$SHORT_SHA'
+      - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:${SHORT_SHA}'
       - '-t'
       - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:latest'
       - '-f'
       - 'infra/docker/Dockerfile.api'
       - '.'
 
-  # Step 2: Build Web Docker image (parallel with API)
+  # ─── Step 2: Build Web Docker image ─────────────────────────
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-web'
     args:
       - 'build'
       - '-t'
-      - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:$SHORT_SHA'
+      - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:${SHORT_SHA}'
       - '-t'
       - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:latest'
       - '-f'
       - 'infra/docker/Dockerfile.web'
       - '.'
 
-  # Step 3: Push API image
+  # ─── Step 3: Push API image ─────────────────────────────────
   - name: 'gcr.io/cloud-builders/docker'
     id: 'push-api'
     args: ['push', '--all-tags', 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api']
     waitFor: ['build-api']
 
-  # Step 4: Push Web image
+  # ─── Step 4: Push Web image ─────────────────────────────────
   - name: 'gcr.io/cloud-builders/docker'
     id: 'push-web'
     args: ['push', '--all-tags', 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web']
     waitFor: ['build-web']
 
-  # Step 5: Deploy API to Cloud Run
+  # ─── Step 5: Deploy API to Cloud Run ────────────────────────
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy-api'
+    entrypoint: 'gcloud'
     args:
-      - 'gcloud'
       - 'run'
       - 'deploy'
       - 'simplebuildpro-api'
-      - '--image=us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:$SHORT_SHA'
+      - '--image=us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:${SHORT_SHA}'
       - '--region=us-central1'
-      - '--project=simplebuildpro'
-      - '--quiet'
+      - '--no-allow-unauthenticated'
+      - '--ingress=internal-and-cloud-load-balancing'
+      - '--vpc-connector=sbpro-vpc-connector'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=10'
+      - '--timeout=300'
+      - '--concurrency=80'
+      - '--port=8080'
+      - '--set-env-vars=NODE_ENV=production'
+      - '--set-secrets=DATABASE_URL=simplebuildpro-database-url:latest,REDIS_URL=simplebuildpro-redis-url:latest,JWT_SECRET=simplebuildpro-jwt-secret:latest,JWT_REFRESH_SECRET=simplebuildpro-jwt-refresh-secret:latest,GOOGLE_CLIENT_ID=simplebuildpro-google-client-id:latest,GOOGLE_CLIENT_SECRET=simplebuildpro-google-client-secret:latest,GITHUB_CLIENT_ID=simplebuildpro-github-client-id:latest,GITHUB_CLIENT_SECRET=simplebuildpro-github-client-secret:latest,STRIPE_SECRET_KEY=simplebuildpro-stripe-secret-key:latest,STRIPE_WEBHOOK_SECRET=simplebuildpro-stripe-webhook-secret:latest,ANTHROPIC_API_KEY=simplebuildpro-anthropic-api-key:latest,GCS_BUCKET=simplebuildpro-gcs-bucket:latest,NOVITA_API_KEY=simplebuildpro-novita-api-key:latest,PAGESPEED_API_KEY=simplebuildpro-pagespeed-api-key:latest,RESEND_API_KEY=RESEND_API_KEY:latest,ENCRYPTION_KEY=simplebuildpro-encryption-key:latest,E2B_API_KEY=simplebuildpro-e2b-api-key:latest'
     waitFor: ['push-api']
 
-  # Step 6: Deploy Web to Cloud Run
+  # ─── Step 6: Deploy Web to Cloud Run ────────────────────────
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy-web'
+    entrypoint: 'gcloud'
     args:
-      - 'gcloud'
       - 'run'
       - 'deploy'
       - 'simplebuildpro-web'
-      - '--image=us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:$SHORT_SHA'
+      - '--image=us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:${SHORT_SHA}'
       - '--region=us-central1'
-      - '--project=simplebuildpro'
-      - '--quiet'
+      - '--no-allow-unauthenticated'
+      - '--ingress=internal-and-cloud-load-balancing'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=5'
+      - '--timeout=60'
+      - '--concurrency=80'
+      - '--port=3000'
+      - '--set-env-vars=NODE_ENV=production,NEXT_PUBLIC_API_URL=https://api.simplebuildpro.com'
     waitFor: ['push-web']
 
-  # Step 7: Verify deployments
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'verify'
+  # ─── Step 7: Verify API health ──────────────────────────────
+  - name: 'gcr.io/cloud-builders/curl'
+    id: 'verify-api'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        echo "=== Verifying deployments ==="
-        curl -sf https://api.simplebuildpro.com/health/live || (echo "API health check failed!" && exit 1)
-        echo ""
-        echo "✅ API healthy"
-        curl -sf -o /dev/null https://app.simplebuildpro.com/ || (echo "Web health check failed!" && exit 1)
-        echo "✅ Web healthy"
-        echo "=== Deployment complete ==="
-    waitFor: ['deploy-api', 'deploy-web']
+        echo "Waiting 30s for new revision to stabilize..."
+        sleep 30
+        # Get identity token for authenticated request
+        TOKEN=$(gcloud auth print-identity-token --audiences=https://simplebuildpro-api-397170798284.us-central1.run.app)
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+          -H "Authorization: Bearer $$TOKEN" \
+          https://simplebuildpro-api-397170798284.us-central1.run.app/health/live)
+        if [ "$$RESPONSE" != "200" ]; then
+          echo "ERROR: API health check failed with HTTP $$RESPONSE"
+          exit 1
+        fi
+        echo "API health check passed (HTTP 200)"
+    waitFor: ['deploy-api']
 
 images:
-  - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:$SHORT_SHA'
+  - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:${SHORT_SHA}'
   - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:latest'
-  - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:$SHORT_SHA'
+  - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:${SHORT_SHA}'
   - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: 'E2_HIGHCPU_8'
 
-timeout: '1800s' # 30 minutes max
+timeout: '1200s'
