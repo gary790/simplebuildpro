@@ -21,7 +21,7 @@
     "db:push": "npm run push --workspace=packages/db",
     "docker:api": "docker build -f infra/docker/Dockerfile.api -t simplebuildpro-api .",
     "docker:web": "docker build -f infra/docker/Dockerfile.web -t simplebuildpro-web .",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
