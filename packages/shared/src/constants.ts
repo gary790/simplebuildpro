@@ -104,12 +104,6 @@ export const FILE_LANGUAGE_MAP: Record<string, string> = {
   '.yml': 'yaml',
 };
 
-// ─── Novita Sandbox ──────────────────────────────────────────
-export const NOVITA_SANDBOX_TEMPLATE = 'base';
-export const NOVITA_SANDBOX_TIMEOUT_MS = 5 * 60 * 1000; // 5 min default
-export const NOVITA_SANDBOX_MAX_TIMEOUT_MS = 30 * 60 * 1000; // 30 min max
-export const NOVITA_PREVIEW_PORT = 3000;
-
 // ─── Rate Limits ─────────────────────────────────────────────
 export const RATE_LIMITS = {
   auth: { windowMs: 15 * 60 * 1000, max: 20 },         // 20 per 15 min

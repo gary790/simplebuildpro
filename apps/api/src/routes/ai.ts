@@ -16,7 +16,6 @@ import { rateLimiter } from '../middleware/rate-limiter';
 import { PLAN_LIMITS, AI_MODEL, AI_MAX_TOKENS, APP_NAME } from '@simplebuildpro/shared';
 import * as crypto from 'crypto';
 import { logger } from '../services/logger';
-import * as sandboxService from '../services/sandbox';
 
 export const aiRoutes = new Hono<AuthEnv>();
 aiRoutes.use('*', requireAuth);

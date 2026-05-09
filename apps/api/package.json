@@ -11,7 +11,6 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@e2b/code-interpreter": "^2.4.2",
     "@google-cloud/storage": "^7.14.0",
     "@hono/node-server": "^1.13.0",
     "@simplebuildpro/db": "*",
@@ -19,11 +18,9 @@
     "bcryptjs": "^2.4.3",
     "clean-css": "^5.3.3",
     "crypto-js": "^4.2.0",
-    "e2b": "^2.19.5",
     "hono": "^4.7.0",
     "html-minifier-terser": "^7.2.0",
     "jsonwebtoken": "^9.0.2",
-    "novita-sandbox": "^1.0.2",
     "redis": "^5.12.1",
     "resend": "^6.12.3",
     "sharp": "^0.33.0",

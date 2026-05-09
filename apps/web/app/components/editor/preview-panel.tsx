@@ -2,7 +2,6 @@
 // SimpleBuild Pro — Preview Panel (Phase 3: WebContainer)
 // Priority: WebContainer iframe (instant, zero latency)
 // Fallback: Client-side blob preview (for non-WebContainer browsers)
-// Legacy: E2B sandbox URL (kept for backward compat)
 // ============================================================
 
 'use client';

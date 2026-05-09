@@ -16,7 +16,6 @@ import { projectRoutes } from './routes/projects';
 import { fileRoutes } from './routes/files';
 import { assetRoutes } from './routes/assets';
 import { aiRoutes } from './routes/ai';
-import { previewRoutes } from './routes/preview';
 import { buildRoutes } from './routes/build';
 import { deployRoutes } from './routes/deploy';
 import { billingRoutes, billingWebhookRoute } from './routes/billing';
@@ -26,7 +25,6 @@ import { mfaRoutes } from './routes/mfa';
 import { adminRoutes } from './routes/admin';
 import { sitesRoutes } from './routes/sites';
 import { integrationsRoutes, oauthConnectRoutes } from './routes/integrations';
-import { sandboxRoutes } from './routes/sandbox';
 import { errorHandler } from './middleware/error-handler';
 import { rateLimiter } from './middleware/rate-limiter';
 import { requestLogger } from './middleware/request-logger';
@@ -62,7 +60,6 @@ app.route('/api/v1/projects', projectRoutes);
 app.route('/api/v1/files', fileRoutes);
 app.route('/api/v1/assets', assetRoutes);
 app.route('/api/v1/ai', aiRoutes);
-app.route('/api/v1/preview', previewRoutes);
 app.route('/api/v1/build', buildRoutes);
 app.route('/api/v1/deploy', deployRoutes);
 app.route('/api/v1/billing', billingRoutes);
@@ -72,7 +69,6 @@ app.route('/api/v1/mfa', mfaRoutes);
 app.route('/api/v1/admin', adminRoutes);
 app.route('/api/v1/projects', integrationsRoutes); // Ship panel: integrations, github push, cf deploy, export
 app.route('/api/v1/connect', oauthConnectRoutes);  // Public OAuth popup flow (no auth middleware)
-app.route('/api/v1/sandbox', sandboxRoutes); // E2B sandbox management
 app.route('/health', healthRoutes);
 
 // ─── Sites Serving (*.sites.simplebuildpro.com via host header) ──
@@ -129,9 +125,9 @@ serve({ fetch: app.fetch, port }, (info) => {
   │  API:     http://localhost:${info.port}/api/v1    │
   │                                           │
   │  Routes:  auth, oauth, projects, files,   │
-  │           assets, ai, preview, build,     │
-  │           deploy, billing, orgs, mfa,     │
-  │           admin, health                   │
+  │           assets, ai, build, deploy,      │
+  │           billing, orgs, mfa, admin,      │
+  │           integrations, health            │
   └──────────────────────────────────────────┘
   `);
 });
