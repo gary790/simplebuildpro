@@ -184,7 +184,7 @@ export default function EditorPage() {
     };
 
     load();
-    clearChat();
+    // DON'T clear chat — preserve conversation history between sessions
 
     return () => {
       wc.teardown();

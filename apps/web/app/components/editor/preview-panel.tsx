@@ -35,34 +35,36 @@ export function PreviewPanel() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  const hasIndex = files.has('index.html') || files.has('index.htm') || 
-    Array.from(files.keys()).some(p => p.endsWith('/index.html') || p.endsWith('/index.htm'));
+  // Find any HTML file in the project for blob preview
+  const htmlFile = useMemo(() => {
+    // Priority: index.html > any .html file
+    if (files.has('index.html')) return 'index.html';
+    if (files.has('index.htm')) return 'index.htm';
+    for (const path of files.keys()) {
+      if (path.endsWith('/index.html') || path.endsWith('/index.htm')) return path;
+    }
+    for (const path of files.keys()) {
+      if (path.endsWith('.html') || path.endsWith('.htm')) return path;
+    }
+    return null;
+  }, [files]);
 
-  // Priority: WebContainer URL > Sandbox URL > Blob fallback
-  // IMPORTANT: Blob preview shows IMMEDIATELY if index.html exists.
-  // WebContainer/Sandbox only take over once they're fully ready with a URL.
+  const hasHtml = !!htmlFile;
+
+  // Priority: WebContainer URL (only if it produced a real server URL) > Blob fallback
+  // WebContainer boot alone is NOT enough — it must produce a URL via dev server.
   const useWebcontainer = webcontainerReady && !!webcontainerUrl;
   const useSandbox = !useWebcontainer && !!sandboxUrl && sandboxStatus === 'running';
-  const useBlobPreview = !useWebcontainer && !useSandbox && hasIndex;
+  const useBlobPreview = !useWebcontainer && !useSandbox && hasHtml;
 
   // Active preview URL (WebContainer or Sandbox)
   const previewUrl = useWebcontainer ? webcontainerUrl : useSandbox ? sandboxUrl : null;
 
   // Build fallback blob preview HTML
   const previewHtml = useMemo(() => {
-    if (!useBlobPreview) return null;
+    if (!useBlobPreview || !htmlFile) return null;
 
-    // Find index.html — check root first, then subdirectories
-    let indexHtml = files.get('index.html') || files.get('index.htm') || '';
-    if (!indexHtml) {
-      // Look for index.html in subdirectories
-      for (const [path, content] of files.entries()) {
-        if (path.endsWith('/index.html') || path.endsWith('/index.htm')) {
-          indexHtml = content;
-          break;
-        }
-      }
-    }
+    let indexHtml = files.get(htmlFile) || '';
     if (!indexHtml) return null;
 
     let html = indexHtml;
@@ -132,8 +134,7 @@ export function PreviewPanel() {
   }, [previewHtml, previewUrl]);
 
   const hasPreview = !!previewUrl || useBlobPreview;
-  // Only show booting state if there's NO index.html to render as fallback
-  const isBooting = !hasIndex && !webcontainerReady && sandboxStatus !== 'running' && sandboxStatus !== 'error' && sandboxStatus !== 'idle';
+  const isBooting = !hasHtml && !webcontainerReady && sandboxStatus === 'creating';
 
   return (
     <div className={clsx(
@@ -206,7 +207,7 @@ export function PreviewPanel() {
       {/* Preview Content */}
       <div className="flex-1 bg-[#f0f0f0] flex items-center justify-center overflow-hidden">
         {/* Booting state */}
-        {isBooting && !hasIndex && (
+        {isBooting && (
           <div className="flex flex-col items-center gap-3 text-center px-6">
             <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center">
               <Loader2 size={20} className="text-brand-500 animate-spin" />
