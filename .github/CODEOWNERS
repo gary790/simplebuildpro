@@ -1,0 +1,26 @@
+# ============================================================
+# SimpleBuild Pro — Code Owners
+# Defines who must review PRs touching specific areas
+# ============================================================
+
+# Default owner — all files
+* @gary790
+
+# API (backend)
+/apps/api/ @gary790
+
+# Web (frontend)
+/apps/web/ @gary790
+
+# Database & shared packages
+/packages/db/ @gary790
+/packages/shared/ @gary790
+
+# Infrastructure & CI/CD
+/infra/ @gary790
+/.github/ @gary790
+/docker-compose.yml @gary790
+
+# Security-sensitive files
+/.env* @gary790
+/wrangler.jsonc @gary790
