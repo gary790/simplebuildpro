@@ -6,7 +6,16 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '@simplebuildpro/db';
-import { users, dailyUsageSummary, billingEvents, projects, projectFiles, projectAssets, deployments, usageLogs } from '@simplebuildpro/db';
+import {
+  users,
+  dailyUsageSummary,
+  billingEvents,
+  projects,
+  projectFiles,
+  projectAssets,
+  deployments,
+  usageLogs,
+} from '@simplebuildpro/db';
 import { eq, and, sql, gte, desc, count } from 'drizzle-orm';
 import { requireAuth, type AuthEnv } from '../middleware/auth';
 import { AppError } from '../middleware/error-handler';
@@ -41,34 +50,70 @@ billingRoutes.get('/usage', async (c) => {
   const today = new Date().toISOString().split('T')[0];
   const monthStart = today.substring(0, 7) + '-01';
 
-  const todayAiRows = await db.select({ cnt: count() }).from(usageLogs)
-    .where(and(eq(usageLogs.userId, session.userId), eq(usageLogs.type, 'ai_tokens'), gte(usageLogs.createdAt, new Date(today))));
+  const todayAiRows = await db
+    .select({ cnt: count() })
+    .from(usageLogs)
+    .where(
+      and(
+        eq(usageLogs.userId, session.userId),
+        eq(usageLogs.type, 'ai_tokens'),
+        gte(usageLogs.createdAt, new Date(today)),
+      ),
+    );
   const todayAiMessages = todayAiRows[0]?.cnt ?? 0;
 
-  const monthAiRows = await db.select({ cnt: count() }).from(usageLogs)
-    .where(and(eq(usageLogs.userId, session.userId), eq(usageLogs.type, 'ai_tokens'), gte(usageLogs.createdAt, new Date(monthStart))));
+  const monthAiRows = await db
+    .select({ cnt: count() })
+    .from(usageLogs)
+    .where(
+      and(
+        eq(usageLogs.userId, session.userId),
+        eq(usageLogs.type, 'ai_tokens'),
+        gte(usageLogs.createdAt, new Date(monthStart)),
+      ),
+    );
   const monthAiMessages = monthAiRows[0]?.cnt ?? 0;
 
   // Today's and this month's deploys
-  const todayDeployRows = await db.select({ cnt: count() }).from(usageLogs)
-    .where(and(eq(usageLogs.userId, session.userId), eq(usageLogs.type, 'deploy'), gte(usageLogs.createdAt, new Date(today))));
+  const todayDeployRows = await db
+    .select({ cnt: count() })
+    .from(usageLogs)
+    .where(
+      and(
+        eq(usageLogs.userId, session.userId),
+        eq(usageLogs.type, 'deploy'),
+        gte(usageLogs.createdAt, new Date(today)),
+      ),
+    );
   const todayDeploys = todayDeployRows[0]?.cnt ?? 0;
 
-  const monthDeployRows = await db.select({ cnt: count() }).from(usageLogs)
-    .where(and(eq(usageLogs.userId, session.userId), eq(usageLogs.type, 'deploy'), gte(usageLogs.createdAt, new Date(monthStart))));
+  const monthDeployRows = await db
+    .select({ cnt: count() })
+    .from(usageLogs)
+    .where(
+      and(
+        eq(usageLogs.userId, session.userId),
+        eq(usageLogs.type, 'deploy'),
+        gte(usageLogs.createdAt, new Date(monthStart)),
+      ),
+    );
   const monthDeploys = monthDeployRows[0]?.cnt ?? 0;
 
   // Total storage used across all user's project files + assets
-  const storageRows = await db.select({
-    total: sql<string>`COALESCE(SUM(${projectFiles.sizeBytes}), 0)`,
-  }).from(projectFiles)
+  const storageRows = await db
+    .select({
+      total: sql<string>`COALESCE(SUM(${projectFiles.sizeBytes}), 0)`,
+    })
+    .from(projectFiles)
     .innerJoin(projects, eq(projectFiles.projectId, projects.id))
     .where(orgId ? eq(projects.organizationId, orgId) : eq(projects.ownerId, session.userId));
   const fileStorageBytes = parseInt(storageRows[0]?.total || '0', 10);
 
-  const assetStorageRows = await db.select({
-    total: sql<string>`COALESCE(SUM(${projectAssets.sizeBytes}), 0)`,
-  }).from(projectAssets)
+  const assetStorageRows = await db
+    .select({
+      total: sql<string>`COALESCE(SUM(${projectAssets.sizeBytes}), 0)`,
+    })
+    .from(projectAssets)
     .innerJoin(projects, eq(projectAssets.projectId, projects.id))
     .where(orgId ? eq(projects.organizationId, orgId) : eq(projects.ownerId, session.userId));
   const assetStorageBytes = parseInt(assetStorageRows[0]?.total || '0', 10);
@@ -141,9 +186,9 @@ billingRoutes.get('/history', async (c) => {
         aiInputTokens: day.aiInputTokens,
         aiOutputTokens: day.aiOutputTokens,
         deploys: day.deploys,
-        storageMB: Math.round(day.storageBytes / 1024 / 1024 * 100) / 100,
-        previewMinutes: Math.round(day.previewSeconds / 60 * 100) / 100,
-        bandwidthMB: Math.round(day.bandwidthBytes / 1024 / 1024 * 100) / 100,
+        storageMB: Math.round((day.storageBytes / 1024 / 1024) * 100) / 100,
+        previewMinutes: Math.round((day.previewSeconds / 60) * 100) / 100,
+        bandwidthMB: Math.round((day.bandwidthBytes / 1024 / 1024) * 100) / 100,
       },
       cost: {
         cents: parseFloat(day.totalPriceCents),
@@ -173,7 +218,7 @@ billingRoutes.get('/pricing', async (c) => {
         },
         storage: {
           perGBPerDay: `$${(USAGE_COSTS.storage_gb_day.priceCents / 100).toFixed(4)}`,
-          perGBPerMonth: `$${(USAGE_COSTS.storage_gb_day.priceCents * 30 / 100).toFixed(2)}`,
+          perGBPerMonth: `$${((USAGE_COSTS.storage_gb_day.priceCents * 30) / 100).toFixed(2)}`,
         },
         preview: {
           perMinute: `$${(USAGE_COSTS.preview_minute.priceCents / 100).toFixed(4)}`,
@@ -182,7 +227,7 @@ billingRoutes.get('/pricing', async (c) => {
           perGB: `$${(USAGE_COSTS.bandwidth_gb.priceCents / 100).toFixed(2)}`,
         },
         customDomain: {
-          perMonth: `$${(USAGE_COSTS.custom_domain_day.priceCents * 30 / 100).toFixed(2)}`,
+          perMonth: `$${((USAGE_COSTS.custom_domain_day.priceCents * 30) / 100).toFixed(2)}`,
         },
       },
       freeTier: FREE_TIER_LIMITS,
@@ -240,15 +285,20 @@ billingRoutes.post('/spend-limit', async (c) => {
   const { limitCents } = spendLimitSchema.parse(body);
   const db = getDb();
 
-  await db.update(users).set({
-    dailySpendLimitCents: limitCents,
-    updatedAt: new Date(),
-  }).where(eq(users.id, session.userId));
+  await db
+    .update(users)
+    .set({
+      dailySpendLimitCents: limitCents,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, session.userId));
 
   // If user was paused due to spend limit, resume
   const user = await db.query.users.findFirst({ where: eq(users.id, session.userId) });
   if (user?.billingStatus === 'paused') {
-    await db.update(users).set({ billingStatus: 'active', updatedAt: new Date() })
+    await db
+      .update(users)
+      .set({ billingStatus: 'active', updatedAt: new Date() })
       .where(eq(users.id, session.userId));
   }
 
@@ -338,7 +388,9 @@ billingWebhookRoute.post('/webhook', async (c) => {
           metadata: { invoiceId: invoice.id, reason: invoice.last_finalization_error?.message },
         });
         // Suspend after failed payment
-        await db.update(users).set({ billingStatus: 'suspended', updatedAt: new Date() })
+        await db
+          .update(users)
+          .set({ billingStatus: 'suspended', updatedAt: new Date() })
           .where(eq(users.id, userId));
       }
       break;

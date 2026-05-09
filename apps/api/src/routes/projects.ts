@@ -6,7 +6,13 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '@simplebuildpro/db';
-import { projects, projectFiles, projectAssets, projectVersions, deployments } from '@simplebuildpro/db';
+import {
+  projects,
+  projectFiles,
+  projectAssets,
+  projectVersions,
+  deployments,
+} from '@simplebuildpro/db';
 import { eq, and, desc, sql, count } from 'drizzle-orm';
 import { requireAuth, type AuthEnv } from '../middleware/auth';
 import { AppError } from '../middleware/error-handler';
@@ -45,7 +51,10 @@ projectRoutes.get('/', async (c) => {
         },
       },
     }),
-    db.select({ count: count() }).from(projects).where(and(...conditions)),
+    db
+      .select({ count: count() })
+      .from(projects)
+      .where(and(...conditions)),
   ]);
 
   const total = totalResult[0]?.count || 0;
@@ -53,7 +62,7 @@ projectRoutes.get('/', async (c) => {
   return c.json({
     success: true,
     data: {
-      items: projectList.map(p => ({
+      items: projectList.map((p) => ({
         id: p.id,
         name: p.name,
         slug: p.slug,
@@ -64,11 +73,13 @@ projectRoutes.get('/', async (c) => {
         lastDeployedAt: p.lastDeployedAt?.toISOString() || null,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
-        latestDeployment: p.deployments[0] ? {
-          id: p.deployments[0].id,
-          status: p.deployments[0].status,
-          url: p.deployments[0].url,
-        } : null,
+        latestDeployment: p.deployments[0]
+          ? {
+              id: p.deployments[0].id,
+              status: p.deployments[0].status,
+              url: p.deployments[0].url,
+            }
+          : null,
       })),
       total,
       page,
@@ -113,14 +124,14 @@ projectRoutes.get('/:id', async (c) => {
       lastDeployedAt: project.lastDeployedAt?.toISOString() || null,
       createdAt: project.createdAt.toISOString(),
       updatedAt: project.updatedAt.toISOString(),
-      files: project.files.map(f => ({
+      files: project.files.map((f) => ({
         id: f.id,
         path: f.path,
         mimeType: f.mimeType,
         sizeBytes: f.sizeBytes,
         updatedAt: f.updatedAt.toISOString(),
       })),
-      assets: project.assets.map(a => ({
+      assets: project.assets.map((a) => ({
         id: a.id,
         filename: a.filename,
         originalFilename: a.originalFilename,
@@ -131,7 +142,7 @@ projectRoutes.get('/:id', async (c) => {
         height: a.height,
         createdAt: a.createdAt.toISOString(),
       })),
-      versions: project.versions.map(v => ({
+      versions: project.versions.map((v) => ({
         id: v.id,
         versionNumber: v.versionNumber,
         message: v.message,
@@ -160,38 +171,46 @@ projectRoutes.post('/', async (c) => {
   // Check project limit
   const limits = PLAN_LIMITS[session.plan];
   if (limits.projects !== -1) {
-    const [{ count: projectCount }] = await db.select({ count: count() })
+    const [{ count: projectCount }] = await db
+      .select({ count: count() })
       .from(projects)
       .where(eq(projects.ownerId, session.userId));
 
     if (projectCount >= limits.projects) {
-      throw new AppError(403, 'PROJECT_LIMIT', `Your ${session.plan} plan allows ${limits.projects} projects. Upgrade to create more.`);
+      throw new AppError(
+        403,
+        'PROJECT_LIMIT',
+        `Your ${session.plan} plan allows ${limits.projects} projects. Upgrade to create more.`,
+      );
     }
   }
 
   const slug = slugify(name);
 
   // Create project
-  const [project] = await db.insert(projects).values({
-    ownerId: session.userId,
-    organizationId: session.organizationId,
-    name,
-    slug,
-    description: description || null,
-    templateId: templateId || null,
-    settings: {
-      framework: 'static',
-      cssFramework: 'none',
-      customDomain: null,
-      favicon: null,
-      meta: { title: name, description: description || '', ogImage: null },
-    },
-    status: 'draft',
-  }).returning();
+  const [project] = await db
+    .insert(projects)
+    .values({
+      ownerId: session.userId,
+      organizationId: session.organizationId,
+      name,
+      slug,
+      description: description || null,
+      templateId: templateId || null,
+      settings: {
+        framework: 'static',
+        cssFramework: 'none',
+        customDomain: null,
+        favicon: null,
+        meta: { title: name, description: description || '', ogImage: null },
+      },
+      status: 'draft',
+    })
+    .returning();
 
   // If template specified, create initial files from template
   if (templateId) {
-    const template = STARTER_TEMPLATES.find(t => t.id === templateId);
+    const template = STARTER_TEMPLATES.find((t) => t.id === templateId);
     if (template) {
       const fileInserts = Object.entries(template.files).map(([path, content]) => {
         const contentStr = content as string;
@@ -211,18 +230,21 @@ projectRoutes.post('/', async (c) => {
     }
   }
 
-  return c.json({
-    success: true,
-    data: {
-      id: project.id,
-      name: project.name,
-      slug: project.slug,
-      description: project.description,
-      status: project.status,
-      templateId: project.templateId,
-      createdAt: project.createdAt.toISOString(),
+  return c.json(
+    {
+      success: true,
+      data: {
+        id: project.id,
+        name: project.name,
+        slug: project.slug,
+        description: project.description,
+        status: project.status,
+        templateId: project.templateId,
+        createdAt: project.createdAt.toISOString(),
+      },
     },
-  }, 201);
+    201,
+  );
 });
 
 // ─── Update Project ──────────────────────────────────────────
@@ -257,10 +279,14 @@ projectRoutes.patch('/:id', async (c) => {
   if (updates.description !== undefined) updateData.description = updates.description;
   if (updates.status !== undefined) updateData.status = updates.status;
   if (updates.settings !== undefined) {
-    updateData.settings = { ...(existing.settings as Record<string, unknown>), ...updates.settings };
+    updateData.settings = {
+      ...(existing.settings as Record<string, unknown>),
+      ...updates.settings,
+    };
   }
 
-  const [updated] = await db.update(projects)
+  const [updated] = await db
+    .update(projects)
     .set(updateData)
     .where(eq(projects.id, projectId))
     .returning();
@@ -305,13 +331,22 @@ projectRoutes.delete('/:id', async (c) => {
 function getMimeType(path: string): string {
   const ext = path.split('.').pop()?.toLowerCase();
   const map: Record<string, string> = {
-    html: 'text/html', htm: 'text/html',
-    css: 'text/css', scss: 'text/x-scss', less: 'text/x-less',
-    js: 'application/javascript', jsx: 'application/javascript',
-    ts: 'application/typescript', tsx: 'application/typescript',
-    json: 'application/json', xml: 'application/xml',
-    svg: 'image/svg+xml', md: 'text/markdown',
-    txt: 'text/plain', yaml: 'text/yaml', yml: 'text/yaml',
+    html: 'text/html',
+    htm: 'text/html',
+    css: 'text/css',
+    scss: 'text/x-scss',
+    less: 'text/x-less',
+    js: 'application/javascript',
+    jsx: 'application/javascript',
+    ts: 'application/typescript',
+    tsx: 'application/typescript',
+    json: 'application/json',
+    xml: 'application/xml',
+    svg: 'image/svg+xml',
+    md: 'text/markdown',
+    txt: 'text/plain',
+    yaml: 'text/yaml',
+    yml: 'text/yaml',
     toml: 'text/toml',
   };
   return map[ext || ''] || 'text/plain';

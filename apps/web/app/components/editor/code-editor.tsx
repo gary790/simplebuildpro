@@ -11,14 +11,21 @@ import Editor, { type OnMount, type OnChange } from '@monaco-editor/react';
 import { useEditorStore } from '@/lib/store';
 
 const LANGUAGE_MAP: Record<string, string> = {
-  html: 'html', htm: 'html',
-  css: 'css', scss: 'scss', less: 'less',
-  js: 'javascript', jsx: 'javascript',
-  ts: 'typescript', tsx: 'typescriptreact',
+  html: 'html',
+  htm: 'html',
+  css: 'css',
+  scss: 'scss',
+  less: 'less',
+  js: 'javascript',
+  jsx: 'javascript',
+  ts: 'typescript',
+  tsx: 'typescriptreact',
   json: 'json',
   md: 'markdown',
-  xml: 'xml', svg: 'xml',
-  yaml: 'yaml', yml: 'yaml',
+  xml: 'xml',
+  svg: 'xml',
+  yaml: 'yaml',
+  yml: 'yaml',
   txt: 'plaintext',
 };
 
@@ -37,7 +44,7 @@ export function CodeEditor({ onSave }: CodeEditorProps) {
   const monacoRef = useRef<any>(null);
   const isExternalUpdate = useRef(false);
 
-  const content = activeFile ? files.get(activeFile) ?? '' : '';
+  const content = activeFile ? (files.get(activeFile) ?? '') : '';
   const language = activeFile ? getLanguage(activeFile) : 'plaintext';
 
   // Track content version to force Monaco re-render when store changes externally
@@ -58,7 +65,7 @@ export function CodeEditor({ onSave }: CodeEditorProps) {
         isExternalUpdate.current = true;
         editorRef.current.setValue(currentContent);
         isExternalUpdate.current = false;
-        setContentVersion(v => v + 1);
+        setContentVersion((v) => v + 1);
       }
     }
     lastKnownContent.current = currentContent;
@@ -158,7 +165,9 @@ export function CodeEditor({ onSave }: CodeEditorProps) {
       <div className="h-full flex items-center justify-center bg-[#1E1E1E]">
         <div className="text-center">
           <p className="text-sm text-slate-500 mb-1">No file open</p>
-          <p className="text-xs text-slate-600">Select a file from the sidebar or ask the AI to generate code</p>
+          <p className="text-xs text-slate-600">
+            Select a file from the sidebar or ask the AI to generate code
+          </p>
         </div>
       </div>
     );
@@ -177,8 +186,19 @@ export function CodeEditor({ onSave }: CodeEditorProps) {
         <div className="h-full flex items-center justify-center bg-[#1E1E1E]">
           <div className="flex items-center gap-2 text-slate-500">
             <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
             </svg>
             <span className="text-xs">Loading editor...</span>
           </div>

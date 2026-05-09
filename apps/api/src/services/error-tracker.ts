@@ -53,7 +53,7 @@ class ErrorTracker {
     error: Error | string,
     category: ErrorCategory,
     severity: ErrorSeverity,
-    context?: TrackedError['context']
+    context?: TrackedError['context'],
   ): TrackedError {
     const tracked: TrackedError = {
       id: generateErrorId(),
@@ -79,10 +79,12 @@ class ErrorTracker {
       '@type': 'type.googleapis.com/google.devtools.clouderrorreporting.v1beta1.ReportedErrorEvent',
       message: tracked.stack || tracked.message,
       context: {
-        httpRequest: context?.path ? {
-          method: context.method || 'UNKNOWN',
-          url: context.path,
-        } : undefined,
+        httpRequest: context?.path
+          ? {
+              method: context.method || 'UNKNOWN',
+              url: context.path,
+            }
+          : undefined,
         user: context?.userId,
         reportLocation: {
           functionName: category,
@@ -119,7 +121,7 @@ class ErrorTracker {
   }
 
   getByCatogory(category: ErrorCategory): TrackedError[] {
-    return this.errors.filter(e => e.category === category);
+    return this.errors.filter((e) => e.category === category);
   }
 
   getCounts(): Record<string, number> {
@@ -128,17 +130,17 @@ class ErrorTracker {
 
   getSummary() {
     const last24h = this.errors.filter(
-      e => new Date(e.timestamp).getTime() > Date.now() - 86400000
+      (e) => new Date(e.timestamp).getTime() > Date.now() - 86400000,
     );
 
     return {
       total: this.errors.length,
       last24h: last24h.length,
       bySeverity: {
-        critical: last24h.filter(e => e.severity === ErrorSeverity.CRITICAL).length,
-        high: last24h.filter(e => e.severity === ErrorSeverity.HIGH).length,
-        medium: last24h.filter(e => e.severity === ErrorSeverity.MEDIUM).length,
-        low: last24h.filter(e => e.severity === ErrorSeverity.LOW).length,
+        critical: last24h.filter((e) => e.severity === ErrorSeverity.CRITICAL).length,
+        high: last24h.filter((e) => e.severity === ErrorSeverity.HIGH).length,
+        medium: last24h.filter((e) => e.severity === ErrorSeverity.MEDIUM).length,
+        low: last24h.filter((e) => e.severity === ErrorSeverity.LOW).length,
       },
       byCategory: this.errorCounts,
     };
@@ -152,7 +154,9 @@ export const errorTracker = new ErrorTracker();
 function generateErrorId(): string {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
-  return `err_${Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+  return `err_${Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')}`;
 }
 
 // ─── Convenience Methods ──────────────────────────────────────────────────────

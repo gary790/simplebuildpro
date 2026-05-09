@@ -74,7 +74,7 @@ oauthRoutes.get('/google/callback', async (c) => {
       }),
     });
 
-    const tokenData = await tokenRes.json() as any;
+    const tokenData = (await tokenRes.json()) as any;
     if (!tokenData.access_token) {
       return c.redirect(`${APP_URL}/login?error=oauth_token_failed`);
     }
@@ -83,7 +83,7 @@ oauthRoutes.get('/google/callback', async (c) => {
     const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
-    const googleUser = await userRes.json() as any;
+    const googleUser = (await userRes.json()) as any;
 
     if (!googleUser.email) {
       return c.redirect(`${APP_URL}/login?error=oauth_no_email`);
@@ -98,9 +98,7 @@ oauthRoutes.get('/google/callback', async (c) => {
       avatarUrl: googleUser.picture || null,
       accessToken: tokenData.access_token,
       refreshToken: tokenData.refresh_token || null,
-      expiresAt: tokenData.expires_in
-        ? new Date(Date.now() + tokenData.expires_in * 1000)
-        : null,
+      expiresAt: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
     });
 
     // Redirect to app with tokens
@@ -160,7 +158,7 @@ oauthRoutes.get('/github/callback', async (c) => {
       }),
     });
 
-    const tokenData = await tokenRes.json() as any;
+    const tokenData = (await tokenRes.json()) as any;
     if (!tokenData.access_token) {
       return c.redirect(`${APP_URL}/login?error=oauth_token_failed`);
     }
@@ -173,7 +171,7 @@ oauthRoutes.get('/github/callback', async (c) => {
         'User-Agent': 'SimpleBuildPro',
       },
     });
-    const ghUser = await userRes.json() as any;
+    const ghUser = (await userRes.json()) as any;
 
     // Get primary email if not public
     let email = ghUser.email;
@@ -185,7 +183,7 @@ oauthRoutes.get('/github/callback', async (c) => {
           'User-Agent': 'SimpleBuildPro',
         },
       });
-      const emails = await emailsRes.json() as any[];
+      const emails = (await emailsRes.json()) as any[];
       const primary = emails.find((e: any) => e.primary && e.verified);
       email = primary?.email || emails[0]?.email;
     }
@@ -245,11 +243,14 @@ async function findOrCreateOAuthUser(data: OAuthUserData) {
 
   if (existingOAuth) {
     // Existing OAuth link — update tokens and get user
-    await db.update(oauthAccounts).set({
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
-      expiresAt: data.expiresAt,
-    }).where(eq(oauthAccounts.id, existingOAuth.id));
+    await db
+      .update(oauthAccounts)
+      .set({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        expiresAt: data.expiresAt,
+      })
+      .where(eq(oauthAccounts.id, existingOAuth.id));
 
     user = await db.query.users.findFirst({
       where: eq(users.id, existingOAuth.userId),
@@ -276,14 +277,17 @@ async function findOrCreateOAuthUser(data: OAuthUserData) {
       const bcrypt = await import('bcryptjs');
       const passwordHash = await bcrypt.hash(randomPassword, 12);
 
-      const [newUser] = await db.insert(users).values({
-        email: data.email.toLowerCase(),
-        name: data.name,
-        passwordHash,
-        avatarUrl: data.avatarUrl,
-        plan: 'free',
-        emailVerified: true, // OAuth emails are pre-verified
-      }).returning();
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          email: data.email.toLowerCase(),
+          name: data.name,
+          passwordHash,
+          avatarUrl: data.avatarUrl,
+          plan: 'free',
+          emailVerified: true, // OAuth emails are pre-verified
+        })
+        .returning();
 
       user = newUser;
 
@@ -303,9 +307,7 @@ async function findOrCreateOAuthUser(data: OAuthUserData) {
   }
 
   // Update last login
-  await db.update(users)
-    .set({ lastLoginAt: new Date() })
-    .where(eq(users.id, user.id));
+  await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
 
   // Generate tokens
   const accessToken = generateAccessToken(user);

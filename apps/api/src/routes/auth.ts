@@ -8,10 +8,21 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { getDb } from '@simplebuildpro/db';
-import { users, refreshTokens, oauthAccounts, emailVerificationTokens, passwordResetTokens } from '@simplebuildpro/db';
+import {
+  users,
+  refreshTokens,
+  oauthAccounts,
+  emailVerificationTokens,
+  passwordResetTokens,
+} from '@simplebuildpro/db';
 import { eq, and } from 'drizzle-orm';
 import { AppError } from '../middleware/error-handler';
-import { requireAuth, generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../middleware/auth';
+import {
+  requireAuth,
+  generateAccessToken,
+  generateRefreshToken,
+  verifyRefreshToken,
+} from '../middleware/auth';
 import type { AuthEnv } from '../middleware/auth';
 import { rateLimiter } from '../middleware/rate-limiter';
 import { sendVerificationEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../services/email';
@@ -47,12 +58,15 @@ authRoutes.post('/signup', async (c) => {
   const passwordHash = await bcrypt.hash(password, 12);
 
   // Create user
-  const [user] = await db.insert(users).values({
-    email: email.toLowerCase(),
-    name,
-    passwordHash,
-    plan: 'free',
-  }).returning();
+  const [user] = await db
+    .insert(users)
+    .values({
+      email: email.toLowerCase(),
+      name,
+      passwordHash,
+      plan: 'free',
+    })
+    .returning();
 
   // Generate tokens
   const accessToken = generateAccessToken(user);
@@ -73,28 +87,31 @@ authRoutes.post('/signup', async (c) => {
     token: verificationToken,
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
   });
-  sendVerificationEmail(user.email, user.name, verificationToken).catch(err => {
+  sendVerificationEmail(user.email, user.name, verificationToken).catch((err) => {
     console.error('[signup] Failed to send verification email:', err);
   });
 
-  return c.json({
-    success: true,
-    data: {
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        plan: user.plan,
-        avatarUrl: user.avatarUrl,
-        createdAt: user.createdAt.toISOString(),
-      },
-      tokens: {
-        accessToken,
-        refreshToken: refreshTokenValue,
-        expiresIn: 900, // 15 minutes in seconds
+  return c.json(
+    {
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          plan: user.plan,
+          avatarUrl: user.avatarUrl,
+          createdAt: user.createdAt.toISOString(),
+        },
+        tokens: {
+          accessToken,
+          refreshToken: refreshTokenValue,
+          expiresIn: 900, // 15 minutes in seconds
+        },
       },
     },
-  }, 201);
+    201,
+  );
 });
 
 // ─── Login ───────────────────────────────────────────────────
@@ -123,9 +140,7 @@ authRoutes.post('/login', async (c) => {
   }
 
   // Update last login
-  await db.update(users)
-    .set({ lastLoginAt: new Date() })
-    .where(eq(users.id, user.id));
+  await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
 
   // Generate tokens
   const accessToken = generateAccessToken(user);
@@ -176,10 +191,7 @@ authRoutes.post('/refresh', async (c) => {
   // Check token exists and is not revoked
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const storedToken = await db.query.refreshTokens.findFirst({
-    where: and(
-      eq(refreshTokens.tokenHash, tokenHash),
-      eq(refreshTokens.userId, userId),
-    ),
+    where: and(eq(refreshTokens.tokenHash, tokenHash), eq(refreshTokens.userId, userId)),
   });
 
   if (!storedToken || storedToken.revokedAt) {
@@ -191,7 +203,8 @@ authRoutes.post('/refresh', async (c) => {
   }
 
   // Rotate: revoke old token
-  await db.update(refreshTokens)
+  await db
+    .update(refreshTokens)
     .set({ revokedAt: new Date() })
     .where(eq(refreshTokens.id, storedToken.id));
 
@@ -233,7 +246,8 @@ authRoutes.post('/logout', requireAuth, async (c) => {
   const db = getDb();
 
   // Revoke all refresh tokens for this user
-  await db.update(refreshTokens)
+  await db
+    .update(refreshTokens)
     .set({ revokedAt: new Date() })
     .where(eq(refreshTokens.userId, session.userId));
 
@@ -282,7 +296,8 @@ authRoutes.patch('/me', requireAuth, async (c) => {
 
   const db = getDb();
 
-  const [updated] = await db.update(users)
+  const [updated] = await db
+    .update(users)
     .set({ ...updates, updatedAt: new Date() })
     .where(eq(users.id, session.userId))
     .returning();
@@ -327,12 +342,14 @@ authRoutes.post('/change-password', requireAuth, async (c) => {
   }
 
   const newHash = await bcrypt.hash(newPassword, 12);
-  await db.update(users)
+  await db
+    .update(users)
     .set({ passwordHash: newHash, updatedAt: new Date() })
     .where(eq(users.id, session.userId));
 
   // Revoke all refresh tokens (force re-login)
-  await db.update(refreshTokens)
+  await db
+    .update(refreshTokens)
     .set({ revokedAt: new Date() })
     .where(eq(refreshTokens.userId, session.userId));
 
@@ -395,16 +412,22 @@ authRoutes.post('/verify-email', async (c) => {
   }
 
   if (new Date() > record.expiresAt) {
-    throw new AppError(400, 'TOKEN_EXPIRED', 'This verification link has expired. Please request a new one.');
+    throw new AppError(
+      400,
+      'TOKEN_EXPIRED',
+      'This verification link has expired. Please request a new one.',
+    );
   }
 
   // Mark token as used
-  await db.update(emailVerificationTokens)
+  await db
+    .update(emailVerificationTokens)
     .set({ usedAt: new Date() })
     .where(eq(emailVerificationTokens.id, record.id));
 
   // Mark user email as verified
-  await db.update(users)
+  await db
+    .update(users)
     .set({ emailVerified: true, updatedAt: new Date() })
     .where(eq(users.id, record.userId));
 
@@ -436,7 +459,10 @@ authRoutes.post('/forgot-password', async (c) => {
 
   // Always return success to prevent email enumeration
   if (!user) {
-    return c.json({ success: true, data: { message: 'If an account with that email exists, a reset link has been sent.' } });
+    return c.json({
+      success: true,
+      data: { message: 'If an account with that email exists, a reset link has been sent.' },
+    });
   }
 
   // Generate reset token
@@ -451,7 +477,10 @@ authRoutes.post('/forgot-password', async (c) => {
 
   await sendPasswordResetEmail(user.email, user.name, token);
 
-  return c.json({ success: true, data: { message: 'If an account with that email exists, a reset link has been sent.' } });
+  return c.json({
+    success: true,
+    data: { message: 'If an account with that email exists, a reset link has been sent.' },
+  });
 });
 
 // ─── Reset Password (with token) ────────────────────────────
@@ -479,26 +508,36 @@ authRoutes.post('/reset-password', async (c) => {
   }
 
   if (new Date() > record.expiresAt) {
-    throw new AppError(400, 'TOKEN_EXPIRED', 'This reset link has expired. Please request a new one.');
+    throw new AppError(
+      400,
+      'TOKEN_EXPIRED',
+      'This reset link has expired. Please request a new one.',
+    );
   }
 
   // Hash new password
   const newHash = await bcrypt.hash(newPassword, 12);
 
   // Mark token as used
-  await db.update(passwordResetTokens)
+  await db
+    .update(passwordResetTokens)
     .set({ usedAt: new Date() })
     .where(eq(passwordResetTokens.id, record.id));
 
   // Update user password
-  await db.update(users)
+  await db
+    .update(users)
     .set({ passwordHash: newHash, updatedAt: new Date() })
     .where(eq(users.id, record.userId));
 
   // Revoke all refresh tokens (force re-login everywhere)
-  await db.update(refreshTokens)
+  await db
+    .update(refreshTokens)
     .set({ revokedAt: new Date() })
     .where(eq(refreshTokens.userId, record.userId));
 
-  return c.json({ success: true, data: { message: 'Password reset successfully. Please log in with your new password.' } });
+  return c.json({
+    success: true,
+    data: { message: 'Password reset successfully. Please log in with your new password.' },
+  });
 });

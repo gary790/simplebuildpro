@@ -8,7 +8,10 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "lint": "turbo run lint",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "turbo run test",
     "test:api": "cd tests/api && npx vitest run --config vitest.config.ts",
     "test:e2e": "cd tests/e2e && npx playwright test --config playwright.config.ts",
@@ -17,14 +20,38 @@
     "db:migrate": "npm run migrate --workspace=packages/db",
     "db:push": "npm run push --workspace=packages/db",
     "docker:api": "docker build -f infra/docker/Dockerfile.api -t simplebuildpro-api .",
-    "docker:web": "docker build -f infra/docker/Dockerfile.web -t simplebuildpro-web ."
+    "docker:web": "docker build -f infra/docker/Dockerfile.web -t simplebuildpro-web .",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@next/eslint-plugin-next": "^16.2.6",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import-x": "^4.16.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.3",
     "turbo": "^2.3.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.59.2"
   },
   "engines": {
     "node": ">=20.0.0"
   },
-  "packageManager": "npm@10.8.0"
+  "packageManager": "npm@10.8.0",
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix --max-warnings 999",
+      "prettier --write"
+    ],
+    "*.{js,cjs,mjs}": [
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml,css,html}": [
+      "prettier --write"
+    ]
+  }
 }

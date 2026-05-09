@@ -11,9 +11,23 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/toast';
 import { getAccessToken } from '@/lib/api-client';
 import {
-  ArrowLeft, Github, Cloud, Triangle, Globe2, Database,
-  Check, Loader2, ExternalLink, Unplug, Link2, RefreshCw,
-  Shield, Clock, AlertCircle, Server, Flame,
+  ArrowLeft,
+  Github,
+  Cloud,
+  Triangle,
+  Globe2,
+  Database,
+  Check,
+  Loader2,
+  ExternalLink,
+  Unplug,
+  Link2,
+  RefreshCw,
+  Shield,
+  Clock,
+  AlertCircle,
+  Server,
+  Flame,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -42,7 +56,7 @@ const PROVIDERS = [
   {
     id: 'cloudflare',
     name: 'Cloudflare Pages',
-    description: 'Deploy to Cloudflare\'s global edge network.',
+    description: "Deploy to Cloudflare's global edge network.",
     icon: Cloud,
     color: 'text-orange-500',
     bg: 'bg-orange-50',
@@ -51,7 +65,7 @@ const PROVIDERS = [
   {
     id: 'vercel',
     name: 'Vercel',
-    description: 'Deploy to Vercel\'s edge platform with one click.',
+    description: "Deploy to Vercel's edge platform with one click.",
     icon: Triangle,
     color: 'text-black',
     bg: 'bg-slate-100',
@@ -173,7 +187,7 @@ export default function IntegrationsPage() {
     }
   };
 
-  const getConnection = (provider: string) => connections.find(c => c.provider === provider);
+  const getConnection = (provider: string) => connections.find((c) => c.provider === provider);
 
   const handleOAuthConnect = (provider: string) => {
     // Map provider IDs to endpoint paths
@@ -205,7 +219,10 @@ export default function IntegrationsPage() {
     try {
       await apiFetch('/api/v1/projects/connect/cloudflare', {
         method: 'POST',
-        body: JSON.stringify({ apiToken: cfToken.trim(), accountId: cfAccountId.trim() || undefined }),
+        body: JSON.stringify({
+          apiToken: cfToken.trim(),
+          accountId: cfAccountId.trim() || undefined,
+        }),
       });
       toast('success', 'Cloudflare connected!');
       setCfToken('');
@@ -256,7 +273,11 @@ export default function IntegrationsPage() {
     try {
       await apiFetch('/api/v1/projects/connect/aws', {
         method: 'POST',
-        body: JSON.stringify({ accessKeyId: awsAccessKey.trim(), secretAccessKey: awsSecretKey.trim(), region: awsRegion }),
+        body: JSON.stringify({
+          accessKeyId: awsAccessKey.trim(),
+          secretAccessKey: awsSecretKey.trim(),
+          region: awsRegion,
+        }),
       });
       toast('success', 'AWS connected!');
       setAwsAccessKey('');
@@ -279,7 +300,10 @@ export default function IntegrationsPage() {
     try {
       await apiFetch('/api/v1/projects/connect/gcp', {
         method: 'POST',
-        body: JSON.stringify({ serviceAccountKey: gcpSaKey.trim(), projectId: gcpProjectIdInput.trim() || undefined }),
+        body: JSON.stringify({
+          serviceAccountKey: gcpSaKey.trim(),
+          projectId: gcpProjectIdInput.trim() || undefined,
+        }),
       });
       toast('success', 'Google Cloud connected!');
       setGcpSaKey('');
@@ -316,9 +340,9 @@ export default function IntegrationsPage() {
           <div>
             <p className="text-sm text-blue-800 font-medium">Your credentials are encrypted</p>
             <p className="text-xs text-blue-600 mt-0.5">
-              All tokens and API keys are encrypted with AES-256-GCM before storage.
-              OAuth connections use short-lived tokens with minimal scopes.
-              You can disconnect at any time.
+              All tokens and API keys are encrypted with AES-256-GCM before storage. OAuth
+              connections use short-lived tokens with minimal scopes. You can disconnect at any
+              time.
             </p>
           </div>
         </div>
@@ -340,7 +364,12 @@ export default function IntegrationsPage() {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center', provider.bg)}>
+                      <div
+                        className={clsx(
+                          'w-10 h-10 rounded-xl flex items-center justify-center',
+                          provider.bg,
+                        )}
+                      >
                         <Icon size={18} className={provider.color} />
                       </div>
                       <div>
@@ -442,10 +471,25 @@ export default function IntegrationsPage() {
                   {provider.id === 'cloudflare' && showCfForm && !conn && (
                     <div className="mt-4 pl-14 space-y-3">
                       <div className="p-3 rounded-lg bg-orange-50 border border-orange-100">
-                        <p className="text-xs text-orange-700 font-medium mb-1">Create a scoped API token:</p>
+                        <p className="text-xs text-orange-700 font-medium mb-1">
+                          Create a scoped API token:
+                        </p>
                         <ol className="text-xs text-orange-600 list-decimal list-inside space-y-0.5">
-                          <li>Go to <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="underline hover:text-orange-800">Cloudflare API Tokens</a></li>
-                          <li>Click "Create Token" → use <strong>"Edit Cloudflare Pages"</strong> template</li>
+                          <li>
+                            Go to{' '}
+                            <a
+                              href="https://dash.cloudflare.com/profile/api-tokens"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline hover:text-orange-800"
+                            >
+                              Cloudflare API Tokens
+                            </a>
+                          </li>
+                          <li>
+                            Click "Create Token" → use <strong>"Edit Cloudflare Pages"</strong>{' '}
+                            template
+                          </li>
                           <li>Set account scope → Create token → Paste below</li>
                         </ol>
                       </div>
@@ -477,7 +521,8 @@ export default function IntegrationsPage() {
                       <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-100">
                         <p className="text-xs text-emerald-700 font-medium mb-1">Find your keys:</p>
                         <p className="text-xs text-emerald-600">
-                          Go to your Supabase project → Settings → API. Copy the Project URL and anon key.
+                          Go to your Supabase project → Settings → API. Copy the Project URL and
+                          anon key.
                         </p>
                       </div>
                       <input
@@ -513,11 +558,26 @@ export default function IntegrationsPage() {
                   {provider.id === 'aws' && showAwsForm && !conn && (
                     <div className="mt-4 pl-14 space-y-3">
                       <div className="p-3 rounded-lg bg-yellow-50 border border-yellow-100">
-                        <p className="text-xs text-yellow-700 font-medium mb-1">Create an IAM Access Key:</p>
+                        <p className="text-xs text-yellow-700 font-medium mb-1">
+                          Create an IAM Access Key:
+                        </p>
                         <ol className="text-xs text-yellow-600 list-decimal list-inside space-y-0.5">
-                          <li>Go to <a href="https://console.aws.amazon.com/iam/home#/users" target="_blank" rel="noopener noreferrer" className="underline hover:text-yellow-800">AWS IAM Users</a></li>
+                          <li>
+                            Go to{' '}
+                            <a
+                              href="https://console.aws.amazon.com/iam/home#/users"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline hover:text-yellow-800"
+                            >
+                              AWS IAM Users
+                            </a>
+                          </li>
                           <li>Select your user → Security credentials → Create access key</li>
-                          <li>Ensure the user has <strong>AmazonS3FullAccess</strong> and optionally <strong>CloudFrontFullAccess</strong></li>
+                          <li>
+                            Ensure the user has <strong>AmazonS3FullAccess</strong> and optionally{' '}
+                            <strong>CloudFrontFullAccess</strong>
+                          </li>
                         </ol>
                       </div>
                       <div className="flex gap-2">
@@ -558,11 +618,26 @@ export default function IntegrationsPage() {
                   {provider.id === 'gcp' && showGcpForm && !conn && (
                     <div className="mt-4 pl-14 space-y-3">
                       <div className="p-3 rounded-lg bg-blue-50 border border-blue-100">
-                        <p className="text-xs text-blue-700 font-medium mb-1">Create a Service Account Key:</p>
+                        <p className="text-xs text-blue-700 font-medium mb-1">
+                          Create a Service Account Key:
+                        </p>
                         <ol className="text-xs text-blue-600 list-decimal list-inside space-y-0.5">
-                          <li>Go to <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-800">GCP Service Accounts</a></li>
+                          <li>
+                            Go to{' '}
+                            <a
+                              href="https://console.cloud.google.com/iam-admin/serviceaccounts"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline hover:text-blue-800"
+                            >
+                              GCP Service Accounts
+                            </a>
+                          </li>
                           <li>Create or select a service account</li>
-                          <li>Grant roles: <strong>Firebase Hosting Admin</strong> and/or <strong>Storage Admin</strong></li>
+                          <li>
+                            Grant roles: <strong>Firebase Hosting Admin</strong> and/or{' '}
+                            <strong>Storage Admin</strong>
+                          </li>
                           <li>Keys tab → Add key → JSON → Paste below</li>
                         </ol>
                       </div>
@@ -597,15 +672,25 @@ export default function IntegrationsPage() {
           <div className="space-y-3 text-xs text-slate-600">
             <div className="flex items-start gap-2">
               <span className="font-bold text-brand-600 shrink-0">1.</span>
-              <p><strong>Connect once</strong> — Link your accounts here (Settings → Integrations). This is account-level; all your projects can use these connections.</p>
+              <p>
+                <strong>Connect once</strong> — Link your accounts here (Settings → Integrations).
+                This is account-level; all your projects can use these connections.
+              </p>
             </div>
             <div className="flex items-start gap-2">
               <span className="font-bold text-brand-600 shrink-0">2.</span>
-              <p><strong>Ship from the editor</strong> — Open any project, click the <strong>Ship</strong> button in the toolbar. Pick a repo/service and deploy with one click.</p>
+              <p>
+                <strong>Ship from the editor</strong> — Open any project, click the{' '}
+                <strong>Ship</strong> button in the toolbar. Pick a repo/service and deploy with one
+                click.
+              </p>
             </div>
             <div className="flex items-start gap-2">
               <span className="font-bold text-brand-600 shrink-0">3.</span>
-              <p><strong>Download anytime</strong> — Every project can be exported as a .zip from the Ship panel. No connection required.</p>
+              <p>
+                <strong>Download anytime</strong> — Every project can be exported as a .zip from the
+                Ship panel. No connection required.
+              </p>
             </div>
           </div>
         </div>

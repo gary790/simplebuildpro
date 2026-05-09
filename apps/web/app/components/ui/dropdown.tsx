@@ -62,9 +62,7 @@ export function DropdownItem({ children, onClick, danger, icon, disabled }: Drop
       disabled={disabled}
       className={clsx(
         'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors',
-        danger
-          ? 'text-red-600 hover:bg-red-50'
-          : 'text-slate-700 hover:bg-slate-50',
+        danger ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50',
         disabled && 'opacity-40 cursor-not-allowed',
       )}
     >

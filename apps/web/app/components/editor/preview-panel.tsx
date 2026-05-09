@@ -11,8 +11,15 @@ import { useEditorStore } from '@/lib/store';
 import * as wc from '@/lib/webcontainer';
 import { Button } from '@/components/ui/button';
 import {
-  RefreshCw, ExternalLink, Maximize2, Minimize2,
-  Monitor, Smartphone, Tablet, Loader2, Zap,
+  RefreshCw,
+  ExternalLink,
+  Maximize2,
+  Minimize2,
+  Monitor,
+  Smartphone,
+  Tablet,
+  Loader2,
+  Zap,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -64,7 +71,7 @@ export function PreviewPanel() {
   const previewHtml = useMemo(() => {
     if (!htmlFile) return null;
 
-    let indexHtml = files.get(htmlFile) || '';
+    const indexHtml = files.get(htmlFile) || '';
     if (!indexHtml) return null;
 
     let html = indexHtml;
@@ -73,18 +80,28 @@ export function PreviewPanel() {
     const cssFiles = Array.from(files.entries()).filter(([path]) => path.endsWith('.css'));
     for (const [path, content] of cssFiles) {
       const linkRegex = new RegExp(
-        `<link[^>]*href=["'](?:\\.?\\/?)${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split('/').pop()!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`,
-        'gi'
+        `<link[^>]*href=["'](?:\\.?\\/?)${path
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          .split('/')
+          .pop()!
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`,
+        'gi',
       );
       html = html.replace(linkRegex, `<style>/* ${path} */\n${content}\n</style>`);
     }
 
     // Inline JS files
-    const jsFiles = Array.from(files.entries()).filter(([path]) => path.endsWith('.js') || path.endsWith('.mjs'));
+    const jsFiles = Array.from(files.entries()).filter(
+      ([path]) => path.endsWith('.js') || path.endsWith('.mjs'),
+    );
     for (const [path, content] of jsFiles) {
       const scriptRegex = new RegExp(
-        `<script[^>]*src=["'](?:\\.?\\/?)${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split('/').pop()!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>\\s*</script>`,
-        'gi'
+        `<script[^>]*src=["'](?:\\.?\\/?)${path
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          .split('/')
+          .pop()!
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>\\s*</script>`,
+        'gi',
       );
       html = html.replace(scriptRegex, `<script>/* ${path} */\n${content}\n</script>`);
     }
@@ -114,7 +131,7 @@ export function PreviewPanel() {
 
   const refreshPreview = useCallback(() => {
     if (previewUrl) {
-      setRefreshKey(k => k + 1);
+      setRefreshKey((k) => k + 1);
     } else if (iframeRef.current && previewHtml) {
       const blob = new Blob([previewHtml], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
@@ -138,10 +155,7 @@ export function PreviewPanel() {
   const isBooting = !hasHtml && !webcontainerReady && sandboxStatus === 'creating';
 
   return (
-    <div className={clsx(
-      'flex flex-col h-full bg-white',
-      fullscreen && 'fixed inset-0 z-50',
-    )}>
+    <div className={clsx('flex flex-col h-full bg-white', fullscreen && 'fixed inset-0 z-50')}>
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-9 border-b border-slate-200 bg-slate-50 shrink-0">
         <span className="text-xs font-semibold text-slate-600">
@@ -167,17 +181,19 @@ export function PreviewPanel() {
           {/* Device Toggle */}
           {hasPreview && (
             <div className="flex items-center border border-slate-200 rounded-md overflow-hidden mr-1">
-              {([
+              {[
                 { mode: 'desktop' as DeviceMode, Icon: Monitor },
                 { mode: 'tablet' as DeviceMode, Icon: Tablet },
                 { mode: 'mobile' as DeviceMode, Icon: Smartphone },
-              ]).map(({ mode, Icon }) => (
+              ].map(({ mode, Icon }) => (
                 <button
                   key={mode}
                   onClick={() => setDevice(mode)}
                   className={clsx(
                     'p-1 transition-colors',
-                    device === mode ? 'bg-slate-200 text-slate-700' : 'text-slate-400 hover:text-slate-600',
+                    device === mode
+                      ? 'bg-slate-200 text-slate-700'
+                      : 'text-slate-400 hover:text-slate-600',
                   )}
                 >
                   <Icon size={12} />
@@ -188,10 +204,18 @@ export function PreviewPanel() {
 
           {hasPreview && (
             <>
-              <button onClick={refreshPreview} className="p-1 rounded hover:bg-slate-200 text-slate-500 transition-colors" title="Refresh">
+              <button
+                onClick={refreshPreview}
+                className="p-1 rounded hover:bg-slate-200 text-slate-500 transition-colors"
+                title="Refresh"
+              >
                 <RefreshCw size={12} />
               </button>
-              <button onClick={openInNewTab} className="p-1 rounded hover:bg-slate-200 text-slate-500 transition-colors" title="Open in new tab">
+              <button
+                onClick={openInNewTab}
+                className="p-1 rounded hover:bg-slate-200 text-slate-500 transition-colors"
+                title="Open in new tab"
+              >
                 <ExternalLink size={12} />
               </button>
             </>
@@ -214,9 +238,7 @@ export function PreviewPanel() {
               <Loader2 size={20} className="text-brand-500 animate-spin" />
             </div>
             <p className="text-sm font-medium text-slate-700">Getting ready...</p>
-            <p className="text-xs text-slate-500">
-              Setting up your development environment
-            </p>
+            <p className="text-xs text-slate-500">Setting up your development environment</p>
           </div>
         )}
 

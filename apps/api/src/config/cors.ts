@@ -13,21 +13,14 @@ export interface CorsConfig {
 
 const corsConfigs: Record<string, CorsConfig> = {
   development: {
-    origins: [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://127.0.0.1:3000',
-    ],
+    origins: ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     headers: ['Content-Type', 'Authorization', 'X-Request-ID'],
     credentials: true,
     maxAge: 3600,
   },
   staging: {
-    origins: [
-      'https://staging.simplebuildpro.com',
-      'https://staging-app.simplebuildpro.com',
-    ],
+    origins: ['https://staging.simplebuildpro.com', 'https://staging-app.simplebuildpro.com'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     headers: ['Content-Type', 'Authorization', 'X-Request-ID'],
     credentials: true,

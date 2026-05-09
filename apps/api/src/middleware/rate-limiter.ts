@@ -117,9 +117,10 @@ export function rateLimiter(category: RateLimitCategory): MiddlewareHandler {
   return async (c, next) => {
     // Use user ID from JWT if available, fall back to IP
     const userId = c.get('userId' as any) as string | undefined;
-    const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-      || c.req.header('x-real-ip')
-      || 'unknown';
+    const ip =
+      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+      c.req.header('x-real-ip') ||
+      'unknown';
 
     const key = `${category}:${userId || ip}`;
     const now = Date.now();
@@ -149,13 +150,16 @@ export function rateLimiter(category: RateLimitCategory): MiddlewareHandler {
       const retryAfter = Math.ceil((resetAt - now) / 1000);
       c.header('Retry-After', String(retryAfter));
 
-      return c.json({
-        success: false,
-        error: {
-          code: 'RATE_LIMIT_EXCEEDED',
-          message: `Too many requests. Try again in ${retryAfter} seconds.`,
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: `Too many requests. Try again in ${retryAfter} seconds.`,
+          },
         },
-      }, 429);
+        429,
+      );
     }
 
     await next();

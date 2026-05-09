@@ -15,11 +15,31 @@ export default function HomePage() {
             SimpleBuild<span className="text-brand-600">Pro</span>
           </Link>
           <div className="hidden md:flex items-center gap-8">
-            <a href="#features" className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">Features</a>
-            <a href="#pricing" className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">Pricing</a>
-            <a href="#faq" className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">FAQ</a>
-            <Link href="/login" className="text-sm font-medium text-slate-700 hover:text-slate-900">Log in</Link>
-            <Link href="/signup" className="px-4 py-2 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-700 transition-all hover:-translate-y-0.5 shadow-sm hover:shadow-md">
+            <a
+              href="#features"
+              className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
+            >
+              Features
+            </a>
+            <a
+              href="#pricing"
+              className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
+            >
+              Pricing
+            </a>
+            <a
+              href="#faq"
+              className="text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
+            >
+              FAQ
+            </a>
+            <Link href="/login" className="text-sm font-medium text-slate-700 hover:text-slate-900">
+              Log in
+            </Link>
+            <Link
+              href="/signup"
+              className="px-4 py-2 bg-brand-600 text-white text-sm font-semibold rounded-lg hover:bg-brand-700 transition-all hover:-translate-y-0.5 shadow-sm hover:shadow-md"
+            >
               Start Free
             </Link>
           </div>
@@ -33,18 +53,27 @@ export default function HomePage() {
             AI-Powered Creation Studio
           </span>
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-slate-900 leading-[1.08] mb-6">
-            Build anything<br />
-            <span className="bg-gradient-to-r from-brand-600 to-blue-500 bg-clip-text text-transparent">with AI power</span>
+            Build anything
+            <br />
+            <span className="bg-gradient-to-r from-brand-600 to-blue-500 bg-clip-text text-transparent">
+              with AI power
+            </span>
           </h1>
           <p className="text-xl text-slate-500 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Code editor, AI assistant, live preview, one-click deploy.
-            Everything you need to ship production apps, sites, and software — fast.
+            Code editor, AI assistant, live preview, one-click deploy. Everything you need to ship
+            production apps, sites, and software — fast.
           </p>
           <div className="flex items-center justify-center gap-4 flex-wrap">
-            <Link href="/signup" className="px-8 py-3.5 bg-brand-600 text-white font-semibold rounded-xl text-base hover:bg-brand-700 transition-all hover:-translate-y-0.5 shadow-lg shadow-brand-600/20 hover:shadow-brand-600/30">
+            <Link
+              href="/signup"
+              className="px-8 py-3.5 bg-brand-600 text-white font-semibold rounded-xl text-base hover:bg-brand-700 transition-all hover:-translate-y-0.5 shadow-lg shadow-brand-600/20 hover:shadow-brand-600/30"
+            >
               Start Building Free →
             </Link>
-            <a href="#features" className="px-8 py-3.5 bg-slate-100 text-slate-700 font-semibold rounded-xl text-base hover:bg-slate-200 transition-all border border-slate-200">
+            <a
+              href="#features"
+              className="px-8 py-3.5 bg-slate-100 text-slate-700 font-semibold rounded-xl text-base hover:bg-slate-200 transition-all border border-slate-200"
+            >
               See Features
             </a>
           </div>
@@ -69,17 +98,56 @@ export default function HomePage() {
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
-              { icon: '⚡', title: 'Monaco Code Editor', desc: 'Full VS Code editor experience in the browser with syntax highlighting, IntelliSense, and multi-file support.' },
-              { icon: '🤖', title: 'AI Assistant', desc: 'Claude-powered AI that sees your entire project, generates code, and applies changes directly to your files.' },
-              { icon: '👁️', title: 'Live Preview', desc: 'Real-time isolated preview via Novita sandbox. See your changes instantly in a production-like environment.' },
-              { icon: '🚀', title: 'One-Click Deploy', desc: 'Deploy to a global CDN with a single click. Custom domains, auto-SSL, and instant rollbacks included.' },
-              { icon: '📦', title: 'Asset Management', desc: 'Upload images, fonts, and files. Automatic optimization with global CDN delivery for blazing-fast load times.' },
-              { icon: '🔒', title: 'Enterprise Security', desc: 'JWT auth, encrypted storage, rate limiting, input sanitization, and full audit logging out of the box.' },
-              { icon: '📊', title: 'Version History', desc: 'Full project snapshots with every build. Restore any version with one click — nothing is ever lost.' },
-              { icon: '💳', title: 'Stripe Billing', desc: 'Subscription management with Stripe. Free, Pro, Business, and Enterprise tiers with usage metering.' },
-              { icon: '☁️', title: 'Google Cloud', desc: 'Hosted on Cloud Run with Cloud SQL, Cloud Storage, and Cloud CDN for maximum speed and reliability.' },
+              {
+                icon: '⚡',
+                title: 'Monaco Code Editor',
+                desc: 'Full VS Code editor experience in the browser with syntax highlighting, IntelliSense, and multi-file support.',
+              },
+              {
+                icon: '🤖',
+                title: 'AI Assistant',
+                desc: 'Claude-powered AI that sees your entire project, generates code, and applies changes directly to your files.',
+              },
+              {
+                icon: '👁️',
+                title: 'Live Preview',
+                desc: 'Real-time isolated preview via Novita sandbox. See your changes instantly in a production-like environment.',
+              },
+              {
+                icon: '🚀',
+                title: 'One-Click Deploy',
+                desc: 'Deploy to a global CDN with a single click. Custom domains, auto-SSL, and instant rollbacks included.',
+              },
+              {
+                icon: '📦',
+                title: 'Asset Management',
+                desc: 'Upload images, fonts, and files. Automatic optimization with global CDN delivery for blazing-fast load times.',
+              },
+              {
+                icon: '🔒',
+                title: 'Enterprise Security',
+                desc: 'JWT auth, encrypted storage, rate limiting, input sanitization, and full audit logging out of the box.',
+              },
+              {
+                icon: '📊',
+                title: 'Version History',
+                desc: 'Full project snapshots with every build. Restore any version with one click — nothing is ever lost.',
+              },
+              {
+                icon: '💳',
+                title: 'Stripe Billing',
+                desc: 'Subscription management with Stripe. Free, Pro, Business, and Enterprise tiers with usage metering.',
+              },
+              {
+                icon: '☁️',
+                title: 'Google Cloud',
+                desc: 'Hosted on Cloud Run with Cloud SQL, Cloud Storage, and Cloud CDN for maximum speed and reliability.',
+              },
             ].map(({ icon, title, desc }) => (
-              <div key={title} className="group p-6 rounded-2xl border border-slate-200 hover:border-brand-200 hover:shadow-lg hover:-translate-y-1 transition-all duration-200 bg-white">
+              <div
+                key={title}
+                className="group p-6 rounded-2xl border border-slate-200 hover:border-brand-200 hover:shadow-lg hover:-translate-y-1 transition-all duration-200 bg-white"
+              >
                 <span className="text-2xl mb-3 block">{icon}</span>
                 <h3 className="text-base font-bold text-slate-900 mb-2">{title}</h3>
                 <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
@@ -100,9 +168,21 @@ export default function HomePage() {
 
           <div className="grid md:grid-cols-3 gap-12">
             {[
-              { step: '01', title: 'Create a project', desc: 'Start from a template or a blank canvas. Name your project and begin coding instantly.' },
-              { step: '02', title: 'Build with AI', desc: 'Use the AI assistant to generate code, fix bugs, or redesign entire sections — all within context of your project.' },
-              { step: '03', title: 'Deploy globally', desc: 'Build, preview in an isolated sandbox, then deploy to a global CDN with custom domain and SSL.' },
+              {
+                step: '01',
+                title: 'Create a project',
+                desc: 'Start from a template or a blank canvas. Name your project and begin coding instantly.',
+              },
+              {
+                step: '02',
+                title: 'Build with AI',
+                desc: 'Use the AI assistant to generate code, fix bugs, or redesign entire sections — all within context of your project.',
+              },
+              {
+                step: '03',
+                title: 'Deploy globally',
+                desc: 'Build, preview in an isolated sandbox, then deploy to a global CDN with custom domain and SSL.',
+              },
             ].map(({ step, title, desc }) => (
               <div key={step} className="text-center">
                 <div className="inline-flex items-center justify-center w-14 h-14 bg-brand-600 text-white text-lg font-bold rounded-2xl mb-5">
@@ -123,7 +203,9 @@ export default function HomePage() {
             <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight mb-4">
               Pay only for what you use
             </h2>
-            <p className="text-lg text-slate-500">Start free, no credit card required. Pay as you grow.</p>
+            <p className="text-lg text-slate-500">
+              Start free, no credit card required. Pay as you grow.
+            </p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
@@ -134,16 +216,33 @@ export default function HomePage() {
                 <span className="text-4xl font-extrabold text-slate-900">$0</span>
                 <span className="text-slate-500 text-sm"> to start</span>
               </div>
-              <p className="text-sm text-slate-500 mb-6">No credit card required. Build and deploy instantly.</p>
+              <p className="text-sm text-slate-500 mb-6">
+                No credit card required. Build and deploy instantly.
+              </p>
               <ul className="space-y-3 mb-8 text-sm text-slate-600">
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 2 projects</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 10 AI messages / day</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 50 MB storage</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 3 deploys / day</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 5 min live preview / day</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> 100 MB bandwidth / day</li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> 2 projects
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> 10 AI messages / day
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> 50 MB storage
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> 3 deploys / day
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> 5 min live preview / day
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> 100 MB bandwidth / day
+                </li>
               </ul>
-              <Link href="/signup" className="block text-center px-6 py-2.5 rounded-lg border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors">
+              <Link
+                href="/signup"
+                className="block text-center px-6 py-2.5 rounded-lg border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-50 transition-colors"
+              >
                 Get Started Free
               </Link>
             </div>
@@ -158,17 +257,36 @@ export default function HomePage() {
                 <span className="text-4xl font-extrabold text-slate-900">~$0.01</span>
                 <span className="text-slate-500 text-sm"> / AI message</span>
               </div>
-              <p className="text-sm text-slate-500 mb-6">Add a card, unlock unlimited usage. Charged daily.</p>
+              <p className="text-sm text-slate-500 mb-6">
+                Add a card, unlock unlimited usage. Charged daily.
+              </p>
               <ul className="space-y-3 mb-8 text-sm text-slate-600">
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Unlimited projects</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Unlimited AI messages</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Unlimited deploys</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Custom domains ($5/mo each)</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Storage at $0.50/GB/mo</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Configurable daily spend limit</li>
-                <li className="flex items-center gap-2"><span className="text-green-500">✓</span> Priority support</li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> Unlimited projects
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> Unlimited AI messages
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> Unlimited deploys
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> Custom domains ($5/mo each)
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> Storage at $0.50/GB/mo
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> Configurable daily spend limit
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="text-green-500">✓</span> Priority support
+                </li>
               </ul>
-              <Link href="/signup" className="block text-center px-6 py-2.5 rounded-lg bg-brand-600 text-white font-semibold text-sm hover:bg-brand-700 transition-all shadow-sm">
+              <Link
+                href="/signup"
+                className="block text-center px-6 py-2.5 rounded-lg bg-brand-600 text-white font-semibold text-sm hover:bg-brand-700 transition-all shadow-sm"
+              >
                 Start Building →
               </Link>
             </div>
@@ -177,7 +295,9 @@ export default function HomePage() {
           {/* Pricing Details */}
           <div className="mt-12 max-w-3xl mx-auto">
             <div className="bg-slate-50 rounded-2xl p-8 border border-slate-200">
-              <h3 className="text-base font-bold text-slate-900 mb-4 text-center">Usage-Based Pricing</h3>
+              <h3 className="text-base font-bold text-slate-900 mb-4 text-center">
+                Usage-Based Pricing
+              </h3>
               <div className="grid sm:grid-cols-2 gap-4 text-sm">
                 <div className="flex justify-between py-2 border-b border-slate-200">
                   <span className="text-slate-600">AI Messages</span>
@@ -218,7 +338,10 @@ export default function HomePage() {
           <p className="text-lg text-slate-400 mb-10">
             Join developers and teams shipping production software with SimpleBuild Pro.
           </p>
-          <Link href="/signup" className="inline-block px-10 py-4 bg-brand-600 text-white font-semibold rounded-xl text-lg hover:bg-brand-500 transition-all hover:-translate-y-0.5 shadow-lg shadow-brand-600/30">
+          <Link
+            href="/signup"
+            className="inline-block px-10 py-4 bg-brand-600 text-white font-semibold rounded-xl text-lg hover:bg-brand-500 transition-all hover:-translate-y-0.5 shadow-lg shadow-brand-600/30"
+          >
             Start Building Free →
           </Link>
         </div>
@@ -232,11 +355,19 @@ export default function HomePage() {
               SimpleBuild<span className="text-brand-600">Pro</span>
             </span>
             <div className="flex items-center gap-6">
-              <a href="#" className="text-sm text-slate-500 hover:text-slate-700">Privacy</a>
-              <a href="#" className="text-sm text-slate-500 hover:text-slate-700">Terms</a>
-              <a href="#" className="text-sm text-slate-500 hover:text-slate-700">Contact</a>
+              <a href="#" className="text-sm text-slate-500 hover:text-slate-700">
+                Privacy
+              </a>
+              <a href="#" className="text-sm text-slate-500 hover:text-slate-700">
+                Terms
+              </a>
+              <a href="#" className="text-sm text-slate-500 hover:text-slate-700">
+                Contact
+              </a>
             </div>
-            <p className="text-sm text-slate-400">&copy; 2026 SimpleBuild Pro. All rights reserved.</p>
+            <p className="text-sm text-slate-400">
+              &copy; 2026 SimpleBuild Pro. All rights reserved.
+            </p>
           </div>
         </div>
       </footer>

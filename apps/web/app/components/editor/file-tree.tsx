@@ -9,8 +9,19 @@ import { useState, useMemo } from 'react';
 import clsx from 'clsx';
 import { useEditorStore } from '@/lib/store';
 import {
-  ChevronRight, ChevronDown, File, FileCode, FileImage, FileJson,
-  FilePlus, FolderPlus, Trash2, Pencil, MoreHorizontal, Folder, FolderOpen,
+  ChevronRight,
+  ChevronDown,
+  File,
+  FileCode,
+  FileImage,
+  FileJson,
+  FilePlus,
+  FolderPlus,
+  Trash2,
+  Pencil,
+  MoreHorizontal,
+  Folder,
+  FolderOpen,
 } from 'lucide-react';
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/dropdown';
 
@@ -111,7 +122,14 @@ interface FileNodeProps {
   onDelete: (path: string) => void;
 }
 
-function FileNode({ node, depth, onCreateFile, onCreateFolder, onRename, onDelete }: FileNodeProps) {
+function FileNode({
+  node,
+  depth,
+  onCreateFile,
+  onCreateFolder,
+  onRename,
+  onDelete,
+}: FileNodeProps) {
   const { activeFile, setActiveFile, openTab } = useEditorStore();
   const [expanded, setExpanded] = useState(depth < 2);
   const isActive = !node.isFolder && activeFile === node.path;
@@ -142,9 +160,15 @@ function FileNode({ node, depth, onCreateFile, onCreateFolder, onRename, onDelet
         )}
 
         {/* Icon */}
-        <span className={clsx('shrink-0', node.isFolder ? 'text-slate-400' : getFileColor(node.name))}>
+        <span
+          className={clsx('shrink-0', node.isFolder ? 'text-slate-400' : getFileColor(node.name))}
+        >
           {node.isFolder ? (
-            expanded ? <FolderOpen size={14} /> : <Folder size={14} />
+            expanded ? (
+              <FolderOpen size={14} />
+            ) : (
+              <Folder size={14} />
+            )
           ) : (
             getFileIcon(node.name)
           )}
@@ -154,7 +178,10 @@ function FileNode({ node, depth, onCreateFile, onCreateFolder, onRename, onDelet
         <span className="flex-1 truncate text-xs">{node.name}</span>
 
         {/* Context menu */}
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => e.stopPropagation()}
+        >
           <Dropdown
             trigger={
               <button className="p-0.5 rounded hover:bg-slate-200 transition-colors">
@@ -168,7 +195,10 @@ function FileNode({ node, depth, onCreateFile, onCreateFolder, onRename, onDelet
                 <DropdownItem icon={<FilePlus size={12} />} onClick={() => onCreateFile(node.path)}>
                   New File
                 </DropdownItem>
-                <DropdownItem icon={<FolderPlus size={12} />} onClick={() => onCreateFolder(node.path)}>
+                <DropdownItem
+                  icon={<FolderPlus size={12} />}
+                  onClick={() => onCreateFolder(node.path)}
+                >
                   New Folder
                 </DropdownItem>
                 <DropdownSeparator />
@@ -185,17 +215,19 @@ function FileNode({ node, depth, onCreateFile, onCreateFolder, onRename, onDelet
       </div>
 
       {/* Children */}
-      {node.isFolder && expanded && node.children.map((child) => (
-        <FileNode
-          key={child.path}
-          node={child}
-          depth={depth + 1}
-          onCreateFile={onCreateFile}
-          onCreateFolder={onCreateFolder}
-          onRename={onRename}
-          onDelete={onDelete}
-        />
-      ))}
+      {node.isFolder &&
+        expanded &&
+        node.children.map((child) => (
+          <FileNode
+            key={child.path}
+            node={child}
+            depth={depth + 1}
+            onCreateFile={onCreateFile}
+            onCreateFolder={onCreateFolder}
+            onRename={onRename}
+            onDelete={onDelete}
+          />
+        ))}
     </div>
   );
 }

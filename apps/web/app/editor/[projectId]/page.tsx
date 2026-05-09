@@ -22,11 +22,26 @@ import { AiChat } from '@/components/editor/ai-chat';
 import { StudioBuilder } from '@/components/editor/studio-builder';
 import { ShipPanel } from '@/components/editor/ship-panel';
 import {
-  ArrowLeft, Save, Loader2,
-  FilePlus, FolderPlus, MoreVertical,
-  Package, Rocket, Ship, Eye, Code, Layout,
-  FolderTree, Paintbrush, Terminal, Settings,
-  History, Globe, Download, GripVertical,
+  ArrowLeft,
+  Save,
+  Loader2,
+  FilePlus,
+  FolderPlus,
+  MoreVertical,
+  Package,
+  Rocket,
+  Ship,
+  Eye,
+  Code,
+  Layout,
+  FolderTree,
+  Paintbrush,
+  Terminal,
+  Settings,
+  History,
+  Globe,
+  Download,
+  GripVertical,
 } from 'lucide-react';
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/dropdown';
 import clsx from 'clsx';
@@ -41,13 +56,13 @@ interface TabDef {
 }
 
 const RIGHT_TABS: TabDef[] = [
-  { id: 'preview',  label: 'Preview',  icon: <Eye size={13} /> },
-  { id: 'code',     label: 'Code',     icon: <Code size={13} /> },
+  { id: 'preview', label: 'Preview', icon: <Eye size={13} /> },
+  { id: 'code', label: 'Code', icon: <Code size={13} /> },
   { id: 'explorer', label: 'Explorer', icon: <FolderTree size={13} /> },
-  { id: 'visual',   label: 'Visual',   icon: <Paintbrush size={13} /> },
-  { id: 'build',    label: 'Build',    icon: <Package size={13} /> },
-  { id: 'deploy',   label: 'Deploy',   icon: <Rocket size={13} /> },
-  { id: 'ship',     label: 'Ship',     icon: <Ship size={13} /> },
+  { id: 'visual', label: 'Visual', icon: <Paintbrush size={13} /> },
+  { id: 'build', label: 'Build', icon: <Package size={13} /> },
+  { id: 'deploy', label: 'Deploy', icon: <Rocket size={13} /> },
+  { id: 'ship', label: 'Ship', icon: <Ship size={13} /> },
 ];
 
 export default function EditorPage() {
@@ -57,15 +72,36 @@ export default function EditorPage() {
   const user = useAuthStore((s) => s.user);
 
   const {
-    project, setProject, files, setFiles, activeFile,
-    openTabs, openTab, setActiveFile, updateFile, deleteFile, renameFile,
-    buildStatus, setBuildStatus, deployStatus, setDeployStatus, setLastDeployUrl,
+    project,
+    setProject,
+    files,
+    setFiles,
+    activeFile,
+    openTabs,
+    openTab,
+    setActiveFile,
+    updateFile,
+    deleteFile,
+    renameFile,
+    buildStatus,
+    setBuildStatus,
+    deployStatus,
+    setDeployStatus,
+    setLastDeployUrl,
     previewSession,
-    assets, setAssets,
-    terminalLogs, addTerminalLog, clearTerminalLogs,
-    sandboxUrl, setSandboxUrl, sandboxStatus, setSandboxStatus,
-    webcontainerReady, setWebcontainerReady,
-    webcontainerUrl, setWebcontainerUrl,
+    assets,
+    setAssets,
+    terminalLogs,
+    addTerminalLog,
+    clearTerminalLogs,
+    sandboxUrl,
+    setSandboxUrl,
+    sandboxStatus,
+    setSandboxStatus,
+    webcontainerReady,
+    setWebcontainerReady,
+    webcontainerUrl,
+    setWebcontainerUrl,
   } = useEditorStore();
 
   const { clearMessages: clearChat } = useChatStore();
@@ -88,32 +124,35 @@ export default function EditorPage() {
   const [deletePath, setDeletePath] = useState('');
 
   // ─── Resize handler for chat panel ─────────────────────
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      setIsResizing(true);
 
-    const startX = e.clientX;
-    const startWidth = chatWidth;
+      const startX = e.clientX;
+      const startWidth = chatWidth;
 
-    const handleMouseMove = (e: MouseEvent) => {
-      const delta = e.clientX - startX;
-      const newWidth = Math.max(320, Math.min(700, startWidth + delta));
-      setChatWidth(newWidth);
-    };
+      const handleMouseMove = (e: MouseEvent) => {
+        const delta = e.clientX - startX;
+        const newWidth = Math.max(320, Math.min(700, startWidth + delta));
+        setChatWidth(newWidth);
+      };
 
-    const handleMouseUp = () => {
-      setIsResizing(false);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
+      const handleMouseUp = () => {
+        setIsResizing(false);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-  }, [chatWidth]);
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    },
+    [chatWidth],
+  );
 
   // ─── Load project + start sandbox ──────────────────────
   useEffect(() => {
@@ -136,9 +175,9 @@ export default function EditorPage() {
 
         // Auto-open first HTML file
         const paths = Array.from(fileMap.keys());
-        const indexFile = paths.find(
-          (p) => p === 'index.html' || p === 'index.htm' || p.endsWith('/index.html'),
-        ) || paths[0];
+        const indexFile =
+          paths.find((p) => p === 'index.html' || p === 'index.htm' || p.endsWith('/index.html')) ||
+          paths[0];
         if (indexFile) {
           openTab(indexFile);
           setActiveFile(indexFile);
@@ -198,22 +237,25 @@ export default function EditorPage() {
   }, [projectId]);
 
   // ─── Save file ─────────────────────────────────────────
-  const handleSave = useCallback(async (path?: string, content?: string) => {
-    const filePath = path || activeFile;
-    if (!filePath || !project?.id) return;
-    const fileContent = content ?? files.get(filePath) ?? '';
+  const handleSave = useCallback(
+    async (path?: string, content?: string) => {
+      const filePath = path || activeFile;
+      if (!filePath || !project?.id) return;
+      const fileContent = content ?? files.get(filePath) ?? '';
 
-    setSaving(true);
-    try {
-      await filesApi.upsert(project.id, { path: filePath, content: fileContent });
-      useEditorStore.getState().markTabDirty(filePath, false);
-      toast('success', 'Saved', filePath);
-    } catch (err: any) {
-      toast('error', 'Save failed', err.message);
-    } finally {
-      setSaving(false);
-    }
-  }, [activeFile, project?.id, files]);
+      setSaving(true);
+      try {
+        await filesApi.upsert(project.id, { path: filePath, content: fileContent });
+        useEditorStore.getState().markTabDirty(filePath, false);
+        toast('success', 'Saved', filePath);
+      } catch (err: any) {
+        toast('error', 'Save failed', err.message);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [activeFile, project?.id, files],
+  );
 
   // ─── Save all dirty files ─────────────────────────────
   const handleSaveAll = useCallback(async () => {
@@ -252,8 +294,12 @@ export default function EditorPage() {
       await handleSaveAll();
       const result = await buildApi.build({ projectId: project.id });
       setBuildStatus('success');
-      addTerminalLog(`[${new Date().toLocaleTimeString()}] Build successful — v${result.versionNumber}`);
-      addTerminalLog(`  Files: ${result.files.length}, Size: ${(result.totalSizeBytes / 1024).toFixed(1)} KB, Duration: ${result.durationMs}ms`);
+      addTerminalLog(
+        `[${new Date().toLocaleTimeString()}] Build successful — v${result.versionNumber}`,
+      );
+      addTerminalLog(
+        `  Files: ${result.files.length}, Size: ${(result.totalSizeBytes / 1024).toFixed(1)} KB, Duration: ${result.durationMs}ms`,
+      );
 
       if (result.warnings.length > 0) {
         for (const w of result.warnings) {
@@ -261,7 +307,11 @@ export default function EditorPage() {
         }
       }
 
-      toast('success', 'Build successful', `Version ${result.versionNumber} — ${result.files.length} files`);
+      toast(
+        'success',
+        'Build successful',
+        `Version ${result.versionNumber} — ${result.files.length} files`,
+      );
       return result;
     } catch (err: any) {
       setBuildStatus('error');
@@ -291,8 +341,14 @@ export default function EditorPage() {
 
       setDeployStatus('live');
       setLastDeployUrl((deployment as any).url || (deployment as any).deployUrl);
-      addTerminalLog(`[${new Date().toLocaleTimeString()}] Deployed! URL: ${(deployment as any).url || (deployment as any).deployUrl}`);
-      toast('success', 'Deployed!', `Live at ${(deployment as any).url || (deployment as any).deployUrl}`);
+      addTerminalLog(
+        `[${new Date().toLocaleTimeString()}] Deployed! URL: ${(deployment as any).url || (deployment as any).deployUrl}`,
+      );
+      toast(
+        'success',
+        'Deployed!',
+        `Live at ${(deployment as any).url || (deployment as any).deployUrl}`,
+      );
     } catch (err: any) {
       setDeployStatus('error');
       addTerminalLog(`[${new Date().toLocaleTimeString()}] Deploy failed: ${err.message}`);
@@ -301,38 +357,52 @@ export default function EditorPage() {
   }, [project?.id, handleBuild, setDeployStatus, setLastDeployUrl, addTerminalLog]);
 
   // ─── Visual Builder: Insert HTML ──────────────────────
-  const handleInsertHtml = useCallback((html: string) => {
-    if (!activeFile) return;
-    const currentContent = files.get(activeFile) || '';
-    const bodyCloseIndex = currentContent.toLowerCase().lastIndexOf('</body>');
-    let newContent: string;
-    if (bodyCloseIndex >= 0) {
-      newContent = currentContent.slice(0, bodyCloseIndex) + '\n' + html + '\n' + currentContent.slice(bodyCloseIndex);
-    } else {
-      newContent = currentContent + '\n' + html;
-    }
-    updateFile(activeFile, newContent);
-    toast('success', 'Component inserted');
-  }, [activeFile, files, updateFile]);
+  const handleInsertHtml = useCallback(
+    (html: string) => {
+      if (!activeFile) return;
+      const currentContent = files.get(activeFile) || '';
+      const bodyCloseIndex = currentContent.toLowerCase().lastIndexOf('</body>');
+      let newContent: string;
+      if (bodyCloseIndex >= 0) {
+        newContent =
+          currentContent.slice(0, bodyCloseIndex) +
+          '\n' +
+          html +
+          '\n' +
+          currentContent.slice(bodyCloseIndex);
+      } else {
+        newContent = currentContent + '\n' + html;
+      }
+      updateFile(activeFile, newContent);
+      toast('success', 'Component inserted');
+    },
+    [activeFile, files, updateFile],
+  );
 
   // ─── Create file/folder ────────────────────────────────
   const handleCreateFile = useCallback(async () => {
     if (!project?.id || !newFileName.trim()) return;
-    const fullPath = createFileParent ? `${createFileParent}/${newFileName.trim()}` : newFileName.trim();
+    const fullPath = createFileParent
+      ? `${createFileParent}/${newFileName.trim()}`
+      : newFileName.trim();
 
     if (isFolder) {
       const placeholderPath = `${fullPath}/.gitkeep`;
       updateFile(placeholderPath, '');
       try {
         await filesApi.upsert(project.id, { path: placeholderPath, content: '' });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     } else {
       updateFile(fullPath, '');
       openTab(fullPath);
       setActiveFile(fullPath);
       try {
         await filesApi.upsert(project.id, { path: fullPath, content: '' });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     setCreateFileOpen(false);
@@ -343,7 +413,9 @@ export default function EditorPage() {
   // ─── Rename file ───────────────────────────────────────
   const handleRename = useCallback(async () => {
     if (!project?.id || !renameNewName.trim()) return;
-    const dir = renamePath.includes('/') ? renamePath.substring(0, renamePath.lastIndexOf('/')) : '';
+    const dir = renamePath.includes('/')
+      ? renamePath.substring(0, renamePath.lastIndexOf('/'))
+      : '';
     const newPath = dir ? `${dir}/${renameNewName.trim()}` : renameNewName.trim();
 
     try {
@@ -424,7 +496,9 @@ export default function EditorPage() {
           <div className="flex flex-col flex-1 h-full overflow-hidden bg-[#252526]">
             {/* Explorer header */}
             <div className="flex items-center justify-between px-3 h-10 border-b border-[#1E1E1E] shrink-0">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Files</span>
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Files
+              </span>
               <div className="flex items-center gap-0.5">
                 <button
                   onClick={() => {
@@ -486,7 +560,9 @@ export default function EditorPage() {
             <div className="flex flex-col items-center justify-center h-full bg-[#1E1E1E] text-center px-8">
               <Paintbrush size={32} className="text-slate-500 mb-3" />
               <p className="text-sm text-slate-400 mb-1">Visual Builder</p>
-              <p className="text-xs text-slate-500">Open an HTML file first, then switch to Visual mode to drag & drop components.</p>
+              <p className="text-xs text-slate-500">
+                Open an HTML file first, then switch to Visual mode to drag & drop components.
+              </p>
             </div>
           );
         }
@@ -516,13 +592,15 @@ export default function EditorPage() {
             <div className="px-4 py-3 border-b border-[#2D2D2D]">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500">Status:</span>
-                <span className={clsx(
-                  'text-xs font-medium px-2 py-0.5 rounded-full',
-                  buildStatus === 'idle' && 'bg-slate-700 text-slate-400',
-                  buildStatus === 'building' && 'bg-amber-900/50 text-amber-400',
-                  buildStatus === 'success' && 'bg-green-900/50 text-green-400',
-                  buildStatus === 'error' && 'bg-red-900/50 text-red-400',
-                )}>
+                <span
+                  className={clsx(
+                    'text-xs font-medium px-2 py-0.5 rounded-full',
+                    buildStatus === 'idle' && 'bg-slate-700 text-slate-400',
+                    buildStatus === 'building' && 'bg-amber-900/50 text-amber-400',
+                    buildStatus === 'success' && 'bg-green-900/50 text-green-400',
+                    buildStatus === 'error' && 'bg-red-900/50 text-red-400',
+                  )}
+                >
                   {buildStatus === 'idle' ? 'Ready' : buildStatus}
                 </span>
               </div>
@@ -533,7 +611,9 @@ export default function EditorPage() {
                 <p className="text-slate-600">No build output yet. Click "Run Build" to start.</p>
               ) : (
                 terminalLogs.map((log, i) => (
-                  <div key={i} className="whitespace-pre-wrap leading-relaxed">{log}</div>
+                  <div key={i} className="whitespace-pre-wrap leading-relaxed">
+                    {log}
+                  </div>
                 ))
               )}
             </div>
@@ -567,13 +647,15 @@ export default function EditorPage() {
             <div className="px-4 py-3 border-b border-[#2D2D2D]">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs text-slate-500">Status:</span>
-                <span className={clsx(
-                  'text-xs font-medium px-2 py-0.5 rounded-full',
-                  deployStatus === 'idle' && 'bg-slate-700 text-slate-400',
-                  deployStatus === 'deploying' && 'bg-amber-900/50 text-amber-400',
-                  deployStatus === 'live' && 'bg-green-900/50 text-green-400',
-                  deployStatus === 'error' && 'bg-red-900/50 text-red-400',
-                )}>
+                <span
+                  className={clsx(
+                    'text-xs font-medium px-2 py-0.5 rounded-full',
+                    deployStatus === 'idle' && 'bg-slate-700 text-slate-400',
+                    deployStatus === 'deploying' && 'bg-amber-900/50 text-amber-400',
+                    deployStatus === 'live' && 'bg-green-900/50 text-green-400',
+                    deployStatus === 'error' && 'bg-red-900/50 text-red-400',
+                  )}
+                >
                   {deployStatus === 'idle' ? 'Not deployed' : deployStatus}
                 </span>
               </div>
@@ -607,7 +689,8 @@ export default function EditorPage() {
                   </li>
                 </ul>
                 <p className="text-slate-600 pt-2">
-                  Use the <strong className="text-slate-400">Ship</strong> tab for advanced deployment options (GitHub, Cloudflare, Vercel, etc.)
+                  Use the <strong className="text-slate-400">Ship</strong> tab for advanced
+                  deployment options (GitHub, Cloudflare, Vercel, etc.)
                 </p>
               </div>
             </div>
@@ -666,7 +749,10 @@ export default function EditorPage() {
               </button>
             }
           >
-            <DropdownItem icon={<History size={14} />} onClick={() => toast('info', 'Version history coming soon')}>
+            <DropdownItem
+              icon={<History size={14} />}
+              onClick={() => toast('info', 'Version history coming soon')}
+            >
               Version History
             </DropdownItem>
             <DropdownItem icon={<Globe size={14} />} onClick={() => setActiveTab('ship')}>
@@ -686,10 +772,7 @@ export default function EditorPage() {
       {/* ─── Main Content: Chat Left | Tabbed Right ─────── */}
       <div className="flex flex-1 overflow-hidden">
         {/* ── Left Panel: AI Chat (always visible, white) ── */}
-        <aside
-          className="shrink-0 flex flex-col overflow-hidden"
-          style={{ width: chatWidth }}
-        >
+        <aside className="shrink-0 flex flex-col overflow-hidden" style={{ width: chatWidth }}>
           <AiChat />
         </aside>
 
@@ -714,13 +797,17 @@ export default function EditorPage() {
               // Show status indicators on certain tabs
               let statusDot = null;
               if (tab.id === 'build' && buildStatus === 'building') {
-                statusDot = <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />;
+                statusDot = (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                );
               } else if (tab.id === 'build' && buildStatus === 'success') {
                 statusDot = <span className="w-1.5 h-1.5 rounded-full bg-green-400" />;
               } else if (tab.id === 'build' && buildStatus === 'error') {
                 statusDot = <span className="w-1.5 h-1.5 rounded-full bg-red-400" />;
               } else if (tab.id === 'deploy' && deployStatus === 'deploying') {
-                statusDot = <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />;
+                statusDot = (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                );
               } else if (tab.id === 'deploy' && deployStatus === 'live') {
                 statusDot = <span className="w-1.5 h-1.5 rounded-full bg-green-400" />;
               } else if (tab.id === 'deploy' && deployStatus === 'error') {
@@ -747,48 +834,59 @@ export default function EditorPage() {
           </nav>
 
           {/* Tab content */}
-          <div className="flex-1 overflow-hidden">
-            {renderTabContent()}
-          </div>
+          <div className="flex-1 overflow-hidden">{renderTabContent()}</div>
         </main>
       </div>
 
       {/* ─── Status Bar ──────────────────────────────────── */}
       <footer className="flex items-center justify-between px-3 h-6 bg-brand-600 text-white text-2xs shrink-0">
         <div className="flex items-center gap-3">
-          <span>{files.size} file{files.size !== 1 ? 's' : ''}</span>
-          {activeFile && (
-            <span className="text-white/70">{activeFile}</span>
-          )}
+          <span>
+            {files.size} file{files.size !== 1 ? 's' : ''}
+          </span>
+          {activeFile && <span className="text-white/70">{activeFile}</span>}
         </div>
         <div className="flex items-center gap-3">
           {/* WebContainer / Runtime status */}
-          <span className={clsx(
-            webcontainerReady ? 'text-green-200' :
-            sandboxStatus === 'creating' ? 'text-amber-200' :
-            sandboxStatus === 'error' ? 'text-red-200' :
-            'text-white/50',
-          )}>
+          <span
+            className={clsx(
+              webcontainerReady
+                ? 'text-green-200'
+                : sandboxStatus === 'creating'
+                  ? 'text-amber-200'
+                  : sandboxStatus === 'error'
+                    ? 'text-red-200'
+                    : 'text-white/50',
+            )}
+          >
             {webcontainerReady && '⚡ Instant'}
             {!webcontainerReady && sandboxStatus === 'creating' && '◌ Booting...'}
             {!webcontainerReady && sandboxStatus === 'error' && '✕ Runtime err'}
             {!webcontainerReady && sandboxStatus === 'idle' && '○ Local'}
           </span>
           {buildStatus !== 'idle' && (
-            <span className={clsx(
-              buildStatus === 'building' ? 'text-white/80' :
-              buildStatus === 'success' ? 'text-green-200' :
-              'text-red-200',
-            )}>
+            <span
+              className={clsx(
+                buildStatus === 'building'
+                  ? 'text-white/80'
+                  : buildStatus === 'success'
+                    ? 'text-green-200'
+                    : 'text-red-200',
+              )}
+            >
               Build: {buildStatus}
             </span>
           )}
           {deployStatus !== 'idle' && (
-            <span className={clsx(
-              deployStatus === 'deploying' ? 'text-white/80' :
-              deployStatus === 'live' ? 'text-green-200' :
-              'text-red-200',
-            )}>
+            <span
+              className={clsx(
+                deployStatus === 'deploying'
+                  ? 'text-white/80'
+                  : deployStatus === 'live'
+                    ? 'text-green-200'
+                    : 'text-red-200',
+              )}
+            >
               Deploy: {deployStatus}
             </span>
           )}
@@ -819,8 +917,12 @@ export default function EditorPage() {
             onKeyDown={(e) => e.key === 'Enter' && handleCreateFile()}
           />
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setCreateFileOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={handleCreateFile} disabled={!newFileName.trim()}>Create</Button>
+            <Button variant="secondary" size="sm" onClick={() => setCreateFileOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleCreateFile} disabled={!newFileName.trim()}>
+              Create
+            </Button>
           </div>
         </div>
       </Modal>
@@ -840,8 +942,12 @@ export default function EditorPage() {
             onKeyDown={(e) => e.key === 'Enter' && handleRename()}
           />
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setRenameOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={handleRename} disabled={!renameNewName.trim()}>Rename</Button>
+            <Button variant="secondary" size="sm" onClick={() => setRenameOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleRename} disabled={!renameNewName.trim()}>
+              Rename
+            </Button>
           </div>
         </div>
       </Modal>
@@ -855,8 +961,12 @@ export default function EditorPage() {
         size="sm"
       >
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-          <Button variant="danger" size="sm" onClick={handleDelete}>Delete</Button>
+          <Button variant="secondary" size="sm" onClick={() => setDeleteOpen(false)}>
+            Cancel
+          </Button>
+          <Button variant="danger" size="sm" onClick={handleDelete}>
+            Delete
+          </Button>
         </div>
       </Modal>
     </div>

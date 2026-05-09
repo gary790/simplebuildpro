@@ -14,7 +14,7 @@ async function api(path: string, options: RequestInit = {}) {
   const url = `${API_URL}/api/v1${path}`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
+    ...((options.headers as Record<string, string>) || {}),
   };
   if (accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
@@ -133,7 +133,8 @@ describe('Files API', () => {
         body: JSON.stringify({
           projectId,
           path: 'index.html',
-          content: '<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello</h1></body></html>',
+          content:
+            '<!DOCTYPE html><html><head><title>Test</title></head><body><h1>Hello</h1></body></html>',
         }),
       });
       expect([200, 201]).toContain(res.status);
@@ -148,7 +149,8 @@ describe('Files API', () => {
         body: JSON.stringify({
           projectId,
           path: 'index.html',
-          content: '<!DOCTYPE html><html><head><title>Updated</title></head><body><h1>Updated</h1></body></html>',
+          content:
+            '<!DOCTYPE html><html><head><title>Updated</title></head><body><h1>Updated</h1></body></html>',
         }),
       });
       expect([200, 201]).toContain(res.status);

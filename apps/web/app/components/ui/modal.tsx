@@ -25,7 +25,15 @@ const sizeStyles = {
   xl: 'max-w-xl',
 };
 
-export function Modal({ open, onClose, title, description, children, size = 'md', className }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  size = 'md',
+  className,
+}: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

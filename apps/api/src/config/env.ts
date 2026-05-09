@@ -79,10 +79,7 @@ const REQUIRED_PRODUCTION: (keyof EnvConfig)[] = [
 ];
 
 // Required in all environments
-const REQUIRED_ALWAYS: (keyof EnvConfig)[] = [
-  'JWT_SECRET',
-  'JWT_REFRESH_SECRET',
-];
+const REQUIRED_ALWAYS: (keyof EnvConfig)[] = ['JWT_SECRET', 'JWT_REFRESH_SECRET'];
 
 /**
  * Load and validate environment configuration
@@ -132,12 +129,10 @@ export function loadConfig(): EnvConfig {
   }
 
   if (missing.length > 0 && nodeEnv === 'production') {
-    throw new Error(
-      `Missing required environment variables for ${nodeEnv}: ${missing.join(', ')}`
-    );
+    throw new Error(`Missing required environment variables for ${nodeEnv}: ${missing.join(', ')}`);
   } else if (missing.length > 0) {
     console.warn(
-      `⚠️  Missing environment variables (non-critical in ${nodeEnv}): ${missing.join(', ')}`
+      `⚠️  Missing environment variables (non-critical in ${nodeEnv}): ${missing.join(', ')}`,
     );
   }
 

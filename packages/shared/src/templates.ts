@@ -13,7 +13,13 @@ export interface StarterTemplate {
   thumbnail: string | null;
 }
 
-export type TemplateCategory = 'blank' | 'landing' | 'portfolio' | 'blog' | 'business' | 'ecommerce';
+export type TemplateCategory =
+  | 'blank'
+  | 'landing'
+  | 'portfolio'
+  | 'blog'
+  | 'business'
+  | 'ecommerce';
 
 export const STARTER_TEMPLATES: StarterTemplate[] = [
   {

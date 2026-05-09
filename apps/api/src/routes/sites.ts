@@ -49,7 +49,7 @@ function getMimeType(path: string): string {
 // This catches ALL requests to *.sites.simplebuildpro.com
 sitesRoutes.all('/*', async (c) => {
   const host = c.req.header('host') || '';
-  
+
   // Extract slug from hostname: {slug}.sites.simplebuildpro.com
   const sitesMatch = host.match(/^([^.]+)\.sites\./i) || host.match(/^([^.]+)\./i);
   if (!sitesMatch) {
@@ -91,7 +91,10 @@ sitesRoutes.all('/*', async (c) => {
       if (!filePath.includes('.')) {
         try {
           const storage = getStorageService();
-          const htmlContent = await storage.download(GCS_BUCKET_DEPLOYS, `sites/${slug}/${filePath}.html`);
+          const htmlContent = await storage.download(
+            GCS_BUCKET_DEPLOYS,
+            `sites/${slug}/${filePath}.html`,
+          );
           return new Response(htmlContent, {
             status: 200,
             headers: {
@@ -107,7 +110,10 @@ sitesRoutes.all('/*', async (c) => {
       // Try serving 404.html if it exists
       try {
         const storage = getStorageService();
-        const notFoundContent = await storage.download(GCS_BUCKET_DEPLOYS, `sites/${slug}/404.html`);
+        const notFoundContent = await storage.download(
+          GCS_BUCKET_DEPLOYS,
+          `sites/${slug}/404.html`,
+        );
         return new Response(notFoundContent, {
           status: 404,
           headers: {
@@ -119,7 +125,8 @@ sitesRoutes.all('/*', async (c) => {
         // Default 404
       }
 
-      return c.html(`
+      return c.html(
+        `
         <!DOCTYPE html>
         <html>
         <head><title>404 - Not Found</title></head>
@@ -131,12 +138,15 @@ sitesRoutes.all('/*', async (c) => {
           </div>
         </body>
         </html>
-      `, 404);
+      `,
+        404,
+      );
     }
 
     // Other errors
     console.error(`[Sites] Error serving ${gcsPath}:`, err.message);
-    return c.html(`
+    return c.html(
+      `
       <!DOCTYPE html>
       <html>
       <head><title>500 - Server Error</title></head>
@@ -147,6 +157,8 @@ sitesRoutes.all('/*', async (c) => {
         </div>
       </body>
       </html>
-    `, 500);
+    `,
+      500,
+    );
   }
 });

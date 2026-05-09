@@ -149,7 +149,13 @@ export interface Deployment {
   completedAt: string | null;
 }
 
-export type DeploymentStatus = 'queued' | 'building' | 'deploying' | 'live' | 'failed' | 'rolled_back';
+export type DeploymentStatus =
+  | 'queued'
+  | 'building'
+  | 'deploying'
+  | 'live'
+  | 'failed'
+  | 'rolled_back';
 
 export interface CustomDomain {
   id: string;

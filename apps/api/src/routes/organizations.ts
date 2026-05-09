@@ -26,7 +26,11 @@ import { sql } from 'drizzle-orm';
 // ─── Create Organization ─────────────────────────────────────
 const createOrgSchema = z.object({
   name: z.string().min(2).max(100),
-  slug: z.string().min(2).max(48).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .min(2)
+    .max(48)
+    .regex(/^[a-z0-9-]+$/),
 });
 
 orgRoutes.post('/', async (c) => {
@@ -45,12 +49,15 @@ orgRoutes.post('/', async (c) => {
   }
 
   // Create org
-  const [org] = await db.insert(organizations).values({
-    name,
-    slug,
-    ownerId: session.userId,
-    plan: session.plan || 'free',
-  }).returning();
+  const [org] = await db
+    .insert(organizations)
+    .values({
+      name,
+      slug,
+      ownerId: session.userId,
+      plan: session.plan || 'free',
+    })
+    .returning();
 
   // Add creator as owner member
   await db.insert(orgMembers).values({
@@ -60,20 +67,24 @@ orgRoutes.post('/', async (c) => {
   });
 
   // Update user's organizationId
-  await db.update(users)
+  await db
+    .update(users)
     .set({ organizationId: org.id, updatedAt: new Date() })
     .where(eq(users.id, session.userId));
 
-  return c.json({
-    success: true,
-    data: {
-      id: org.id,
-      name: org.name,
-      slug: org.slug,
-      plan: org.plan,
-      createdAt: org.createdAt.toISOString(),
+  return c.json(
+    {
+      success: true,
+      data: {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        plan: org.plan,
+        createdAt: org.createdAt.toISOString(),
+      },
     },
-  }, 201);
+    201,
+  );
 });
 
 // ─── Get Organization ────────────────────────────────────────
@@ -90,13 +101,11 @@ orgRoutes.get('/:orgId', async (c) => {
 
   // Check membership
   const membership = await db.query.orgMembers.findFirst({
-    where: and(
-      eq(orgMembers.organizationId, orgId),
-      eq(orgMembers.userId, session.userId),
-    ),
+    where: and(eq(orgMembers.organizationId, orgId), eq(orgMembers.userId, session.userId)),
   });
 
-  if (!membership) throw new AppError(403, 'FORBIDDEN', 'You are not a member of this organization.');
+  if (!membership)
+    throw new AppError(403, 'FORBIDDEN', 'You are not a member of this organization.');
 
   return c.json({ success: true, data: org });
 });
@@ -109,26 +118,24 @@ orgRoutes.get('/:orgId/members', async (c) => {
 
   // Verify membership
   const membership = await db.query.orgMembers.findFirst({
-    where: and(
-      eq(orgMembers.organizationId, orgId),
-      eq(orgMembers.userId, session.userId),
-    ),
+    where: and(eq(orgMembers.organizationId, orgId), eq(orgMembers.userId, session.userId)),
   });
 
   if (!membership) throw new AppError(403, 'FORBIDDEN', 'Not a member of this organization.');
 
-  const members = await db.select({
-    id: orgMembers.id,
-    role: orgMembers.role,
-    createdAt: orgMembers.createdAt,
-    userId: users.id,
-    email: users.email,
-    name: users.name,
-    avatarUrl: users.avatarUrl,
-  })
-  .from(orgMembers)
-  .innerJoin(users, eq(orgMembers.userId, users.id))
-  .where(eq(orgMembers.organizationId, orgId));
+  const members = await db
+    .select({
+      id: orgMembers.id,
+      role: orgMembers.role,
+      createdAt: orgMembers.createdAt,
+      userId: users.id,
+      email: users.email,
+      name: users.name,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(orgMembers)
+    .innerJoin(users, eq(orgMembers.userId, users.id))
+    .where(eq(orgMembers.organizationId, orgId));
 
   return c.json({ success: true, data: members });
 });
@@ -149,10 +156,7 @@ orgRoutes.patch('/:orgId/members/:memberId', async (c) => {
 
   // Verify caller is owner or admin
   const callerMembership = await db.query.orgMembers.findFirst({
-    where: and(
-      eq(orgMembers.organizationId, orgId),
-      eq(orgMembers.userId, session.userId),
-    ),
+    where: and(eq(orgMembers.organizationId, orgId), eq(orgMembers.userId, session.userId)),
   });
 
   if (!callerMembership || !['owner', 'admin'].includes(callerMembership.role)) {
@@ -165,11 +169,10 @@ orgRoutes.patch('/:orgId/members/:memberId', async (c) => {
   });
 
   if (!targetMember) throw new AppError(404, 'NOT_FOUND', 'Member not found.');
-  if (targetMember.role === 'owner') throw new AppError(400, 'CANNOT_CHANGE_OWNER', 'Cannot change the owner role.');
+  if (targetMember.role === 'owner')
+    throw new AppError(400, 'CANNOT_CHANGE_OWNER', 'Cannot change the owner role.');
 
-  await db.update(orgMembers)
-    .set({ role })
-    .where(eq(orgMembers.id, memberId));
+  await db.update(orgMembers).set({ role }).where(eq(orgMembers.id, memberId));
 
   return c.json({ success: true, data: { message: 'Role updated.' } });
 });
@@ -184,10 +187,7 @@ orgRoutes.delete('/:orgId/members/:memberId', async (c) => {
 
   // Verify caller is owner or admin
   const callerMembership = await db.query.orgMembers.findFirst({
-    where: and(
-      eq(orgMembers.organizationId, orgId),
-      eq(orgMembers.userId, session.userId),
-    ),
+    where: and(eq(orgMembers.organizationId, orgId), eq(orgMembers.userId, session.userId)),
   });
 
   if (!callerMembership || !['owner', 'admin'].includes(callerMembership.role)) {
@@ -199,7 +199,8 @@ orgRoutes.delete('/:orgId/members/:memberId', async (c) => {
   });
 
   if (!targetMember) throw new AppError(404, 'NOT_FOUND', 'Member not found.');
-  if (targetMember.role === 'owner') throw new AppError(400, 'CANNOT_REMOVE_OWNER', 'Cannot remove the organization owner.');
+  if (targetMember.role === 'owner')
+    throw new AppError(400, 'CANNOT_REMOVE_OWNER', 'Cannot remove the organization owner.');
 
   await db.delete(orgMembers).where(eq(orgMembers.id, memberId));
 
@@ -222,10 +223,7 @@ orgRoutes.post('/:orgId/invitations', async (c) => {
 
   // Verify caller is owner or admin
   const callerMembership = await db.query.orgMembers.findFirst({
-    where: and(
-      eq(orgMembers.organizationId, orgId),
-      eq(orgMembers.userId, session.userId),
-    ),
+    where: and(eq(orgMembers.organizationId, orgId), eq(orgMembers.userId, session.userId)),
   });
 
   if (!callerMembership || !['owner', 'admin'].includes(callerMembership.role)) {
@@ -239,10 +237,7 @@ orgRoutes.post('/:orgId/invitations', async (c) => {
 
   if (existingUser) {
     const existingMember = await db.query.orgMembers.findFirst({
-      where: and(
-        eq(orgMembers.organizationId, orgId),
-        eq(orgMembers.userId, existingUser.id),
-      ),
+      where: and(eq(orgMembers.organizationId, orgId), eq(orgMembers.userId, existingUser.id)),
     });
     if (existingMember) {
       throw new AppError(409, 'ALREADY_MEMBER', 'This user is already a member.');
@@ -262,16 +257,19 @@ orgRoutes.post('/:orgId/invitations', async (c) => {
   // TODO: Send invitation email via SendGrid/Resend
   const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/invite/${token}`;
 
-  return c.json({
-    success: true,
-    data: {
-      email,
-      role,
-      inviteUrl,
-      expiresAt: expiresAt.toISOString(),
-      message: `Invitation sent to ${email}.`,
+  return c.json(
+    {
+      success: true,
+      data: {
+        email,
+        role,
+        inviteUrl,
+        expiresAt: expiresAt.toISOString(),
+        message: `Invitation sent to ${email}.`,
+      },
     },
-  }, 201);
+    201,
+  );
 });
 
 // ─── Accept Invitation ───────────────────────────────────────
@@ -282,9 +280,9 @@ orgRoutes.post('/invitations/:token/accept', async (c) => {
   const db = getDb();
 
   // Find invitation
-  const [invitation] = await db.execute(sql`
+  const [invitation] = (await db.execute(sql`
     SELECT * FROM org_invitations WHERE token = ${token} AND accepted_at IS NULL
-  `) as unknown as any[];
+  `)) as unknown as any[];
 
   if (!invitation) {
     throw new AppError(404, 'INVITATION_NOT_FOUND', 'Invitation not found or already accepted.');
@@ -300,7 +298,11 @@ orgRoutes.post('/invitations/:token/accept', async (c) => {
   });
 
   if (!user || user.email !== invitation.email) {
-    throw new AppError(403, 'EMAIL_MISMATCH', 'This invitation was sent to a different email address.');
+    throw new AppError(
+      403,
+      'EMAIL_MISMATCH',
+      'This invitation was sent to a different email address.',
+    );
   }
 
   // Add as member
@@ -311,7 +313,8 @@ orgRoutes.post('/invitations/:token/accept', async (c) => {
   });
 
   // Update user's org
-  await db.update(users)
+  await db
+    .update(users)
     .set({ organizationId: invitation.organization_id, updatedAt: new Date() })
     .where(eq(users.id, session.userId));
 
@@ -332,10 +335,7 @@ orgRoutes.get('/:orgId/invitations', async (c) => {
 
   // Verify membership
   const membership = await db.query.orgMembers.findFirst({
-    where: and(
-      eq(orgMembers.organizationId, orgId),
-      eq(orgMembers.userId, session.userId),
-    ),
+    where: and(eq(orgMembers.organizationId, orgId), eq(orgMembers.userId, session.userId)),
   });
 
   if (!membership || !['owner', 'admin'].includes(membership.role)) {
@@ -362,10 +362,7 @@ orgRoutes.delete('/:orgId/invitations/:invitationId', async (c) => {
 
   // Verify caller is owner or admin
   const membership = await db.query.orgMembers.findFirst({
-    where: and(
-      eq(orgMembers.organizationId, orgId),
-      eq(orgMembers.userId, session.userId),
-    ),
+    where: and(eq(orgMembers.organizationId, orgId), eq(orgMembers.userId, session.userId)),
   });
 
   if (!membership || !['owner', 'admin'].includes(membership.role)) {

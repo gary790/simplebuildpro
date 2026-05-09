@@ -37,7 +37,7 @@ assetRoutes.get('/:projectId', async (c) => {
 
   return c.json({
     success: true,
-    data: assets.map(a => ({
+    data: assets.map((a) => ({
       id: a.id,
       filename: a.filename,
       originalFilename: a.originalFilename,
@@ -68,14 +68,21 @@ assetRoutes.post('/:projectId/upload', async (c) => {
   const file = formData.get('file');
 
   if (!file || !(file instanceof File)) {
-    throw new AppError(400, 'NO_FILE', 'No file provided. Include a "file" field in multipart form data.');
+    throw new AppError(
+      400,
+      'NO_FILE',
+      'No file provided. Include a "file" field in multipart form data.',
+    );
   }
 
   // Validate file size
   const limits = PLAN_LIMITS[session.plan];
   if (file.size > limits.maxAssetSize) {
-    throw new AppError(413, 'FILE_TOO_LARGE',
-      `File exceeds ${limits.maxAssetSize / 1024 / 1024}MB limit for your ${session.plan} plan.`);
+    throw new AppError(
+      413,
+      'FILE_TOO_LARGE',
+      `File exceeds ${limits.maxAssetSize / 1024 / 1024}MB limit for your ${session.plan} plan.`,
+    );
   }
 
   // Generate unique filename
@@ -115,32 +122,38 @@ assetRoutes.post('/:projectId/upload', async (c) => {
   }
 
   // Save to database
-  const [asset] = await db.insert(projectAssets).values({
-    projectId,
-    filename: uniqueFilename,
-    originalFilename: file.name,
-    gcsKey,
-    cdnUrl,
-    mimeType: file.type,
-    sizeBytes: file.size,
-    width,
-    height,
-  }).returning();
+  const [asset] = await db
+    .insert(projectAssets)
+    .values({
+      projectId,
+      filename: uniqueFilename,
+      originalFilename: file.name,
+      gcsKey,
+      cdnUrl,
+      mimeType: file.type,
+      sizeBytes: file.size,
+      width,
+      height,
+    })
+    .returning();
 
-  return c.json({
-    success: true,
-    data: {
-      id: asset.id,
-      filename: asset.filename,
-      originalFilename: asset.originalFilename,
-      cdnUrl: asset.cdnUrl,
-      mimeType: asset.mimeType,
-      sizeBytes: asset.sizeBytes,
-      width: asset.width,
-      height: asset.height,
-      createdAt: asset.createdAt.toISOString(),
+  return c.json(
+    {
+      success: true,
+      data: {
+        id: asset.id,
+        filename: asset.filename,
+        originalFilename: asset.originalFilename,
+        cdnUrl: asset.cdnUrl,
+        mimeType: asset.mimeType,
+        sizeBytes: asset.sizeBytes,
+        width: asset.width,
+        height: asset.height,
+        createdAt: asset.createdAt.toISOString(),
+      },
     },
-  }, 201);
+    201,
+  );
 });
 
 // ─── Generate Signed Upload URL (for large files) ────────────
@@ -165,8 +178,11 @@ assetRoutes.post('/:projectId/upload-url', async (c) => {
 
   const limits = PLAN_LIMITS[session.plan];
   if (sizeBytes > limits.maxAssetSize) {
-    throw new AppError(413, 'FILE_TOO_LARGE',
-      `File exceeds ${limits.maxAssetSize / 1024 / 1024}MB limit.`);
+    throw new AppError(
+      413,
+      'FILE_TOO_LARGE',
+      `File exceeds ${limits.maxAssetSize / 1024 / 1024}MB limit.`,
+    );
   }
 
   const ext = filename.split('.').pop()?.toLowerCase() || '';
@@ -213,27 +229,33 @@ assetRoutes.post('/:projectId/confirm-upload', async (c) => {
   const filename = data.gcsKey.split('/').pop() || data.originalFilename;
   const cdnUrl = `${CDN_URL}/${data.gcsKey}`;
 
-  const [asset] = await db.insert(projectAssets).values({
-    projectId,
-    filename,
-    originalFilename: data.originalFilename,
-    gcsKey: data.gcsKey,
-    cdnUrl,
-    mimeType: data.mimeType,
-    sizeBytes: data.sizeBytes,
-    width: data.width || null,
-    height: data.height || null,
-  }).returning();
+  const [asset] = await db
+    .insert(projectAssets)
+    .values({
+      projectId,
+      filename,
+      originalFilename: data.originalFilename,
+      gcsKey: data.gcsKey,
+      cdnUrl,
+      mimeType: data.mimeType,
+      sizeBytes: data.sizeBytes,
+      width: data.width || null,
+      height: data.height || null,
+    })
+    .returning();
 
-  return c.json({
-    success: true,
-    data: {
-      id: asset.id,
-      filename: asset.filename,
-      cdnUrl: asset.cdnUrl,
-      createdAt: asset.createdAt.toISOString(),
+  return c.json(
+    {
+      success: true,
+      data: {
+        id: asset.id,
+        filename: asset.filename,
+        cdnUrl: asset.cdnUrl,
+        createdAt: asset.createdAt.toISOString(),
+      },
     },
-  }, 201);
+    201,
+  );
 });
 
 // ─── Delete Asset ────────────────────────────────────────────

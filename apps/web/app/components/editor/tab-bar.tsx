@@ -12,9 +12,20 @@ import { X, FileCode } from 'lucide-react';
 function getExtIcon(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() || '';
   const icons: Record<string, string> = {
-    html: '🟠', htm: '🟠', css: '🔵', scss: '🩷', js: '🟡',
-    jsx: '🟡', ts: '🔷', tsx: '🔷', json: '🟢', md: '📝',
-    svg: '🟤', xml: '📄', yaml: '⚙️', yml: '⚙️',
+    html: '🟠',
+    htm: '🟠',
+    css: '🔵',
+    scss: '🩷',
+    js: '🟡',
+    jsx: '🟡',
+    ts: '🔷',
+    tsx: '🔷',
+    json: '🟢',
+    md: '📝',
+    svg: '🟤',
+    xml: '📄',
+    yaml: '⚙️',
+    yml: '⚙️',
   };
   return icons[ext] || '📄';
 }
@@ -43,9 +54,7 @@ export function TabBar() {
           >
             <span className="text-2xs leading-none">{getExtIcon(fileName)}</span>
             <span className="truncate max-w-[120px]">{fileName}</span>
-            {tab.isDirty && (
-              <span className="w-2 h-2 rounded-full bg-white/40 shrink-0" />
-            )}
+            {tab.isDirty && <span className="w-2 h-2 rounded-full bg-white/40 shrink-0" />}
             <button
               onClick={(e) => {
                 e.stopPropagation();

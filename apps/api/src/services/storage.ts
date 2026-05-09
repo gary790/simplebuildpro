@@ -70,7 +70,7 @@ export class StorageService {
     bucket: string,
     key: string,
     contentType: string,
-    expiresInMs: number = 3600_000
+    expiresInMs: number = 3600_000,
   ): Promise<string> {
     const file = this.storage.bucket(bucket).file(key);
     const [url] = await file.getSignedUrl({
@@ -85,7 +85,7 @@ export class StorageService {
   async getSignedDownloadUrl(
     bucket: string,
     key: string,
-    expiresInMs: number = 3600_000
+    expiresInMs: number = 3600_000,
   ): Promise<string> {
     const file = this.storage.bucket(bucket).file(key);
     const [url] = await file.getSignedUrl({
@@ -98,9 +98,9 @@ export class StorageService {
 
   async listFiles(bucket: string, prefix: string): Promise<{ name: string; size: number }[]> {
     const [files] = await this.storage.bucket(bucket).getFiles({ prefix });
-    return files.map(f => ({
+    return files.map((f) => ({
       name: f.name,
-      size: parseInt(f.metadata.size as string || '0', 10),
+      size: parseInt((f.metadata.size as string) || '0', 10),
     }));
   }
 
@@ -108,7 +108,7 @@ export class StorageService {
     sourceBucket: string,
     sourceKey: string,
     destBucket: string,
-    destKey: string
+    destKey: string,
   ): Promise<void> {
     const sourceFile = this.storage.bucket(sourceBucket).file(sourceKey);
     const destFile = this.storage.bucket(destBucket).file(destKey);
@@ -119,7 +119,7 @@ export class StorageService {
   async uploadBatch(
     bucket: string,
     files: { key: string; data: Buffer; contentType: string; cacheControl?: string }[],
-    concurrency: number = 10
+    concurrency: number = 10,
   ): Promise<number> {
     let uploaded = 0;
     const queue = [...files];

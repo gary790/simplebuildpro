@@ -8,7 +8,14 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { getDb } from '@simplebuildpro/db';
-import { projects, projectFiles, aiConversations, aiMessages, usageLogs, userConnections } from '@simplebuildpro/db';
+import {
+  projects,
+  projectFiles,
+  aiConversations,
+  aiMessages,
+  usageLogs,
+  userConnections,
+} from '@simplebuildpro/db';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { requireAuth, type AuthEnv } from '../middleware/auth';
 import { AppError } from '../middleware/error-handler';
@@ -25,7 +32,12 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
 function getAnthropicKey(): string {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new AppError(500, 'AI_NOT_CONFIGURED', 'AI service is not configured. Set ANTHROPIC_API_KEY.');
+  if (!key)
+    throw new AppError(
+      500,
+      'AI_NOT_CONFIGURED',
+      'AI service is not configured. Set ANTHROPIC_API_KEY.',
+    );
   return key;
 }
 
@@ -97,7 +109,7 @@ const DEPLOY_TOOLS = [
   },
   {
     name: 'list_connections',
-    description: 'List the user\'s connected accounts (GitHub, Cloudflare, etc.).',
+    description: "List the user's connected accounts (GitHub, Cloudflare, etc.).",
     input_schema: {
       type: 'object' as const,
       properties: {},
@@ -124,7 +136,7 @@ async function executeDeployTool(
         return {
           success: true,
           result: {
-            connections: connections.map(c => ({
+            connections: connections.map((c) => ({
               provider: c.provider,
               displayName: c.displayName,
               accountId: c.accountId,
@@ -142,10 +154,17 @@ async function executeDeployTool(
 
         const { repo, branch = 'main', commit_message } = toolInput;
         const connection = await db.query.userConnections.findFirst({
-          where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'github_repo')),
+          where: and(
+            eq(userConnections.userId, userId),
+            eq(userConnections.provider, 'github_repo'),
+          ),
         });
         if (!connection?.accessToken) {
-          return { success: false, result: null, error: 'GitHub account not connected. Connect via Settings.' };
+          return {
+            success: false,
+            result: null,
+            error: 'GitHub account not connected. Connect via Settings.',
+          };
         }
 
         const token = decrypt(connection.accessToken);
@@ -153,7 +172,9 @@ async function executeDeployTool(
           return { success: false, result: null, error: 'No files to push.' };
         }
 
-        const [owner, repoName] = repo.includes('/') ? repo.split('/') : [connection.displayName, repo];
+        const [owner, repoName] = repo.includes('/')
+          ? repo.split('/')
+          : [connection.displayName, repo];
         const apiBase = `https://api.github.com/repos/${owner}/${repoName}`;
         const headers = {
           Authorization: `Bearer ${token}`,
@@ -168,56 +189,71 @@ async function executeDeployTool(
         try {
           const refRes = await fetch(`${apiBase}/git/ref/heads/${branch}`, { headers });
           if (refRes.ok) {
-            const refData = await refRes.json() as any;
+            const refData = (await refRes.json()) as any;
             baseSha = refData.object.sha;
             const commitRes = await fetch(`${apiBase}/git/commits/${baseSha}`, { headers });
-            const commitData = await commitRes.json() as any;
+            const commitData = (await commitRes.json()) as any;
             baseTreeSha = commitData.tree.sha;
           }
-        } catch { /* Branch doesn't exist */ }
+        } catch {
+          /* Branch doesn't exist */
+        }
 
         const treeItems: any[] = [];
         for (const file of dbFiles) {
           const blobRes = await fetch(`${apiBase}/git/blobs`, {
-            method: 'POST', headers,
+            method: 'POST',
+            headers,
             body: JSON.stringify({ content: file.content || '', encoding: 'utf-8' }),
           });
           if (!blobRes.ok) throw new Error(`Blob failed for ${file.path}`);
-          const blobData = await blobRes.json() as any;
+          const blobData = (await blobRes.json()) as any;
           treeItems.push({ path: file.path, mode: '100644', type: 'blob', sha: blobData.sha });
         }
 
         const treePayload: any = { tree: treeItems };
         if (baseTreeSha) treePayload.base_tree = baseTreeSha;
         const treeRes = await fetch(`${apiBase}/git/trees`, {
-          method: 'POST', headers, body: JSON.stringify(treePayload),
+          method: 'POST',
+          headers,
+          body: JSON.stringify(treePayload),
         });
         if (!treeRes.ok) throw new Error('Tree creation failed');
-        const treeData = await treeRes.json() as any;
+        const treeData = (await treeRes.json()) as any;
 
         const commitPayload: any = { message: commit_message, tree: treeData.sha };
         if (baseSha) commitPayload.parents = [baseSha];
         const commitRes = await fetch(`${apiBase}/git/commits`, {
-          method: 'POST', headers, body: JSON.stringify(commitPayload),
+          method: 'POST',
+          headers,
+          body: JSON.stringify(commitPayload),
         });
         if (!commitRes.ok) throw new Error('Commit creation failed');
-        const commitData = await commitRes.json() as any;
+        const commitData = (await commitRes.json()) as any;
 
         if (baseSha) {
           await fetch(`${apiBase}/git/refs/heads/${branch}`, {
-            method: 'PATCH', headers, body: JSON.stringify({ sha: commitData.sha, force: true }),
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({ sha: commitData.sha, force: true }),
           });
         } else {
           await fetch(`${apiBase}/git/refs`, {
-            method: 'POST', headers, body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitData.sha }),
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitData.sha }),
           });
         }
 
-        logger.info(`[AI Tool] GitHub push: ${owner}/${repoName}#${branch} — ${dbFiles.length} files`);
+        logger.info(
+          `[AI Tool] GitHub push: ${owner}/${repoName}#${branch} — ${dbFiles.length} files`,
+        );
         return {
           success: true,
           result: {
-            status: 'success', commitSha: commitData.sha, filesCount: dbFiles.length,
+            status: 'success',
+            commitSha: commitData.sha,
+            filesCount: dbFiles.length,
             url: `https://github.com/${owner}/${repoName}/tree/${branch}`,
           },
         };
@@ -226,7 +262,10 @@ async function executeDeployTool(
       case 'cloudflare_deploy': {
         const { project_name } = toolInput;
         const connection = await db.query.userConnections.findFirst({
-          where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'cloudflare')),
+          where: and(
+            eq(userConnections.userId, userId),
+            eq(userConnections.provider, 'cloudflare'),
+          ),
         });
         if (!connection?.accessToken) {
           return { success: false, result: null, error: 'Cloudflare account not connected.' };
@@ -234,21 +273,34 @@ async function executeDeployTool(
 
         const cfToken = decrypt(connection.accessToken);
         const accountId = connection.accountId;
-        if (!accountId) return { success: false, result: null, error: 'Cloudflare account ID not found.' };
+        if (!accountId)
+          return { success: false, result: null, error: 'Cloudflare account ID not found.' };
 
         const dbFiles = await db.query.projectFiles.findMany({
           where: eq(projectFiles.projectId, projectId),
         });
-        if (dbFiles.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
+        if (dbFiles.length === 0)
+          return { success: false, result: null, error: 'No files to deploy.' };
 
-        const cfHeaders = { Authorization: `Bearer ${cfToken}`, 'Content-Type': 'application/json' };
-        const checkRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${project_name}`, { headers: cfHeaders });
+        const cfHeaders = {
+          Authorization: `Bearer ${cfToken}`,
+          'Content-Type': 'application/json',
+        };
+        const checkRes = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${project_name}`,
+          { headers: cfHeaders },
+        );
         if (!checkRes.ok) {
-          const createRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`, {
-            method: 'POST', headers: cfHeaders, body: JSON.stringify({ name: project_name, production_branch: 'main' }),
-          });
+          const createRes = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`,
+            {
+              method: 'POST',
+              headers: cfHeaders,
+              body: JSON.stringify({ name: project_name, production_branch: 'main' }),
+            },
+          );
           if (!createRes.ok) {
-            const err = await createRes.json() as any;
+            const err = (await createRes.json()) as any;
             throw new Error(`Create project failed: ${JSON.stringify(err.errors)}`);
           }
         }
@@ -262,14 +314,19 @@ async function executeDeployTool(
           { method: 'POST', headers: { Authorization: `Bearer ${cfToken}` }, body: formData },
         );
         if (!deployRes.ok) {
-          const err = await deployRes.json() as any;
+          const err = (await deployRes.json()) as any;
           throw new Error(`Deploy failed: ${JSON.stringify(err.errors)}`);
         }
-        const deployData = await deployRes.json() as any;
+        const deployData = (await deployRes.json()) as any;
         const deployUrl = deployData.result?.url || `https://${project_name}.pages.dev`;
 
-        logger.info(`[AI Tool] Cloudflare deploy: ${project_name} — ${dbFiles.length} files → ${deployUrl}`);
-        return { success: true, result: { status: 'success', url: deployUrl, filesCount: dbFiles.length } };
+        logger.info(
+          `[AI Tool] Cloudflare deploy: ${project_name} — ${dbFiles.length} files → ${deployUrl}`,
+        );
+        return {
+          success: true,
+          result: { status: 'success', url: deployUrl, filesCount: dbFiles.length },
+        };
       }
 
       case 'vercel_deploy': {
@@ -277,26 +334,40 @@ async function executeDeployTool(
         const connection = await db.query.userConnections.findFirst({
           where: and(eq(userConnections.userId, userId), eq(userConnections.provider, 'vercel')),
         });
-        if (!connection?.accessToken) return { success: false, result: null, error: 'Vercel account not connected.' };
+        if (!connection?.accessToken)
+          return { success: false, result: null, error: 'Vercel account not connected.' };
 
         const vToken = decrypt(connection.accessToken);
         const dbFiles = await db.query.projectFiles.findMany({
           where: eq(projectFiles.projectId, projectId),
         });
-        if (dbFiles.length === 0) return { success: false, result: null, error: 'No files to deploy.' };
+        if (dbFiles.length === 0)
+          return { success: false, result: null, error: 'No files to deploy.' };
 
-        const vercelFiles = dbFiles.map(f => ({ file: f.path, data: f.content || '' }));
+        const vercelFiles = dbFiles.map((f) => ({ file: f.path, data: f.content || '' }));
         const deployRes = await fetch('https://api.vercel.com/v13/deployments', {
           method: 'POST',
           headers: { Authorization: `Bearer ${vToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: project_name, files: vercelFiles, projectSettings: { framework: null }, target: 'production' }),
+          body: JSON.stringify({
+            name: project_name,
+            files: vercelFiles,
+            projectSettings: { framework: null },
+            target: 'production',
+          }),
         });
         if (!deployRes.ok) {
-          const err = await deployRes.json() as any;
+          const err = (await deployRes.json()) as any;
           throw new Error(`Vercel deploy failed: ${err.error?.message || JSON.stringify(err)}`);
         }
-        const deployData = await deployRes.json() as any;
-        return { success: true, result: { status: 'success', url: `https://${deployData.url}`, filesCount: dbFiles.length } };
+        const deployData = (await deployRes.json()) as any;
+        return {
+          success: true,
+          result: {
+            status: 'success',
+            url: `https://${deployData.url}`,
+            filesCount: dbFiles.length,
+          },
+        };
       }
 
       case 'export_project': {
@@ -306,8 +377,12 @@ async function executeDeployTool(
         const totalSize = dbFiles.reduce((sum, f) => sum + (f.content?.length || 0), 0);
         return {
           success: true,
-          result: { status: 'success', filesCount: dbFiles.length, totalSizeBytes: totalSize,
-            message: 'Project export ready. Download from the Ship panel.' },
+          result: {
+            status: 'success',
+            filesCount: dbFiles.length,
+            totalSizeBytes: totalSize,
+            message: 'Project export ready. Download from the Ship panel.',
+          },
         };
       }
 
@@ -326,19 +401,16 @@ function buildSystemPrompt(
   assets: { filename: string; cdnUrl: string; mimeType: string }[],
   projectName: string,
 ): string {
-  const fileTree = fileList
-    .map(f => `  ${f.path}`)
-    .join('\n') || '  (empty project)';
+  const fileTree = fileList.map((f) => `  ${f.path}`).join('\n') || '  (empty project)';
 
-  const assetList = assets
-    .map(a => `- ${a.filename} (${a.mimeType}) → ${a.cdnUrl}`)
-    .join('\n');
+  const assetList = assets.map((a) => `- ${a.filename} (${a.mimeType}) → ${a.cdnUrl}`).join('\n');
 
   // Include existing file contents for context (truncated for large files)
   const existingFiles = fileList
-    .filter(f => f.content && f.content.length > 0)
-    .map(f => {
-      const content = f.content!.length > 8000 ? f.content!.slice(0, 8000) + '\n... (truncated)' : f.content;
+    .filter((f) => f.content && f.content.length > 0)
+    .map((f) => {
+      const content =
+        f.content!.length > 8000 ? f.content!.slice(0, 8000) + '\n... (truncated)' : f.content;
       return `### ${f.path}\n\`\`\`\n${content}\n\`\`\``;
     })
     .join('\n\n');
@@ -402,11 +474,7 @@ function createParseState(): ParseState {
  * Emits events as structured actions are detected.
  * Returns text that is NOT inside action blocks (= explanation text for the user).
  */
-function processChunk(
-  state: ParseState,
-  chunk: string,
-  emit: (data: any) => void,
-): string {
+function processChunk(state: ParseState, chunk: string, emit: (data: any) => void): string {
   state.buffer += chunk;
   let userText = '';
 
@@ -526,11 +594,16 @@ const sendMessageSchema = z.object({
   projectId: z.string().uuid(),
   conversationId: z.string().uuid().optional(),
   message: z.string().min(1).max(32000),
-  attachments: z.array(z.object({
-    filename: z.string(),
-    mimeType: z.string(),
-    url: z.string(),
-  })).optional().default([]),
+  attachments: z
+    .array(
+      z.object({
+        filename: z.string(),
+        mimeType: z.string(),
+        url: z.string(),
+      }),
+    )
+    .optional()
+    .default([]),
   // Phase 3: mode flag — 'build' (default) or 'deploy'
   mode: z.enum(['build', 'deploy']).optional().default('build'),
 });
@@ -553,16 +626,17 @@ aiRoutes.post('/chat/stream', async (c) => {
   // Check AI usage limits
   const limits = PLAN_LIMITS[session.plan as keyof typeof PLAN_LIMITS] || PLAN_LIMITS.free;
   if (limits.aiMessagesPerMonth !== -1) {
-    const [{ count: usageCount }] = await db.select({ count: count() })
+    const [{ count: usageCount }] = await db
+      .select({ count: count() })
       .from(aiMessages)
       .innerJoin(aiConversations, eq(aiMessages.conversationId, aiConversations.id))
-      .where(and(
-        eq(aiConversations.userId, session.userId),
-        eq(aiMessages.role, 'user'),
-      ));
+      .where(and(eq(aiConversations.userId, session.userId), eq(aiMessages.role, 'user')));
     if (usageCount >= limits.aiMessagesPerMonth) {
-      throw new AppError(403, 'AI_LIMIT_REACHED',
-        `Your ${session.plan} plan allows ${limits.aiMessagesPerMonth} AI messages per month. Upgrade for more.`);
+      throw new AppError(
+        403,
+        'AI_LIMIT_REACHED',
+        `Your ${session.plan} plan allows ${limits.aiMessagesPerMonth} AI messages per month. Upgrade for more.`,
+      );
     }
   }
 
@@ -579,10 +653,13 @@ aiRoutes.post('/chat/stream', async (c) => {
     });
     if (!conversation) throw new AppError(404, 'CONVERSATION_NOT_FOUND', 'Conversation not found.');
   } else {
-    [conversation] = await db.insert(aiConversations).values({
-      projectId,
-      userId: session.userId,
-    }).returning();
+    [conversation] = await db
+      .insert(aiConversations)
+      .values({
+        projectId,
+        userId: session.userId,
+      })
+      .returning();
     conversation.messages = [];
   }
 
@@ -603,7 +680,11 @@ aiRoutes.post('/chat/stream', async (c) => {
 
   const systemPrompt = buildSystemPrompt(
     fileList,
-    (project.assets || []).map((a: any) => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
+    (project.assets || []).map((a: any) => ({
+      filename: a.filename,
+      cdnUrl: a.cdnUrl,
+      mimeType: a.mimeType,
+    })),
     project.name,
   );
 
@@ -665,7 +746,7 @@ Use the available tools to help them deploy.`;
       throw new AppError(502, 'AI_ERROR', 'AI service returned an error.');
     }
 
-    const anthropicData = await anthropicResponse.json() as any;
+    const anthropicData = (await anthropicResponse.json()) as any;
     const toolUseBlocks = anthropicData.content?.filter((b: any) => b.type === 'tool_use') || [];
     const textBlocks = anthropicData.content?.filter((b: any) => b.type === 'text') || [];
     const replyText = textBlocks.map((b: any) => b.text).join('');
@@ -691,10 +772,16 @@ Use the available tools to help them deploy.`;
   const stream = new ReadableStream({
     async start(controller) {
       const emit = (data: any) => {
-        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); } catch { /* controller closed */ }
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          /* controller closed */
+        }
       };
 
-      logger.info(`[AI Stream Phase3] Starting — conv=${convId}, project=${projectId}, files=${fileList.length}`);
+      logger.info(
+        `[AI Stream Phase3] Starting — conv=${convId}, project=${projectId}, files=${fileList.length}`,
+      );
 
       emit({
         type: 'stream_start',
@@ -727,7 +814,10 @@ Use the available tools to help them deploy.`;
         if (!anthropicResponse.ok || !anthropicResponse.body) {
           const errText = await anthropicResponse.text().catch(() => '');
           logger.error('[AI Stream Phase3] Anthropic error:', anthropicResponse.status, errText);
-          emit({ type: 'error', message: `AI service error (${anthropicResponse.status}): ${errText.slice(0, 200)}` });
+          emit({
+            type: 'error',
+            message: `AI service error (${anthropicResponse.status}): ${errText.slice(0, 200)}`,
+          });
           controller.close();
           return;
         }
@@ -790,22 +880,40 @@ Use the available tools to help them deploy.`;
                       (async () => {
                         try {
                           const existing = await db.query.projectFiles.findFirst({
-                            where: and(eq(projectFiles.projectId, projectId), eq(projectFiles.path, filePath)),
+                            where: and(
+                              eq(projectFiles.projectId, projectId),
+                              eq(projectFiles.path, filePath),
+                            ),
                           });
-                          const contentHash = crypto.createHash('sha256').update(fileContent).digest('hex');
+                          const contentHash = crypto
+                            .createHash('sha256')
+                            .update(fileContent)
+                            .digest('hex');
                           const sizeBytes = Buffer.byteLength(fileContent, 'utf-8');
                           if (existing) {
-                            await db.update(projectFiles).set({
-                              content: fileContent, contentHash, sizeBytes, updatedAt: new Date(),
-                            }).where(eq(projectFiles.id, existing.id));
+                            await db
+                              .update(projectFiles)
+                              .set({
+                                content: fileContent,
+                                contentHash,
+                                sizeBytes,
+                                updatedAt: new Date(),
+                              })
+                              .where(eq(projectFiles.id, existing.id));
                           } else {
                             await db.insert(projectFiles).values({
-                              projectId, path: filePath, content: fileContent,
-                              contentHash, mimeType: 'text/plain', sizeBytes,
+                              projectId,
+                              path: filePath,
+                              content: fileContent,
+                              contentHash,
+                              mimeType: 'text/plain',
+                              sizeBytes,
                             });
                           }
                         } catch (dbErr: any) {
-                          logger.error(`[AI Stream Phase3] DB persist failed for ${filePath}: ${dbErr.message}`);
+                          logger.error(
+                            `[AI Stream Phase3] DB persist failed for ${filePath}: ${dbErr.message}`,
+                          );
                         }
                       })();
                       break;
@@ -825,7 +933,9 @@ Use the available tools to help them deploy.`;
                   emit({ type: 'text', token: userText });
                 }
               }
-            } catch { /* skip malformed SSE data */ }
+            } catch {
+              /* skip malformed SSE data */
+            }
           }
         }
 
@@ -856,11 +966,14 @@ Use the available tools to help them deploy.`;
         });
 
         // Update conversation stats
-        await db.update(aiConversations).set({
-          messageCount: (conversation.messageCount || 0) + 2,
-          totalTokensUsed: (conversation.totalTokensUsed || 0) + tokensUsed,
-          updatedAt: new Date(),
-        }).where(eq(aiConversations.id, convId));
+        await db
+          .update(aiConversations)
+          .set({
+            messageCount: (conversation.messageCount || 0) + 2,
+            totalTokensUsed: (conversation.totalTokensUsed || 0) + tokensUsed,
+            updatedAt: new Date(),
+          })
+          .where(eq(aiConversations.id, convId));
 
         // Log usage
         await db.insert(usageLogs).values({
@@ -871,7 +984,9 @@ Use the available tools to help them deploy.`;
           metadata: { conversationId: convId, model: AI_MODEL },
         });
 
-        logger.info(`[AI Stream Phase3] Done — conv=${convId}, tokens=${tokensUsed}, files=${filesWritten.length}`);
+        logger.info(
+          `[AI Stream Phase3] Done — conv=${convId}, tokens=${tokensUsed}, files=${filesWritten.length}`,
+        );
 
         emit({
           type: 'stream_end',
@@ -879,7 +994,6 @@ Use the available tools to help them deploy.`;
           filesChanged: filesWritten,
           tokensUsed,
         });
-
       } catch (err: any) {
         logger.error('[AI Stream Phase3] Error:', err);
         emit({ type: 'error', message: err.message || 'Stream error' });
@@ -904,7 +1018,7 @@ Use the available tools to help them deploy.`;
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
       'X-Conversation-Id': convId,
       'Access-Control-Allow-Origin': corsOrigin,
       'Access-Control-Allow-Credentials': 'true',
@@ -939,10 +1053,13 @@ aiRoutes.post('/chat', async (c) => {
     });
     if (!conversation) throw new AppError(404, 'CONVERSATION_NOT_FOUND', 'Conversation not found.');
   } else {
-    [conversation] = await db.insert(aiConversations).values({
-      projectId,
-      userId: session.userId,
-    }).returning();
+    [conversation] = await db
+      .insert(aiConversations)
+      .values({
+        projectId,
+        userId: session.userId,
+      })
+      .returning();
     conversation.messages = [];
   }
 
@@ -954,10 +1071,17 @@ aiRoutes.post('/chat', async (c) => {
     tokensUsed: 0,
   });
 
-  const fileList = (project.files || []).map((f: any) => ({ path: f.path, content: f.content || '' }));
+  const fileList = (project.files || []).map((f: any) => ({
+    path: f.path,
+    content: f.content || '',
+  }));
   const systemPrompt = buildSystemPrompt(
     fileList,
-    (project.assets || []).map((a: any) => ({ filename: a.filename, cdnUrl: a.cdnUrl, mimeType: a.mimeType })),
+    (project.assets || []).map((a: any) => ({
+      filename: a.filename,
+      cdnUrl: a.cdnUrl,
+      mimeType: a.mimeType,
+    })),
     project.name,
   );
 
@@ -986,19 +1110,23 @@ aiRoutes.post('/chat', async (c) => {
     throw new AppError(502, 'AI_ERROR', 'AI service returned an error.');
   }
 
-  const anthropicData = await anthropicResponse.json() as any;
+  const anthropicData = (await anthropicResponse.json()) as any;
   const textBlocks = anthropicData.content?.filter((b: any) => b.type === 'text') || [];
   const replyText = textBlocks.map((b: any) => b.text).join('');
-  const tokensUsed = (anthropicData.usage?.input_tokens || 0) + (anthropicData.usage?.output_tokens || 0);
+  const tokensUsed =
+    (anthropicData.usage?.input_tokens || 0) + (anthropicData.usage?.output_tokens || 0);
 
-  const [assistantMsg] = await db.insert(aiMessages).values({
-    conversationId: conversation.id,
-    role: 'assistant',
-    content: replyText,
-    attachments: [],
-    tokensUsed,
-    appliedFiles: false,
-  }).returning();
+  const [assistantMsg] = await db
+    .insert(aiMessages)
+    .values({
+      conversationId: conversation.id,
+      role: 'assistant',
+      content: replyText,
+      attachments: [],
+      tokensUsed,
+      appliedFiles: false,
+    })
+    .returning();
 
   return c.json({
     success: true,
@@ -1032,7 +1160,7 @@ aiRoutes.get('/conversations/:projectId', async (c) => {
 
   return c.json({
     success: true,
-    data: conversations.map(conv => ({
+    data: conversations.map((conv) => ({
       id: conv.id,
       messageCount: conv.messageCount,
       totalTokensUsed: conv.totalTokensUsed,
@@ -1064,7 +1192,7 @@ aiRoutes.get('/conversations/:projectId/:conversationId', async (c) => {
     success: true,
     data: {
       id: conversation.id,
-      messages: conversation.messages.map(m => ({
+      messages: conversation.messages.map((m) => ({
         id: m.id,
         role: m.role,
         content: m.content,

@@ -18,31 +18,34 @@ healthRoutes.get('/', async (c) => {
   const allHealthy = dbHealth.ok && redisHealth.ok;
   const status = allHealthy ? 200 : 503;
 
-  return c.json({
-    status: allHealthy ? 'healthy' : 'degraded',
-    version: process.env.APP_VERSION || '1.0.0',
-    environment: process.env.NODE_ENV || 'development',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    uptimeHuman: formatUptime(process.uptime()),
-    checks: {
-      database: {
-        status: dbHealth.ok ? 'ok' : 'error',
-        latencyMs: dbHealth.latencyMs,
-        ...(dbHealth.error ? { error: dbHealth.error } : {}),
+  return c.json(
+    {
+      status: allHealthy ? 'healthy' : 'degraded',
+      version: process.env.APP_VERSION || '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      uptimeHuman: formatUptime(process.uptime()),
+      checks: {
+        database: {
+          status: dbHealth.ok ? 'ok' : 'error',
+          latencyMs: dbHealth.latencyMs,
+          ...(dbHealth.error ? { error: dbHealth.error } : {}),
+        },
+        redis: {
+          status: redisHealth.ok ? 'ok' : 'error',
+          latencyMs: redisHealth.latencyMs,
+          ...(redisHealth.error ? { error: redisHealth.error } : {}),
+        },
       },
-      redis: {
-        status: redisHealth.ok ? 'ok' : 'error',
-        latencyMs: redisHealth.latencyMs,
-        ...(redisHealth.error ? { error: redisHealth.error } : {}),
+      system: {
+        memory: getMemoryUsage(),
+        nodeVersion: process.version,
+        pid: process.pid,
       },
     },
-    system: {
-      memory: getMemoryUsage(),
-      nodeVersion: process.version,
-      pid: process.pid,
-    },
-  }, status);
+    status,
+  );
 });
 
 // ─── Readiness Probe (Cloud Run) ──────────────────────────────────────
@@ -52,27 +55,30 @@ healthRoutes.get('/ready', async (c) => {
   const redisHealth = await checkRedisHealth();
 
   if (!dbHealth.ok) {
-    return c.json({ 
-      ready: false, 
-      reason: 'Database not reachable',
-      details: { latencyMs: dbHealth.latencyMs, error: dbHealth.error }
-    }, 503);
+    return c.json(
+      {
+        ready: false,
+        reason: 'Database not reachable',
+        details: { latencyMs: dbHealth.latencyMs, error: dbHealth.error },
+      },
+      503,
+    );
   }
 
   // Redis is non-critical (fallback to in-memory rate limiter exists)
-  return c.json({ 
+  return c.json({
     ready: true,
     dependencies: {
       database: 'ok',
       redis: redisHealth.ok ? 'ok' : 'degraded',
-    }
+    },
   });
 });
 
 // ─── Liveness Probe (Cloud Run) ───────────────────────────────────────
 // Simple check that the process is alive — no dependency checks
 healthRoutes.get('/live', (c) => {
-  return c.json({ 
+  return c.json({
     alive: true,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
@@ -85,11 +91,14 @@ healthRoutes.get('/startup', (c) => {
   const uptimeMs = Date.now() - startTime;
   // Consider started after 2 seconds (DB pool initialized)
   const started = uptimeMs > 2000;
-  
-  return c.json({ 
-    started,
-    uptimeMs,
-  }, started ? 200 : 503);
+
+  return c.json(
+    {
+      started,
+      uptimeMs,
+    },
+    started ? 200 : 503,
+  );
 });
 
 // ─── Metrics endpoint (for monitoring) ────────────────────────────────
@@ -132,26 +141,29 @@ async function checkRedisHealth(): Promise<{ ok: boolean; latencyMs: number; err
     // Attempt a simple TCP connection check
     const url = new URL(redisUrl);
     const { createConnection } = await import('net');
-    
+
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         resolve({ ok: false, latencyMs: Date.now() - start, error: 'Connection timeout' });
       }, 3000);
 
-      const socket = createConnection({
-        host: url.hostname,
-        port: parseInt(url.port) || 6379,
-      }, () => {
-        clearTimeout(timeout);
-        socket.write('PING\r\n');
-      });
+      const socket = createConnection(
+        {
+          host: url.hostname,
+          port: parseInt(url.port) || 6379,
+        },
+        () => {
+          clearTimeout(timeout);
+          socket.write('PING\r\n');
+        },
+      );
 
       socket.on('data', (data) => {
         const response = data.toString().trim();
         socket.destroy();
-        resolve({ 
-          ok: response.includes('PONG'), 
-          latencyMs: Date.now() - start 
+        resolve({
+          ok: response.includes('PONG'),
+          latencyMs: Date.now() - start,
         });
       });
 
@@ -183,12 +195,12 @@ function formatUptime(seconds: number): string {
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
-  
+
   const parts: string[] = [];
   if (days > 0) parts.push(`${days}d`);
   if (hours > 0) parts.push(`${hours}h`);
   if (minutes > 0) parts.push(`${minutes}m`);
   parts.push(`${secs}s`);
-  
+
   return parts.join(' ');
 }

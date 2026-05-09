@@ -11,9 +11,22 @@ import { useAuthStore } from '@/lib/store';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import {
-  Users, FolderKanban, Rocket, Building2, Activity,
-  Server, Shield, Clock, BarChart3, RefreshCw, Loader2,
-  ChevronLeft, ChevronRight, Database, Cpu, MemoryStick,
+  Users,
+  FolderKanban,
+  Rocket,
+  Building2,
+  Activity,
+  Server,
+  Shield,
+  Clock,
+  BarChart3,
+  RefreshCw,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  Database,
+  Cpu,
+  MemoryStick,
 } from 'lucide-react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -43,7 +56,9 @@ export default function AdminDashboardPage() {
   const [userList, setUserList] = useState<PaginatedList<any> | null>(null);
   const [projectList, setProjectList] = useState<PaginatedList<any> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'projects' | 'deployments' | 'health'>('overview');
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'users' | 'projects' | 'deployments' | 'health'
+  >('overview');
   const [userPage, setUserPage] = useState(1);
   const [projectPage, setProjectPage] = useState(1);
 
@@ -119,7 +134,12 @@ export default function AdminDashboardPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={fetchData} icon={<RefreshCw size={14} />}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={fetchData}
+              icon={<RefreshCw size={14} />}
+            >
               Refresh
             </Button>
             <Button size="sm" variant="ghost" onClick={() => router.push('/dashboard')}>
@@ -153,10 +173,32 @@ export default function AdminDashboardPage() {
           <div className="space-y-6">
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard icon={<Users size={20} />} label="Total Users" value={overview.totals.users} delta={`+${overview.last30Days.newUsers} this month`} color="blue" />
-              <StatCard icon={<FolderKanban size={20} />} label="Total Projects" value={overview.totals.projects} color="green" />
-              <StatCard icon={<Rocket size={20} />} label="Deployments" value={overview.totals.deployments} delta={`+${overview.last30Days.deployments} this month`} color="purple" />
-              <StatCard icon={<Building2 size={20} />} label="Organizations" value={overview.totals.organizations} color="orange" />
+              <StatCard
+                icon={<Users size={20} />}
+                label="Total Users"
+                value={overview.totals.users}
+                delta={`+${overview.last30Days.newUsers} this month`}
+                color="blue"
+              />
+              <StatCard
+                icon={<FolderKanban size={20} />}
+                label="Total Projects"
+                value={overview.totals.projects}
+                color="green"
+              />
+              <StatCard
+                icon={<Rocket size={20} />}
+                label="Deployments"
+                value={overview.totals.deployments}
+                delta={`+${overview.last30Days.deployments} this month`}
+                color="purple"
+              />
+              <StatCard
+                icon={<Building2 size={20} />}
+                label="Organizations"
+                value={overview.totals.organizations}
+                color="orange"
+              />
             </div>
 
             {/* Plan Distribution */}
@@ -175,7 +217,9 @@ export default function AdminDashboardPage() {
             {/* AI Usage */}
             <div className="bg-white rounded-xl border border-slate-200 p-6">
               <h3 className="font-semibold text-slate-900 mb-2">AI Token Usage (This Month)</h3>
-              <p className="text-3xl font-bold text-brand-600">{overview.aiTokensThisMonth.toLocaleString()}</p>
+              <p className="text-3xl font-bold text-brand-600">
+                {overview.aiTokensThisMonth.toLocaleString()}
+              </p>
             </div>
           </div>
         )}
@@ -203,12 +247,19 @@ export default function AdminDashboardPage() {
                     <td className="px-6 py-3 text-sm">{u.email}</td>
                     <td className="px-6 py-3 text-sm">{u.name}</td>
                     <td className="px-6 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                        u.plan === 'enterprise' ? 'bg-purple-100 text-purple-700' :
-                        u.plan === 'business' ? 'bg-blue-100 text-blue-700' :
-                        u.plan === 'pro' ? 'bg-green-100 text-green-700' :
-                        'bg-slate-100 text-slate-600'
-                      }`}>{u.plan}</span>
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                          u.plan === 'enterprise'
+                            ? 'bg-purple-100 text-purple-700'
+                            : u.plan === 'business'
+                              ? 'bg-blue-100 text-blue-700'
+                              : u.plan === 'pro'
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {u.plan}
+                      </span>
                     </td>
                     <td className="px-6 py-3 text-sm">{u.emailVerified ? 'Yes' : 'No'}</td>
                     <td className="px-6 py-3 text-sm text-slate-500">
@@ -247,11 +298,17 @@ export default function AdminDashboardPage() {
                     <td className="px-6 py-3 text-sm font-medium">{p.name}</td>
                     <td className="px-6 py-3 text-sm text-slate-500">{p.slug}</td>
                     <td className="px-6 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                        p.status === 'published' ? 'bg-green-100 text-green-700' :
-                        p.status === 'archived' ? 'bg-slate-100 text-slate-600' :
-                        'bg-yellow-100 text-yellow-700'
-                      }`}>{p.status}</span>
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                          p.status === 'published'
+                            ? 'bg-green-100 text-green-700'
+                            : p.status === 'archived'
+                              ? 'bg-slate-100 text-slate-600'
+                              : 'bg-yellow-100 text-yellow-700'
+                        }`}
+                      >
+                        {p.status}
+                      </span>
                     </td>
                     <td className="px-6 py-3 text-sm text-slate-500">
                       {p.lastDeployedAt ? new Date(p.lastDeployedAt).toLocaleDateString() : '-'}
@@ -263,7 +320,11 @@ export default function AdminDashboardPage() {
                 ))}
               </tbody>
             </table>
-            <Pagination page={projectList.page} hasMore={projectList.hasMore} onPage={setProjectPage} />
+            <Pagination
+              page={projectList.page}
+              hasMore={projectList.hasMore}
+              onPage={setProjectPage}
+            />
           </div>
         )}
 
@@ -278,18 +339,26 @@ export default function AdminDashboardPage() {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-sm text-slate-600">Backend</span>
-                  <span className="text-sm font-medium capitalize">{overview.infrastructure.rateLimiter.backend}</span>
+                  <span className="text-sm font-medium capitalize">
+                    {overview.infrastructure.rateLimiter.backend}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-slate-600">Status</span>
-                  <span className={`text-sm font-medium ${overview.infrastructure.rateLimiter.connected ? 'text-green-600' : 'text-yellow-600'}`}>
-                    {overview.infrastructure.rateLimiter.connected ? 'Connected' : 'Disconnected (using fallback)'}
+                  <span
+                    className={`text-sm font-medium ${overview.infrastructure.rateLimiter.connected ? 'text-green-600' : 'text-yellow-600'}`}
+                  >
+                    {overview.infrastructure.rateLimiter.connected
+                      ? 'Connected'
+                      : 'Disconnected (using fallback)'}
                   </span>
                 </div>
                 {overview.infrastructure.rateLimiter.latencyMs !== undefined && (
                   <div className="flex justify-between">
                     <span className="text-sm text-slate-600">Latency</span>
-                    <span className="text-sm font-medium">{overview.infrastructure.rateLimiter.latencyMs}ms</span>
+                    <span className="text-sm font-medium">
+                      {overview.infrastructure.rateLimiter.latencyMs}ms
+                    </span>
                   </div>
                 )}
               </div>
@@ -328,7 +397,13 @@ export default function AdminDashboardPage() {
 
 // ─── Reusable Components ──────────────────────────────────────
 
-function StatCard({ icon, label, value, delta, color }: {
+function StatCard({
+  icon,
+  label,
+  value,
+  delta,
+  color,
+}: {
   icon: React.ReactNode;
   label: string;
   value: number;
@@ -354,14 +429,34 @@ function StatCard({ icon, label, value, delta, color }: {
   );
 }
 
-function Pagination({ page, hasMore, onPage }: { page: number; hasMore: boolean; onPage: (p: number) => void }) {
+function Pagination({
+  page,
+  hasMore,
+  onPage,
+}: {
+  page: number;
+  hasMore: boolean;
+  onPage: (p: number) => void;
+}) {
   return (
     <div className="flex items-center justify-between px-6 py-3 border-t border-slate-100">
-      <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => onPage(page - 1)} icon={<ChevronLeft size={14} />}>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        icon={<ChevronLeft size={14} />}
+      >
         Previous
       </Button>
       <span className="text-sm text-slate-500">Page {page}</span>
-      <Button size="sm" variant="ghost" disabled={!hasMore} onClick={() => onPage(page + 1)} icon={<ChevronRight size={14} />}>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={!hasMore}
+        onClick={() => onPage(page + 1)}
+        icon={<ChevronRight size={14} />}
+      >
         Next
       </Button>
     </div>

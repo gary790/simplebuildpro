@@ -28,7 +28,14 @@ function getStripe(): Stripe {
 export interface UsageEvent {
   userId: string;
   organizationId?: string;
-  type: 'ai_input_tokens' | 'ai_output_tokens' | 'ai_message' | 'deploy' | 'storage' | 'preview_seconds' | 'bandwidth';
+  type:
+    | 'ai_input_tokens'
+    | 'ai_output_tokens'
+    | 'ai_message'
+    | 'deploy'
+    | 'storage'
+    | 'preview_seconds'
+    | 'bandwidth';
   quantity: number;
   metadata?: Record<string, any>;
 }
@@ -37,7 +44,10 @@ export interface UsageEvent {
  * Calculate cost and price for a usage event.
  * Cost = what it costs us. Price = what customer pays (cost * 1.5).
  */
-export function calculateCost(type: UsageEvent['type'], quantity: number): { costCents: number; priceCents: number } {
+export function calculateCost(
+  type: UsageEvent['type'],
+  quantity: number,
+): { costCents: number; priceCents: number } {
   switch (type) {
     case 'ai_input_tokens':
       return {
@@ -88,7 +98,9 @@ export function calculateCost(type: UsageEvent['type'], quantity: number): { cos
  * Record a usage event with cost calculation.
  * This is the main entry point for all usage tracking.
  */
-export async function recordUsage(event: UsageEvent): Promise<{ allowed: boolean; reason?: string }> {
+export async function recordUsage(
+  event: UsageEvent,
+): Promise<{ allowed: boolean; reason?: string }> {
   const db = getDb();
   const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
@@ -105,14 +117,20 @@ export async function recordUsage(event: UsageEvent): Promise<{ allowed: boolean
   }
 
   if (user.billingStatus === 'paused') {
-    return { allowed: false, reason: 'Account paused due to spending limit. Please increase your limit.' };
+    return {
+      allowed: false,
+      reason: 'Account paused due to spending limit. Please increase your limit.',
+    };
   }
 
   // Check free tier limits (no payment method)
   if (!user.paymentMethodAdded && user.billingStatus === 'free') {
     const allowed = await checkFreeTierLimits(event.userId, event.type, today);
     if (!allowed) {
-      return { allowed: false, reason: 'Free tier limit reached. Add a payment method to continue.' };
+      return {
+        allowed: false,
+        reason: 'Free tier limit reached. Add a payment method to continue.',
+      };
     }
   }
 
@@ -126,7 +144,10 @@ export async function recordUsage(event: UsageEvent): Promise<{ allowed: boolean
 
     if (newTotal >= (user.dailySpendLimitCents || SPENDING_ALERTS.hardLimit)) {
       // Hard stop
-      await db.update(users).set({ billingStatus: 'paused', updatedAt: new Date() }).where(eq(users.id, event.userId));
+      await db
+        .update(users)
+        .set({ billingStatus: 'paused', updatedAt: new Date() })
+        .where(eq(users.id, event.userId));
       await db.insert(billingEvents).values({
         userId: event.userId,
         type: 'spend_limit_reached',
@@ -176,9 +197,9 @@ async function checkFreeTierLimits(userId: string, type: string, today: string):
     case 'deploy':
       return todaySummary.deploys < FREE_TIER_LIMITS.deploys;
     case 'preview_seconds':
-      return todaySummary.previewSeconds < (FREE_TIER_LIMITS.preview_minutes * 60);
+      return todaySummary.previewSeconds < FREE_TIER_LIMITS.preview_minutes * 60;
     case 'bandwidth':
-      return todaySummary.bandwidthBytes < (FREE_TIER_LIMITS.bandwidth_mb * 1024 * 1024);
+      return todaySummary.bandwidthBytes < FREE_TIER_LIMITS.bandwidth_mb * 1024 * 1024;
     default:
       return true;
   }
@@ -204,7 +225,7 @@ async function updateDailySummary(
   type: string,
   quantity: number,
   costCents: number,
-  priceCents: number
+  priceCents: number,
 ): Promise<void> {
   const db = getDb();
 
@@ -230,13 +251,28 @@ async function updateDailySummary(
     };
 
     switch (type) {
-      case 'ai_input_tokens': values.aiInputTokens = quantity; values.aiMessages = 1; break;
-      case 'ai_output_tokens': values.aiOutputTokens = quantity; break;
-      case 'ai_message': values.aiMessages = quantity; break;
-      case 'deploy': values.deploys = quantity; break;
-      case 'storage': values.storageBytes = quantity; break;
-      case 'preview_seconds': values.previewSeconds = quantity; break;
-      case 'bandwidth': values.bandwidthBytes = quantity; break;
+      case 'ai_input_tokens':
+        values.aiInputTokens = quantity;
+        values.aiMessages = 1;
+        break;
+      case 'ai_output_tokens':
+        values.aiOutputTokens = quantity;
+        break;
+      case 'ai_message':
+        values.aiMessages = quantity;
+        break;
+      case 'deploy':
+        values.deploys = quantity;
+        break;
+      case 'storage':
+        values.storageBytes = quantity;
+        break;
+      case 'preview_seconds':
+        values.previewSeconds = quantity;
+        break;
+      case 'bandwidth':
+        values.bandwidthBytes = quantity;
+        break;
     }
 
     await db.insert(dailyUsageSummary).values(values);
@@ -282,7 +318,11 @@ async function updateDailySummary(
 /**
  * Create a Stripe customer and setup intent for payment method collection.
  */
-export async function createStripeCustomer(userId: string, email: string, name: string): Promise<{
+export async function createStripeCustomer(
+  userId: string,
+  email: string,
+  name: string,
+): Promise<{
   customerId: string;
   setupIntentClientSecret: string;
 }> {
@@ -297,7 +337,10 @@ export async function createStripeCustomer(userId: string, email: string, name: 
       customer: user.stripeCustomerId,
       payment_method_types: ['card'],
     });
-    return { customerId: user.stripeCustomerId, setupIntentClientSecret: setupIntent.client_secret! };
+    return {
+      customerId: user.stripeCustomerId,
+      setupIntentClientSecret: setupIntent.client_secret!,
+    };
   }
 
   // Create new Stripe customer
@@ -308,10 +351,13 @@ export async function createStripeCustomer(userId: string, email: string, name: 
   });
 
   // Update user with Stripe customer ID
-  await db.update(users).set({
-    stripeCustomerId: customer.id,
-    updatedAt: new Date(),
-  }).where(eq(users.id, userId));
+  await db
+    .update(users)
+    .set({
+      stripeCustomerId: customer.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId));
 
   // Create Setup Intent for card collection
   const setupIntent = await stripe.setupIntents.create({
@@ -327,11 +373,14 @@ export async function createStripeCustomer(userId: string, email: string, name: 
  */
 export async function confirmPaymentMethod(userId: string): Promise<void> {
   const db = getDb();
-  await db.update(users).set({
-    paymentMethodAdded: true,
-    billingStatus: 'active',
-    updatedAt: new Date(),
-  }).where(eq(users.id, userId));
+  await db
+    .update(users)
+    .set({
+      paymentMethodAdded: true,
+      billingStatus: 'active',
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId));
 
   await db.insert(billingEvents).values({
     userId,
@@ -361,10 +410,7 @@ export async function runDailyBilling(targetDate?: string): Promise<{
 
   // Get all unreported daily summaries for the target date
   const summaries = await db.query.dailyUsageSummary.findMany({
-    where: and(
-      eq(dailyUsageSummary.date, date),
-      eq(dailyUsageSummary.stripeReported, false),
-    ),
+    where: and(eq(dailyUsageSummary.date, date), eq(dailyUsageSummary.stripeReported, false)),
   });
 
   for (const summary of summaries) {
@@ -373,7 +419,9 @@ export async function runDailyBilling(targetDate?: string): Promise<{
 
     if (priceCents <= 0) {
       // No charges, just mark as reported
-      await db.update(dailyUsageSummary).set({ stripeReported: true, updatedAt: new Date() })
+      await db
+        .update(dailyUsageSummary)
+        .set({ stripeReported: true, updatedAt: new Date() })
         .where(eq(dailyUsageSummary.id, summary.id));
       continue;
     }
@@ -382,7 +430,9 @@ export async function runDailyBilling(targetDate?: string): Promise<{
     const user = await db.query.users.findFirst({ where: eq(users.id, summary.userId) });
     if (!user?.stripeCustomerId || !user.paymentMethodAdded) {
       // Free user with no card — skip charging but mark as reported
-      await db.update(dailyUsageSummary).set({ stripeReported: true, updatedAt: new Date() })
+      await db
+        .update(dailyUsageSummary)
+        .set({ stripeReported: true, updatedAt: new Date() })
         .where(eq(dailyUsageSummary.id, summary.id));
       continue;
     }
@@ -416,11 +466,14 @@ export async function runDailyBilling(targetDate?: string): Promise<{
       await stripe.invoices.pay(invoice.id);
 
       // Mark as reported
-      await db.update(dailyUsageSummary).set({
-        stripeReported: true,
-        stripeInvoiceItemId: invoiceItem.id,
-        updatedAt: new Date(),
-      }).where(eq(dailyUsageSummary.id, summary.id));
+      await db
+        .update(dailyUsageSummary)
+        .set({
+          stripeReported: true,
+          stripeInvoiceItemId: invoiceItem.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(dailyUsageSummary.id, summary.id));
 
       // Log billing event
       await db.insert(billingEvents).values({
@@ -450,7 +503,9 @@ export async function runDailyBilling(targetDate?: string): Promise<{
   }
 
   // Mark all usage_logs for this date as billed
-  await db.update(usageLogs).set({ billed: true })
+  await db
+    .update(usageLogs)
+    .set({ billed: true })
     .where(and(eq(usageLogs.billingPeriod, date), eq(usageLogs.billed, false)));
 
   return { processed, charged, totalRevenue, errors };
@@ -480,14 +535,12 @@ export async function getBillingStatus(userId: string): Promise<{
   });
 
   // Month spend (sum of all daily summaries this month)
-  const monthSpend = await db.select({
-    total: sql<string>`COALESCE(SUM(CAST(${dailyUsageSummary.totalPriceCents} AS NUMERIC)), 0)`,
-  })
+  const monthSpend = await db
+    .select({
+      total: sql<string>`COALESCE(SUM(CAST(${dailyUsageSummary.totalPriceCents} AS NUMERIC)), 0)`,
+    })
     .from(dailyUsageSummary)
-    .where(and(
-      eq(dailyUsageSummary.userId, userId),
-      gte(dailyUsageSummary.date, monthStart),
-    ));
+    .where(and(eq(dailyUsageSummary.userId, userId), gte(dailyUsageSummary.date, monthStart)));
 
   return {
     status: user.billingStatus,

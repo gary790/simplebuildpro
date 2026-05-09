@@ -50,14 +50,15 @@ class MetricsCollector {
   private statusCounts: Record<string, number> = {};
   private methodCounts: Record<string, number> = {};
   private pathCounts: Record<string, number> = {};
-  private recentErrors: Array<{ path: string; status: number; error: string; timestamp: string }> = [];
+  private recentErrors: Array<{ path: string; status: number; error: string; timestamp: string }> =
+    [];
   private readonly startTime = new Date();
   private readonly MAX_LATENCIES = 10000; // Keep last 10k for percentile calculations
   private readonly MAX_ERRORS = 50;
 
   record(metrics: RequestMetrics): void {
     this.requestCount++;
-    
+
     // Track latency
     this.latencies.push(metrics.latencyMs);
     if (this.latencies.length > this.MAX_LATENCIES) {
@@ -125,7 +126,10 @@ class MetricsCollector {
       },
       errors: {
         total: this.errorCount,
-        rate: this.requestCount > 0 ? Math.round((this.errorCount / this.requestCount) * 10000) / 100 : 0,
+        rate:
+          this.requestCount > 0
+            ? Math.round((this.errorCount / this.requestCount) * 10000) / 100
+            : 0,
         recent: this.recentErrors.slice(-10),
       },
       uptime: uptimeSeconds,
@@ -151,9 +155,10 @@ export const metricsCollector = new MetricsCollector();
 export function apmMiddleware() {
   return async (c: Context, next: Next) => {
     const start = performance.now();
-    const traceId = c.req.header('x-cloud-trace-context')?.split('/')[0] 
-      || c.req.header('x-request-id') 
-      || generateTraceId();
+    const traceId =
+      c.req.header('x-cloud-trace-context')?.split('/')[0] ||
+      c.req.header('x-request-id') ||
+      generateTraceId();
 
     // Set trace context for downstream use
     c.set('traceId', traceId);
@@ -237,18 +242,22 @@ function getTopN(counts: Record<string, number>, n: number): Record<string, numb
   return Object.fromEntries(
     Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, n)
+      .slice(0, n),
   );
 }
 
 function generateTraceId(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function generateSpanId(): string {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }

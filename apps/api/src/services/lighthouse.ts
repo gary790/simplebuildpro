@@ -7,11 +7,11 @@
 import { logger } from './logger';
 
 export interface LighthouseScores {
-  performance: number;      // 0-100
-  accessibility: number;    // 0-100
-  bestPractices: number;    // 0-100
-  seo: number;              // 0-100
-  overall: number;          // Weighted average
+  performance: number; // 0-100
+  accessibility: number; // 0-100
+  bestPractices: number; // 0-100
+  seo: number; // 0-100
+  overall: number; // Weighted average
 }
 
 export interface LighthouseAuditResult {
@@ -67,7 +67,7 @@ async function runPageSpeedAudit(url: string): Promise<LighthouseAuditResult> {
     throw new Error(`PageSpeed API returned ${res.status}`);
   }
 
-  const data = await res.json() as any;
+  const data = (await res.json()) as any;
   const lhr = data.lighthouseResult;
 
   if (!lhr?.categories) {
@@ -83,10 +83,10 @@ async function runPageSpeedAudit(url: string): Promise<LighthouseAuditResult> {
   };
 
   scores.overall = Math.round(
-    (scores.performance * 0.35 +
-     scores.accessibility * 0.25 +
-     scores.bestPractices * 0.20 +
-     scores.seo * 0.20)
+    scores.performance * 0.35 +
+      scores.accessibility * 0.25 +
+      scores.bestPractices * 0.2 +
+      scores.seo * 0.2,
   );
 
   // Extract key diagnostics
@@ -94,11 +94,20 @@ async function runPageSpeedAudit(url: string): Promise<LighthouseAuditResult> {
   const audits = lhr.audits || {};
 
   const keyAudits = [
-    'first-contentful-paint', 'largest-contentful-paint', 'total-blocking-time',
-    'cumulative-layout-shift', 'speed-index',
-    'color-contrast', 'image-alt', 'label', 'link-name',
-    'meta-description', 'document-title', 'viewport',
-    'errors-in-console', 'is-crawlable',
+    'first-contentful-paint',
+    'largest-contentful-paint',
+    'total-blocking-time',
+    'cumulative-layout-shift',
+    'speed-index',
+    'color-contrast',
+    'image-alt',
+    'label',
+    'link-name',
+    'meta-description',
+    'document-title',
+    'viewport',
+    'errors-in-console',
+    'is-crawlable',
   ];
 
   for (const auditId of keyAudits) {
@@ -137,7 +146,15 @@ async function runStaticAnalysis(url: string): Promise<LighthouseAuditResult> {
     // If we can't fetch, return zero scores
     return {
       scores: { performance: 0, accessibility: 0, bestPractices: 0, seo: 0, overall: 0 },
-      diagnostics: [{ id: 'fetch-failed', title: 'Could not fetch page', description: `Failed to load ${url}`, score: 0, category: 'performance' }],
+      diagnostics: [
+        {
+          id: 'fetch-failed',
+          title: 'Could not fetch page',
+          description: `Failed to load ${url}`,
+          score: 0,
+          category: 'performance',
+        },
+      ],
       fetchedAt: new Date().toISOString(),
       source: 'static-analysis',
     };
@@ -150,27 +167,98 @@ async function runStaticAnalysis(url: string): Promise<LighthouseAuditResult> {
   let seoScore = 70;
 
   // Performance checks
-  if (html.length > 500_000) { perfScore -= 20; diagnostics.push({ id: 'large-html', title: 'Large HTML document', description: `HTML is ${(html.length / 1024).toFixed(0)}KB`, score: 0, category: 'performance' }); }
-  if (!html.includes('loading="lazy"')) { perfScore -= 5; }
-  if (html.includes('<script') && !html.includes('defer') && !html.includes('async')) { perfScore -= 10; }
+  if (html.length > 500_000) {
+    perfScore -= 20;
+    diagnostics.push({
+      id: 'large-html',
+      title: 'Large HTML document',
+      description: `HTML is ${(html.length / 1024).toFixed(0)}KB`,
+      score: 0,
+      category: 'performance',
+    });
+  }
+  if (!html.includes('loading="lazy"')) {
+    perfScore -= 5;
+  }
+  if (html.includes('<script') && !html.includes('defer') && !html.includes('async')) {
+    perfScore -= 10;
+  }
 
   // Accessibility checks
   const hasLang = /<html[^>]+lang=/i.test(html);
-  if (!hasLang) { a11yScore -= 15; diagnostics.push({ id: 'html-lang', title: 'Missing lang attribute', description: '<html> should have a lang attribute', score: 0, category: 'accessibility' }); }
+  if (!hasLang) {
+    a11yScore -= 15;
+    diagnostics.push({
+      id: 'html-lang',
+      title: 'Missing lang attribute',
+      description: '<html> should have a lang attribute',
+      score: 0,
+      category: 'accessibility',
+    });
+  }
 
   const imgCount = (html.match(/<img /gi) || []).length;
   const altCount = (html.match(/<img [^>]*alt=/gi) || []).length;
-  if (imgCount > 0 && altCount < imgCount) { a11yScore -= 15; diagnostics.push({ id: 'image-alt', title: 'Images missing alt text', description: `${imgCount - altCount} of ${imgCount} images missing alt`, score: 0, category: 'accessibility' }); }
+  if (imgCount > 0 && altCount < imgCount) {
+    a11yScore -= 15;
+    diagnostics.push({
+      id: 'image-alt',
+      title: 'Images missing alt text',
+      description: `${imgCount - altCount} of ${imgCount} images missing alt`,
+      score: 0,
+      category: 'accessibility',
+    });
+  }
 
   // Best practices checks
-  if (!html.includes('<!DOCTYPE html') && !html.includes('<!doctype html')) { bpScore -= 10; }
-  if (html.includes('http://') && !html.includes('localhost')) { bpScore -= 10; diagnostics.push({ id: 'mixed-content', title: 'Potential mixed content', description: 'Found http:// URLs (should use https://)', score: 0, category: 'best-practices' }); }
+  if (!html.includes('<!DOCTYPE html') && !html.includes('<!doctype html')) {
+    bpScore -= 10;
+  }
+  if (html.includes('http://') && !html.includes('localhost')) {
+    bpScore -= 10;
+    diagnostics.push({
+      id: 'mixed-content',
+      title: 'Potential mixed content',
+      description: 'Found http:// URLs (should use https://)',
+      score: 0,
+      category: 'best-practices',
+    });
+  }
 
   // SEO checks
-  if (!/<meta[^>]+name=["']description["']/i.test(html)) { seoScore -= 20; diagnostics.push({ id: 'meta-description', title: 'Missing meta description', description: 'Add a meta description for better SEO', score: 0, category: 'seo' }); }
-  if (!/<title>/i.test(html)) { seoScore -= 20; diagnostics.push({ id: 'title', title: 'Missing page title', description: 'Add a <title> tag', score: 0, category: 'seo' }); }
-  if (!/<meta[^>]+name=["']viewport["']/i.test(html)) { seoScore -= 15; diagnostics.push({ id: 'viewport', title: 'Missing viewport meta', description: 'Add viewport meta for mobile', score: 0, category: 'seo' }); }
-  if (!/<h1/i.test(html)) { seoScore -= 10; }
+  if (!/<meta[^>]+name=["']description["']/i.test(html)) {
+    seoScore -= 20;
+    diagnostics.push({
+      id: 'meta-description',
+      title: 'Missing meta description',
+      description: 'Add a meta description for better SEO',
+      score: 0,
+      category: 'seo',
+    });
+  }
+  if (!/<title>/i.test(html)) {
+    seoScore -= 20;
+    diagnostics.push({
+      id: 'title',
+      title: 'Missing page title',
+      description: 'Add a <title> tag',
+      score: 0,
+      category: 'seo',
+    });
+  }
+  if (!/<meta[^>]+name=["']viewport["']/i.test(html)) {
+    seoScore -= 15;
+    diagnostics.push({
+      id: 'viewport',
+      title: 'Missing viewport meta',
+      description: 'Add viewport meta for mobile',
+      score: 0,
+      category: 'seo',
+    });
+  }
+  if (!/<h1/i.test(html)) {
+    seoScore -= 10;
+  }
 
   const scores: LighthouseScores = {
     performance: Math.max(0, Math.min(100, perfScore)),
@@ -182,9 +270,9 @@ async function runStaticAnalysis(url: string): Promise<LighthouseAuditResult> {
 
   scores.overall = Math.round(
     scores.performance * 0.35 +
-    scores.accessibility * 0.25 +
-    scores.bestPractices * 0.20 +
-    scores.seo * 0.20
+      scores.accessibility * 0.25 +
+      scores.bestPractices * 0.2 +
+      scores.seo * 0.2,
   );
 
   logger.info('Lighthouse audit completed via static analysis', { url, scores });
@@ -199,7 +287,13 @@ async function runStaticAnalysis(url: string): Promise<LighthouseAuditResult> {
 
 // ─── Helper ──────────────────────────────────────────────────
 function getCategoryForAudit(auditId: string): LighthouseDiagnostic['category'] {
-  const perfAudits = ['first-contentful-paint', 'largest-contentful-paint', 'total-blocking-time', 'cumulative-layout-shift', 'speed-index'];
+  const perfAudits = [
+    'first-contentful-paint',
+    'largest-contentful-paint',
+    'total-blocking-time',
+    'cumulative-layout-shift',
+    'speed-index',
+  ];
   const a11yAudits = ['color-contrast', 'image-alt', 'label', 'link-name'];
   const seoAudits = ['meta-description', 'document-title', 'viewport', 'is-crawlable'];
   if (perfAudits.includes(auditId)) return 'performance';
@@ -210,7 +304,10 @@ function getCategoryForAudit(auditId: string): LighthouseDiagnostic['category'] 
 
 // ─── Run analysis on built HTML files (pre-deploy) ───────────
 export function analyzeHtmlFiles(files: { path: string; content: string }[]): LighthouseScores {
-  let totalPerf = 0, totalA11y = 0, totalBp = 0, totalSeo = 0;
+  let totalPerf = 0,
+    totalA11y = 0,
+    totalBp = 0,
+    totalSeo = 0;
   let htmlFileCount = 0;
 
   for (const file of files) {
@@ -218,7 +315,10 @@ export function analyzeHtmlFiles(files: { path: string; content: string }[]): Li
     htmlFileCount++;
     const html = file.content;
 
-    let perf = 80, a11y = 80, bp = 80, seo = 80;
+    let perf = 80,
+      a11y = 80,
+      bp = 80,
+      seo = 80;
 
     // Performance
     if (html.length > 200_000) perf -= 15;
@@ -259,9 +359,9 @@ export function analyzeHtmlFiles(files: { path: string; content: string }[]): Li
 
   scores.overall = Math.round(
     scores.performance * 0.35 +
-    scores.accessibility * 0.25 +
-    scores.bestPractices * 0.20 +
-    scores.seo * 0.20
+      scores.accessibility * 0.25 +
+      scores.bestPractices * 0.2 +
+      scores.seo * 0.2,
   );
 
   return scores;

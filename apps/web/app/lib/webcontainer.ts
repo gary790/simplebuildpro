@@ -176,9 +176,7 @@ export async function runCommand(
 }
 
 // ─── Start a dev server (for preview) ────────────────────────
-export async function startDevServer(
-  onOutput?: (data: string) => void,
-): Promise<string | null> {
+export async function startDevServer(onOutput?: (data: string) => void): Promise<string | null> {
   if (!instance) throw new Error('WebContainer not booted');
 
   // Check if there's a package.json — if so, install deps and start
@@ -208,7 +206,9 @@ export async function startDevServer(
             if (done) break;
             onOutput?.(value);
           }
-        } catch { /* stream ended */ }
+        } catch {
+          /* stream ended */
+        }
       })();
 
       // Wait for server-ready event

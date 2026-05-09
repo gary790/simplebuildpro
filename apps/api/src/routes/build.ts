@@ -44,7 +44,13 @@ buildRoutes.post('/', async (c) => {
 
   const errors: { file: string; message: string; severity: 'error' | 'warning' }[] = [];
   const warnings: { file: string; message: string; suggestion: string | null }[] = [];
-  const outputFiles: { path: string; content: Buffer; contentType: string; sizeBytes: number; contentHash: string }[] = [];
+  const outputFiles: {
+    path: string;
+    content: Buffer;
+    contentType: string;
+    sizeBytes: number;
+    contentHash: string;
+  }[] = [];
 
   // Process each file
   for (const file of project.files) {
@@ -106,18 +112,21 @@ buildRoutes.post('/', async (c) => {
   const buildPrefix = `projects/${projectId}/builds/v${versionNumber}`;
   const storage = getStorageService();
 
-  await storage.uploadBatch(GCS_BUCKET_BUILDS, outputFiles.map(f => ({
-    key: `${buildPrefix}/${f.path}`,
-    data: f.content,
-    contentType: f.contentType,
-    cacheControl: 'public, max-age=31536000, immutable',
-  })));
+  await storage.uploadBatch(
+    GCS_BUCKET_BUILDS,
+    outputFiles.map((f) => ({
+      key: `${buildPrefix}/${f.path}`,
+      data: f.content,
+      contentType: f.contentType,
+      cacheControl: 'public, max-age=31536000, immutable',
+    })),
+  );
 
   // Create snapshot JSON (full project state for rollback)
   const snapshot = {
     version: versionNumber,
     message,
-    files: project.files.map(f => ({ path: f.path, content: f.content })),
+    files: project.files.map((f) => ({ path: f.path, content: f.content })),
     createdAt: new Date().toISOString(),
     createdBy: session.userId,
   };
@@ -131,15 +140,18 @@ buildRoutes.post('/', async (c) => {
   const durationMs = Date.now() - startTime;
 
   // Save version record
-  const [version] = await db.insert(projectVersions).values({
-    projectId,
-    versionNumber,
-    snapshotGcsKey: snapshotKey,
-    message,
-    createdBy: session.userId,
-    fileCount: outputFiles.length,
-    totalSizeBytes,
-  }).returning();
+  const [version] = await db
+    .insert(projectVersions)
+    .values({
+      projectId,
+      versionNumber,
+      snapshotGcsKey: snapshotKey,
+      message,
+      createdBy: session.userId,
+      fileCount: outputFiles.length,
+      totalSizeBytes,
+    })
+    .returning();
 
   // Log usage
   await db.insert(usageLogs).values({
@@ -150,23 +162,26 @@ buildRoutes.post('/', async (c) => {
     metadata: { projectId, versionNumber, buildPrefix },
   });
 
-  return c.json({
-    success: true,
-    data: {
-      versionId: version.id,
-      versionNumber,
-      buildPrefix,
-      files: outputFiles.map(f => ({
-        path: f.path,
-        sizeBytes: f.sizeBytes,
-        contentHash: f.contentHash,
-      })),
-      totalSizeBytes,
-      durationMs,
-      errors,
-      warnings,
+  return c.json(
+    {
+      success: true,
+      data: {
+        versionId: version.id,
+        versionNumber,
+        buildPrefix,
+        files: outputFiles.map((f) => ({
+          path: f.path,
+          sizeBytes: f.sizeBytes,
+          contentHash: f.contentHash,
+        })),
+        totalSizeBytes,
+        durationMs,
+        errors,
+        warnings,
+      },
     },
-  }, 201);
+    201,
+  );
 });
 
 // ─── Get Build History ───────────────────────────────────────
@@ -188,7 +203,7 @@ buildRoutes.get('/:projectId/versions', async (c) => {
 
   return c.json({
     success: true,
-    data: versions.map(v => ({
+    data: versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,
       message: v.message,
@@ -248,9 +263,7 @@ buildRoutes.post('/:projectId/restore', async (c) => {
     await db.insert(projectFiles).values(fileInserts);
   }
 
-  await db.update(projects)
-    .set({ updatedAt: new Date() })
-    .where(eq(projects.id, projectId));
+  await db.update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, projectId));
 
   return c.json({
     success: true,
@@ -302,20 +315,39 @@ async function minifyJs(js: string): Promise<string> {
   }
 }
 
-function validateHtml(html: string, path: string): { file: string; message: string; suggestion: string | null }[] {
+function validateHtml(
+  html: string,
+  path: string,
+): { file: string; message: string; suggestion: string | null }[] {
   const warnings: { file: string; message: string; suggestion: string | null }[] = [];
 
   if (!html.includes('<!DOCTYPE html>') && !html.includes('<!doctype html>')) {
-    warnings.push({ file: path, message: 'Missing DOCTYPE declaration.', suggestion: 'Add <!DOCTYPE html> at the top.' });
+    warnings.push({
+      file: path,
+      message: 'Missing DOCTYPE declaration.',
+      suggestion: 'Add <!DOCTYPE html> at the top.',
+    });
   }
   if (!html.includes('<meta name="viewport"')) {
-    warnings.push({ file: path, message: 'Missing viewport meta tag.', suggestion: 'Add <meta name="viewport" content="width=device-width, initial-scale=1.0">' });
+    warnings.push({
+      file: path,
+      message: 'Missing viewport meta tag.',
+      suggestion: 'Add <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+    });
   }
   if (!html.includes('lang=')) {
-    warnings.push({ file: path, message: 'Missing lang attribute on <html>.', suggestion: 'Add lang="en" to the <html> tag.' });
+    warnings.push({
+      file: path,
+      message: 'Missing lang attribute on <html>.',
+      suggestion: 'Add lang="en" to the <html> tag.',
+    });
   }
   if (!html.includes('<meta charset=') && !html.includes('<meta http-equiv="Content-Type"')) {
-    warnings.push({ file: path, message: 'Missing charset declaration.', suggestion: 'Add <meta charset="UTF-8"> in <head>.' });
+    warnings.push({
+      file: path,
+      message: 'Missing charset declaration.',
+      suggestion: 'Add <meta charset="UTF-8"> in <head>.',
+    });
   }
 
   return warnings;
@@ -324,9 +356,14 @@ function validateHtml(html: string, path: string): { file: string; message: stri
 function getMimeType(path: string): string {
   const ext = path.split('.').pop()?.toLowerCase();
   const map: Record<string, string> = {
-    html: 'text/html', css: 'text/css', js: 'application/javascript',
-    json: 'application/json', svg: 'image/svg+xml', txt: 'text/plain',
-    md: 'text/markdown', xml: 'application/xml',
+    html: 'text/html',
+    css: 'text/css',
+    js: 'application/javascript',
+    json: 'application/json',
+    svg: 'image/svg+xml',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    xml: 'application/xml',
   };
   return map[ext || ''] || 'text/plain';
 }

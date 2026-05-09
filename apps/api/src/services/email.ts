@@ -147,7 +147,11 @@ function spendAlertEmailHtml(name: string, spendToday: string, limit: string): s
 
 // ─── Send Functions ──────────────────────────────────────────
 
-export async function sendVerificationEmail(email: string, name: string, token: string): Promise<void> {
+export async function sendVerificationEmail(
+  email: string,
+  name: string,
+  token: string,
+): Promise<void> {
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
@@ -162,7 +166,11 @@ export async function sendVerificationEmail(email: string, name: string, token: 
   }
 }
 
-export async function sendPasswordResetEmail(email: string, name: string, token: string): Promise<void> {
+export async function sendPasswordResetEmail(
+  email: string,
+  name: string,
+  token: string,
+): Promise<void> {
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
@@ -192,7 +200,12 @@ export async function sendWelcomeEmail(email: string, name: string): Promise<voi
   }
 }
 
-export async function sendSpendAlertEmail(email: string, name: string, spendToday: string, limit: string): Promise<void> {
+export async function sendSpendAlertEmail(
+  email: string,
+  name: string,
+  spendToday: string,
+  limit: string,
+): Promise<void> {
   try {
     await resend.emails.send({
       from: FROM_EMAIL,

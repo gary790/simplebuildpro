@@ -38,19 +38,30 @@ app.use('*', timing());
 app.use('*', apmMiddleware());
 app.use('*', requestLogger());
 app.use('*', secureHeaders());
-app.use('*', cors({
-  origin: [
-    'https://simplebuildpro.com',
-    'https://www.simplebuildpro.com',
-    'https://app.simplebuildpro.com',
-    ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000', 'http://localhost:3001'] : []),
-  ],
-  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
-  exposeHeaders: ['X-Request-ID', 'X-Response-Time', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'],
-  credentials: true,
-  maxAge: 86400,
-}));
+app.use(
+  '*',
+  cors({
+    origin: [
+      'https://simplebuildpro.com',
+      'https://www.simplebuildpro.com',
+      'https://app.simplebuildpro.com',
+      ...(process.env.NODE_ENV !== 'production'
+        ? ['http://localhost:3000', 'http://localhost:3001']
+        : []),
+    ],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+    exposeHeaders: [
+      'X-Request-ID',
+      'X-Response-Time',
+      'X-RateLimit-Limit',
+      'X-RateLimit-Remaining',
+      'X-RateLimit-Reset',
+    ],
+    credentials: true,
+    maxAge: 86400,
+  }),
+);
 app.use('/api/*', rateLimiter('api'));
 
 // ─── Route Registration ─────────────────────────────────────
@@ -68,7 +79,7 @@ app.route('/api/v1/organizations', orgRoutes);
 app.route('/api/v1/mfa', mfaRoutes);
 app.route('/api/v1/admin', adminRoutes);
 app.route('/api/v1/projects', integrationsRoutes); // Ship panel: integrations, github push, cf deploy, export
-app.route('/api/v1/connect', oauthConnectRoutes);  // Public OAuth popup flow (no auth middleware)
+app.route('/api/v1/connect', oauthConnectRoutes); // Public OAuth popup flow (no auth middleware)
 app.route('/health', healthRoutes);
 
 // ─── Sites Serving (*.sites.simplebuildpro.com via host header) ──
@@ -98,10 +109,13 @@ app.onError(errorHandler);
 
 // ─── 404 ─────────────────────────────────────────────────────
 app.notFound((c) => {
-  return c.json({
-    success: false,
-    error: { code: 'NOT_FOUND', message: `Route ${c.req.method} ${c.req.path} not found` },
-  }, 404);
+  return c.json(
+    {
+      success: false,
+      error: { code: 'NOT_FOUND', message: `Route ${c.req.method} ${c.req.path} not found` },
+    },
+    404,
+  );
 });
 
 // ─── Server Startup ──────────────────────────────────────────

@@ -16,18 +16,19 @@ function createPool(): Pool {
   if (!connectionString) {
     throw new Error(
       'DATABASE_URL environment variable is required. ' +
-      'Format: postgresql://user:password@host:5432/simplebuildpro'
+        'Format: postgresql://user:password@host:5432/simplebuildpro',
     );
   }
 
   return new Pool({
     connectionString,
-    max: 20,                    // Max connections in pool
-    idleTimeoutMillis: 30000,   // Close idle connections after 30s
+    max: 20, // Max connections in pool
+    idleTimeoutMillis: 30000, // Close idle connections after 30s
     connectionTimeoutMillis: 10000, // Timeout connecting after 10s
-    ssl: process.env.NODE_ENV === 'production'
-      ? { rejectUnauthorized: false } // Cloud SQL uses self-signed certs
-      : false,
+    ssl:
+      process.env.NODE_ENV === 'production'
+        ? { rejectUnauthorized: false } // Cloud SQL uses self-signed certs
+        : false,
   });
 }
 

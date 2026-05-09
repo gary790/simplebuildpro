@@ -1,4 +1,5 @@
 # SimpleBuild Pro — Full Power-House Roadmap
+
 ## From MVP to Production-Grade Platform
 
 **Document Created**: May 8, 2026  
@@ -10,18 +11,20 @@
 ## Current State Summary
 
 ### ✅ What's Live & Working
+
 - **API**: https://api.simplebuildpro.com (Cloud Run, 8 revisions deployed)
 - **Web App**: https://app.simplebuildpro.com (Next.js on Cloud Run)
 - **User Sites**: https://{slug}.sites.simplebuildpro.com (served via API → GCS)
 - **CDN**: https://cdn.simplebuildpro.com (Cloud CDN + backend bucket)
 - **Database**: Cloud SQL PostgreSQL 16 (18 tables, migrations applied)
 - **Cache**: Memorystore Redis (10.1.204.211:6379)
-- **SSL**: All certificates ACTIVE (api, app, cdn, sites, *.sites)
+- **SSL**: All certificates ACTIVE (api, app, cdn, sites, \*.sites)
 - **OAuth**: GitHub + Google fully configured with production redirects
 - **Billing**: PAYG metered billing system (routes + service + schema)
 - **E2E Flow**: signup → project → file → build → deploy → serve site ✅
 
 ### ⚠️ Needs Attention
+
 - Stripe keys still placeholder (need real Stripe account setup)
 - Web frontend needs rebuild/redeploy (pricing page updated in code)
 - Cloud SQL exposed to 0.0.0.0/0 (should be VPC-only)
@@ -33,6 +36,7 @@
 ## Phase 1: Stabilization & Security (Week 1)
 
 ### 1.1 Stripe Configuration
+
 - [ ] Create Stripe account and get live API keys
 - [ ] Update `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in Secret Manager
 - [ ] Create Stripe webhook endpoint pointing to `https://api.simplebuildpro.com/api/v1/billing/webhook`
@@ -41,6 +45,7 @@
 - [ ] Set up Stripe Tax for automatic tax collection (optional)
 
 ### 1.2 Security Hardening
+
 - [ ] **Restrict Cloud SQL to VPC-only** (remove 0.0.0.0/0 authorized network)
   ```bash
   gcloud sql instances patch simplebuildpro-db --authorized-networks="" --project=simplebuildpro
@@ -54,12 +59,14 @@
 - [ ] Enable VPC Service Controls (perimeter around GCS, SQL, Secrets)
 
 ### 1.3 Rebuild & Deploy Web Frontend
+
 - [ ] Build Next.js web app with updated PAYG pricing page
 - [ ] Push web image to Artifact Registry
 - [ ] Deploy web Cloud Run service
 - [ ] Verify landing page, signup, login, dashboard all work
 
 ### 1.4 Cloud Scheduler for Daily Billing
+
 - [ ] Create Cloud Scheduler job:
   ```bash
   gcloud scheduler jobs create http daily-billing \
@@ -78,6 +85,7 @@
 ## Phase 2: CI/CD & Monitoring (Week 2)
 
 ### 2.1 Cloud Build CI/CD Pipeline
+
 - [ ] Create `cloudbuild.yaml` for automated deployments:
   ```yaml
   steps:
@@ -94,10 +102,26 @@
       args: ['push', '${_WEB_IMAGE}']
     # Deploy API
     - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-      args: ['gcloud', 'run', 'deploy', 'simplebuildpro-api', '--image=${_API_IMAGE}', '--region=us-central1']
+      args:
+        [
+          'gcloud',
+          'run',
+          'deploy',
+          'simplebuildpro-api',
+          '--image=${_API_IMAGE}',
+          '--region=us-central1',
+        ]
     # Deploy Web
     - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-      args: ['gcloud', 'run', 'deploy', 'simplebuildpro-web', '--image=${_WEB_IMAGE}', '--region=us-central1']
+      args:
+        [
+          'gcloud',
+          'run',
+          'deploy',
+          'simplebuildpro-web',
+          '--image=${_WEB_IMAGE}',
+          '--region=us-central1',
+        ]
   substitutions:
     _API_IMAGE: us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:${SHORT_SHA}
     _WEB_IMAGE: us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:${SHORT_SHA}
@@ -108,6 +132,7 @@
 - [ ] Tag releases with semantic versioning
 
 ### 2.2 Monitoring & Alerting
+
 - [ ] **Cloud Monitoring Dashboard**:
   - Request latency (P50, P95, P99)
   - Error rate (5xx responses)
@@ -128,6 +153,7 @@
 - [ ] **Cloud Trace**: Enable distributed tracing (already have request IDs)
 
 ### 2.3 Database Backups & DR
+
 - [ ] Enable automated Cloud SQL backups:
   ```bash
   gcloud sql instances patch simplebuildpro-db \
@@ -141,6 +167,7 @@
 - [ ] Set up cross-region replica (us-east1) for read scaling & DR
 
 ### 2.4 Logging & Audit
+
 - [ ] Create log-based metrics for billing events
 - [ ] Set up log exports to BigQuery for analytics
 - [ ] Configure log retention (400 days for audit logs)
@@ -151,6 +178,7 @@
 ## Phase 3: Feature Completion (Weeks 3-4)
 
 ### 3.1 Email System
+
 - [ ] Integrate SendGrid or Resend for transactional email
 - [ ] Email verification on signup (required before first deploy)
 - [ ] Password reset flow (forgot password → email token → reset)
@@ -160,6 +188,7 @@
 - [ ] Welcome email series (onboarding)
 
 ### 3.2 Enhanced AI Features
+
 - [ ] Stream AI responses (SSE/WebSocket via Cloud Run)
 - [ ] AI context: include project file tree, recent changes
 - [ ] AI templates: "Build me a landing page", "Add a contact form"
@@ -168,6 +197,7 @@
 - [ ] Model selection (Claude Haiku for fast/cheap, Sonnet for quality)
 
 ### 3.3 Preview System Enhancement
+
 - [ ] Preview hot-reload (push file changes to running sandbox)
 - [ ] Preview URL sharing (public link for client review)
 - [ ] Multi-device preview (desktop/tablet/mobile side-by-side)
@@ -175,6 +205,7 @@
 - [ ] Track preview_seconds in usage_logs for billing
 
 ### 3.4 Deploy & Hosting Improvements
+
 - [ ] Custom domain SSL auto-provisioning (Let's Encrypt via Certificate Manager)
 - [ ] Deploy rollback UI (one-click revert to previous version)
 - [ ] Deploy previews (PR-style preview URLs before going live)
@@ -185,6 +216,7 @@
 - [ ] Redirect rules configuration
 
 ### 3.5 Collaboration Features
+
 - [ ] Real-time collaboration (Yjs/CRDT for concurrent editing)
 - [ ] Comments on code/sections
 - [ ] Activity feed per project
@@ -196,6 +228,7 @@
 ## Phase 4: Growth & Optimization (Weeks 5-8)
 
 ### 4.1 Performance Optimization
+
 - [ ] Cloud Run min-instances: 1 (eliminate cold starts for $)
 - [ ] Redis caching for:
   - Project file listings (invalidate on write)
@@ -208,6 +241,7 @@
 - [ ] Connection pooling via PgBouncer (if needed at scale)
 
 ### 4.2 Multi-Region Deployment
+
 - [ ] Deploy API to us-east1 and europe-west1
 - [ ] Global load balancer with latency-based routing (already have LB)
 - [ ] Cloud SQL read replicas in each region
@@ -215,6 +249,7 @@
 - [ ] Redis instances per region (or Memorystore global)
 
 ### 4.3 Admin & Analytics
+
 - [ ] Revenue dashboard (daily/monthly MRR, churn, ARPU)
 - [ ] Usage analytics (most active users, popular features)
 - [ ] Platform health dashboard (SLIs: availability, latency, error budget)
@@ -223,6 +258,7 @@
 - [ ] Looker/Metabase dashboards
 
 ### 4.4 Developer Experience
+
 - [ ] CLI tool (`simplebuild deploy`, `simplebuild init`)
 - [ ] GitHub integration (import repos, deploy on push)
 - [ ] Template marketplace (community templates)
@@ -231,6 +267,7 @@
 - [ ] Status page (status.simplebuildpro.com)
 
 ### 4.5 Billing Enhancements
+
 - [ ] Prepaid credits (buy $50 credit, use until depleted)
 - [ ] Volume discounts (usage > $100/mo → 10% off)
 - [ ] Team billing (single invoice for org)
@@ -243,6 +280,7 @@
 ## Phase 5: Scale & Enterprise (Months 2-3)
 
 ### 5.1 Enterprise Features
+
 - [ ] SSO (SAML 2.0 / OIDC) integration
 - [ ] Custom branding (white-label option)
 - [ ] Dedicated infrastructure (isolated Cloud Run services)
@@ -252,6 +290,7 @@
 - [ ] Audit log export (SIEM integration)
 
 ### 5.2 Infrastructure Scaling
+
 - [ ] Kubernetes migration (GKE Autopilot) if Cloud Run limits hit
 - [ ] Database sharding strategy (by organization_id)
 - [ ] Object storage tiering (hot → cold → archive)
@@ -259,6 +298,7 @@
 - [ ] WebSocket support via Cloud Run (for real-time collaboration)
 
 ### 5.3 Security & Compliance
+
 - [ ] Penetration testing (annual)
 - [ ] Dependency scanning (Snyk/Dependabot)
 - [ ] Container image scanning (Artifact Registry vulnerability scanning)
@@ -271,20 +311,20 @@
 
 ## Infrastructure Cost Estimate (Monthly)
 
-| Service | Estimated Cost | Notes |
-|---|---|---|
-| Cloud Run (API) | $30-100 | 2 min instances, autoscale to 10 |
-| Cloud Run (Web) | $20-50 | 1 min instance, autoscale to 5 |
-| Cloud SQL | $50-100 | db-f1-micro → db-g1-small at scale |
-| Memorystore Redis | $35 | 1GB Basic tier |
-| Cloud Storage | $5-20 | Based on stored data |
-| Cloud CDN | $10-50 | Based on egress |
-| Load Balancer | $18 | Global forwarding rule |
-| Secret Manager | $1 | Per-access pricing |
-| Cloud DNS | $1 | Per zone + queries |
-| Cloud Build | $0-10 | 120 free min/day |
-| Cloud Scheduler | $0.10 | 3 free jobs |
-| **Total** | **~$170-385/mo** | Scales with usage |
+| Service           | Estimated Cost   | Notes                              |
+| ----------------- | ---------------- | ---------------------------------- |
+| Cloud Run (API)   | $30-100          | 2 min instances, autoscale to 10   |
+| Cloud Run (Web)   | $20-50           | 1 min instance, autoscale to 5     |
+| Cloud SQL         | $50-100          | db-f1-micro → db-g1-small at scale |
+| Memorystore Redis | $35              | 1GB Basic tier                     |
+| Cloud Storage     | $5-20            | Based on stored data               |
+| Cloud CDN         | $10-50           | Based on egress                    |
+| Load Balancer     | $18              | Global forwarding rule             |
+| Secret Manager    | $1               | Per-access pricing                 |
+| Cloud DNS         | $1               | Per zone + queries                 |
+| Cloud Build       | $0-10            | 120 free min/day                   |
+| Cloud Scheduler   | $0.10            | 3 free jobs                        |
+| **Total**         | **~$170-385/mo** | Scales with usage                  |
 
 **Break-even**: ~50-100 active paying users at avg $5/day spend.
 
@@ -304,15 +344,15 @@
 
 ## Key Metrics to Track
 
-| Metric | Target | Current |
-|---|---|---|
-| API uptime | 99.9% | Unknown (no monitoring yet) |
-| API P95 latency | < 500ms | ~200ms (health check) |
-| Signup → First Deploy | < 5 minutes | Untested with real user |
-| Daily Active Users | 10+ (Month 1) | 1 (test) |
-| Monthly Revenue | $500+ (Month 2) | $0 |
-| Error rate | < 0.1% | ~0% (low traffic) |
-| Cold start time | < 2s | ~3-5s (needs min-instances) |
+| Metric                | Target          | Current                     |
+| --------------------- | --------------- | --------------------------- |
+| API uptime            | 99.9%           | Unknown (no monitoring yet) |
+| API P95 latency       | < 500ms         | ~200ms (health check)       |
+| Signup → First Deploy | < 5 minutes     | Untested with real user     |
+| Daily Active Users    | 10+ (Month 1)   | 1 (test)                    |
+| Monthly Revenue       | $500+ (Month 2) | $0                          |
+| Error rate            | < 0.1%          | ~0% (low traffic)           |
+| Cold start time       | < 2s            | ~3-5s (needs min-instances) |
 
 ---
 
@@ -364,4 +404,4 @@
 
 ---
 
-*This document is the single source of truth for SimpleBuild Pro's roadmap. Update as items are completed.*
+_This document is the single source of truth for SimpleBuild Pro's roadmap. Update as items are completed._

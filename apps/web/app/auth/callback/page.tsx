@@ -48,7 +48,8 @@ function CallbackHandler() {
     });
 
     // Fetch user profile
-    authApi.getMe()
+    authApi
+      .getMe()
       .then((user) => {
         setUser(user as any);
         router.push('/dashboard');
@@ -65,8 +66,18 @@ function CallbackHandler() {
         {error ? (
           <div className="space-y-3">
             <div className="w-12 h-12 mx-auto rounded-full bg-red-100 flex items-center justify-center">
-              <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-6 h-6 text-red-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </div>
             <p className="text-sm text-red-600 font-medium">{error}</p>
@@ -85,11 +96,13 @@ function CallbackHandler() {
 
 export default function OAuthCallbackPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="w-8 h-8 mx-auto border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="w-8 h-8 mx-auto border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
       <CallbackHandler />
     </Suspense>
   );

@@ -13,9 +13,9 @@ test.describe('Editor Workspace', () => {
     test('should show loading spinner for invalid project', async ({ page }) => {
       await page.goto('/editor/invalid-project-id');
       // Should show loading or error state
-      await expect(
-        page.locator('.animate-spin, [data-testid="error"]').first()
-      ).toBeVisible({ timeout: 10_000 });
+      await expect(page.locator('.animate-spin, [data-testid="error"]').first()).toBeVisible({
+        timeout: 10_000,
+      });
     });
   });
 
@@ -42,7 +42,7 @@ test.describe('Editor Workspace', () => {
       const hasKeyHandler = await page.evaluate(() => {
         let handlerFound = false;
         const original = window.addEventListener;
-        window.addEventListener = function(type: string, ...args: any[]) {
+        window.addEventListener = function (type: string, ...args: any[]) {
           if (type === 'keydown') handlerFound = true;
           return original.call(this, type, ...args);
         };
@@ -65,8 +65,10 @@ test.describe('Dashboard', () => {
 
   test('should have navigation to login', async ({ page }) => {
     await page.goto('/');
-    const loginElements = page.locator('a[href*="login"], button:has-text("Log in"), button:has-text("Sign in")');
-    if (await loginElements.count() > 0) {
+    const loginElements = page.locator(
+      'a[href*="login"], button:has-text("Log in"), button:has-text("Sign in")',
+    );
+    if ((await loginElements.count()) > 0) {
       await expect(loginElements.first()).toBeVisible();
     }
   });

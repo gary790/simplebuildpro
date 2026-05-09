@@ -5,7 +5,13 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { User, Project, ProjectFile, ProjectAsset, PreviewSession } from '@simplebuildpro/shared';
+import type {
+  User,
+  Project,
+  ProjectFile,
+  ProjectAsset,
+  PreviewSession,
+} from '@simplebuildpro/shared';
 
 // ─── Auth Store ─────────────────────────────────────────────
 interface AuthState {
@@ -115,17 +121,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     files.set(path, content);
     set({ files });
     // Mark tab dirty
-    const tabs = get().openTabs.map(t =>
-      t.path === path ? { ...t, isDirty: true } : t
-    );
+    const tabs = get().openTabs.map((t) => (t.path === path ? { ...t, isDirty: true } : t));
     set({ openTabs: tabs });
   },
   deleteFile: (path) => {
     const files = new Map(get().files);
     files.delete(path);
     set({ files });
-    const tabs = get().openTabs.filter(t => t.path !== path);
-    const active = get().activeFile === path ? (tabs[0]?.path || null) : get().activeFile;
+    const tabs = get().openTabs.filter((t) => t.path !== path);
+    const active = get().activeFile === path ? tabs[0]?.path || null : get().activeFile;
     set({ openTabs: tabs, activeFile: active });
   },
   renameFile: (oldPath, newPath) => {
@@ -136,9 +140,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       files.set(newPath, content);
     }
     set({ files });
-    const tabs = get().openTabs.map(t =>
-      t.path === oldPath ? { ...t, path: newPath } : t
-    );
+    const tabs = get().openTabs.map((t) => (t.path === oldPath ? { ...t, path: newPath } : t));
     const active = get().activeFile === oldPath ? newPath : get().activeFile;
     set({ openTabs: tabs, activeFile: active });
   },
@@ -148,7 +150,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setActiveFile: (path) => {
     if (path) {
       const tabs = get().openTabs;
-      if (!tabs.find(t => t.path === path)) {
+      if (!tabs.find((t) => t.path === path)) {
         set({ openTabs: [...tabs, { path, isDirty: false }] });
       }
     }
@@ -157,22 +159,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   openTabs: [],
   openTab: (path) => {
     const tabs = get().openTabs;
-    if (!tabs.find(t => t.path === path)) {
+    if (!tabs.find((t) => t.path === path)) {
       set({ openTabs: [...tabs, { path, isDirty: false }] });
     }
     set({ activeFile: path });
   },
   closeTab: (path) => {
-    const tabs = get().openTabs.filter(t => t.path !== path);
-    const active = get().activeFile === path
-      ? (tabs[tabs.length - 1]?.path || null)
-      : get().activeFile;
+    const tabs = get().openTabs.filter((t) => t.path !== path);
+    const active =
+      get().activeFile === path ? tabs[tabs.length - 1]?.path || null : get().activeFile;
     set({ openTabs: tabs, activeFile: active });
   },
   markTabDirty: (path, dirty) => {
-    const tabs = get().openTabs.map(t =>
-      t.path === path ? { ...t, isDirty: dirty } : t
-    );
+    const tabs = get().openTabs.map((t) => (t.path === path ? { ...t, isDirty: dirty } : t));
     set({ openTabs: tabs });
   },
 
@@ -180,7 +179,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   assets: [],
   setAssets: (assets) => set({ assets }),
   addAsset: (asset) => set({ assets: [asset, ...get().assets] }),
-  removeAsset: (id) => set({ assets: get().assets.filter(a => a.id !== id) }),
+  removeAsset: (id) => set({ assets: get().assets.filter((a) => a.id !== id) }),
 
   // Preview
   previewSession: null,
@@ -271,8 +270,8 @@ export const useChatStore = create<ChatState>()(
         set({ messages });
       },
       setStreaming: (id, streaming) => {
-        const messages = get().messages.map(m =>
-          m.id === id ? { ...m, isStreaming: streaming } : m
+        const messages = get().messages.map((m) =>
+          m.id === id ? { ...m, isStreaming: streaming } : m,
         );
         set({ messages });
       },
@@ -285,6 +284,6 @@ export const useChatStore = create<ChatState>()(
         conversationId: state.conversationId,
         messages: state.messages,
       }),
-    }
-  )
+    },
+  ),
 );

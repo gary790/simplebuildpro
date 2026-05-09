@@ -61,12 +61,12 @@ function generateTOTP(secret: string, timeStep = 30, digits = 6, time?: number):
   const hmac = crypto.createHmac('sha1', key).update(counterBuffer).digest();
 
   const offset = hmac[hmac.length - 1] & 0xf;
-  const code = (
-    ((hmac[offset] & 0x7f) << 24) |
-    ((hmac[offset + 1] & 0xff) << 16) |
-    ((hmac[offset + 2] & 0xff) << 8) |
-    (hmac[offset + 3] & 0xff)
-  ) % Math.pow(10, digits);
+  const code =
+    (((hmac[offset] & 0x7f) << 24) |
+      ((hmac[offset + 1] & 0xff) << 16) |
+      ((hmac[offset + 2] & 0xff) << 8) |
+      (hmac[offset + 3] & 0xff)) %
+    Math.pow(10, digits);
 
   return code.toString().padStart(digits, '0');
 }
@@ -113,7 +113,8 @@ mfaRoutes.post('/setup', async (c) => {
   const secret = generateSecret();
 
   // Store secret temporarily (not yet enabled)
-  await db.update(users)
+  await db
+    .update(users)
     .set({ totpSecret: secret } as any)
     .where(eq(users.id, session.userId));
 
@@ -133,7 +134,10 @@ mfaRoutes.post('/setup', async (c) => {
 
 // ─── Verify & Enable MFA (Step 2) ───────────────────────────
 const verifySetupSchema = z.object({
-  token: z.string().length(6).regex(/^\d{6}$/),
+  token: z
+    .string()
+    .length(6)
+    .regex(/^\d{6}$/),
 });
 
 mfaRoutes.post('/verify-setup', async (c) => {
@@ -162,11 +166,12 @@ mfaRoutes.post('/verify-setup', async (c) => {
   // Generate recovery codes
   const recoveryCodes = generateRecoveryCodes();
   const hashedCodes = recoveryCodes.map((code) =>
-    crypto.createHash('sha256').update(code).digest('hex')
+    crypto.createHash('sha256').update(code).digest('hex'),
   );
 
   // Enable MFA
-  await db.update(users)
+  await db
+    .update(users)
     .set({
       totpEnabled: true,
       mfaRecoveryCodes: JSON.stringify(hashedCodes),
@@ -227,7 +232,8 @@ mfaRoutes.post('/verify', async (c) => {
 
   // Remove used recovery code
   recoveryCodes.splice(codeIndex, 1);
-  await db.update(users)
+  await db
+    .update(users)
     .set({ mfaRecoveryCodes: JSON.stringify(recoveryCodes) } as any)
     .where(eq(users.id, userId));
 
@@ -266,7 +272,8 @@ mfaRoutes.post('/disable', async (c) => {
   }
 
   // Disable MFA
-  await db.update(users)
+  await db
+    .update(users)
     .set({
       totpEnabled: false,
       totpSecret: null,

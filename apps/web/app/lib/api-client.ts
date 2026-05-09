@@ -5,9 +5,18 @@
 // ============================================================
 
 import type {
-  User, AuthTokens, Project, ProjectFile, ProjectAsset,
-  ProjectVersion, Deployment, AiConversation, AiMessage,
-  PreviewSession, PaginatedResponse, ApiResult,
+  User,
+  AuthTokens,
+  Project,
+  ProjectFile,
+  ProjectAsset,
+  ProjectVersion,
+  Deployment,
+  AiConversation,
+  AiMessage,
+  PreviewSession,
+  PaginatedResponse,
+  ApiResult,
 } from '@simplebuildpro/shared';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -44,16 +53,12 @@ export function loadStoredRefreshToken(): string | null {
 }
 
 // ─── Core Fetch Wrapper ─────────────────────────────────────
-async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {},
-  retry = true,
-): Promise<T> {
+async function apiFetch<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
   const url = `${API_BASE}${path}`;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
+    ...((options.headers as Record<string, string>) || {}),
   };
 
   if (accessToken) {
@@ -133,11 +138,9 @@ export const authApi = {
       body: JSON.stringify(data),
     }),
 
-  logout: () =>
-    apiFetch<{ message: string }>('/api/v1/auth/logout', { method: 'POST' }),
+  logout: () => apiFetch<{ message: string }>('/api/v1/auth/logout', { method: 'POST' }),
 
-  getMe: () =>
-    apiFetch<User>('/api/v1/auth/me'),
+  getMe: () => apiFetch<User>('/api/v1/auth/me'),
 
   updateProfile: (data: { name?: string; avatarUrl?: string | null }) =>
     apiFetch<User>('/api/v1/auth/me', {
@@ -163,9 +166,9 @@ export const projectsApi = {
   },
 
   get: (id: string) =>
-    apiFetch<Project & { files: ProjectFile[]; assets: ProjectAsset[]; versions: ProjectVersion[] }>(
-      `/api/v1/projects/${id}`
-    ),
+    apiFetch<
+      Project & { files: ProjectFile[]; assets: ProjectAsset[]; versions: ProjectVersion[] }
+    >(`/api/v1/projects/${id}`),
 
   create: (data: { name: string; description?: string; templateId?: string }) =>
     apiFetch<Project>('/api/v1/projects', {
@@ -173,7 +176,15 @@ export const projectsApi = {
       body: JSON.stringify(data),
     }),
 
-  update: (id: string, data: { name?: string; description?: string; settings?: Record<string, unknown>; status?: string }) =>
+  update: (
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      settings?: Record<string, unknown>;
+      status?: string;
+    },
+  ) =>
     apiFetch<Project>(`/api/v1/projects/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -185,8 +196,20 @@ export const projectsApi = {
   // ─── Integrations (Ship Panel) ─────────────────────────────
   getIntegrations: (id: string) =>
     apiFetch<{
-      github?: { connected: boolean; repo?: string; owner?: string; branch?: string; lastPush?: string };
-      cloudflare?: { connected: boolean; projectName?: string; accountId?: string; lastDeploy?: string; liveUrl?: string };
+      github?: {
+        connected: boolean;
+        repo?: string;
+        owner?: string;
+        branch?: string;
+        lastPush?: string;
+      };
+      cloudflare?: {
+        connected: boolean;
+        projectName?: string;
+        accountId?: string;
+        lastDeploy?: string;
+        liveUrl?: string;
+      };
     }>(`/api/v1/projects/${id}/integrations`),
 
   saveIntegrations: (id: string, data: Record<string, unknown>) =>
@@ -195,17 +218,19 @@ export const projectsApi = {
       body: JSON.stringify(data),
     }),
 
-  pushToGithub: (id: string, data: { owner: string; repo: string; branch: string; commitMessage: string }) =>
+  pushToGithub: (
+    id: string,
+    data: { owner: string; repo: string; branch: string; commitMessage: string },
+  ) =>
     apiFetch<{ filesCount: number; commitSha: string; url: string }>(
       `/api/v1/projects/${id}/github/push`,
       { method: 'POST', body: JSON.stringify(data) },
     ),
 
   deployToCloudflare: (id: string) =>
-    apiFetch<{ url: string; projectName: string }>(
-      `/api/v1/projects/${id}/cloudflare/deploy`,
-      { method: 'POST' },
-    ),
+    apiFetch<{ url: string; projectName: string }>(`/api/v1/projects/${id}/cloudflare/deploy`, {
+      method: 'POST',
+    }),
 
   exportZip: (id: string) =>
     apiFetch<{ downloadUrl: string; sizeBytes: number; filesCount: number }>(
@@ -238,16 +263,15 @@ export const filesApi = {
     apiFetch<{ message: string }>(`/api/v1/files/${projectId}/${filePath}`, { method: 'DELETE' }),
 
   rename: (projectId: string, oldPath: string, newPath: string) =>
-    apiFetch<{ oldPath: string; newPath: string }>(
-      `/api/v1/files/${projectId}/rename`,
-      { method: 'POST', body: JSON.stringify({ oldPath, newPath }) },
-    ),
+    apiFetch<{ oldPath: string; newPath: string }>(`/api/v1/files/${projectId}/rename`, {
+      method: 'POST',
+      body: JSON.stringify({ oldPath, newPath }),
+    }),
 };
 
 // ─── Assets API ─────────────────────────────────────────────
 export const assetsApi = {
-  list: (projectId: string) =>
-    apiFetch<ProjectAsset[]>(`/api/v1/assets/${projectId}`),
+  list: (projectId: string) => apiFetch<ProjectAsset[]>(`/api/v1/assets/${projectId}`),
 
   upload: async (projectId: string, file: File): Promise<ProjectAsset> => {
     const formData = new FormData();
@@ -264,22 +288,39 @@ export const assetsApi = {
 
     const json = await res.json();
     if (!res.ok || !json.success) {
-      throw new ApiError(res.status, json.error?.code || 'UPLOAD_FAILED', json.error?.message || 'Upload failed');
+      throw new ApiError(
+        res.status,
+        json.error?.code || 'UPLOAD_FAILED',
+        json.error?.message || 'Upload failed',
+      );
     }
     return json.data;
   },
 
-  getSignedUploadUrl: (projectId: string, data: { filename: string; contentType: string; sizeBytes: number }) =>
+  getSignedUploadUrl: (
+    projectId: string,
+    data: { filename: string; contentType: string; sizeBytes: number },
+  ) =>
     apiFetch<{ uploadUrl: string; gcsKey: string; cdnUrl: string; expiresIn: number }>(
       `/api/v1/assets/${projectId}/upload-url`,
       { method: 'POST', body: JSON.stringify(data) },
     ),
 
-  confirmUpload: (projectId: string, data: { gcsKey: string; originalFilename: string; mimeType: string; sizeBytes: number; width?: number; height?: number }) =>
-    apiFetch<ProjectAsset>(
-      `/api/v1/assets/${projectId}/confirm-upload`,
-      { method: 'POST', body: JSON.stringify(data) },
-    ),
+  confirmUpload: (
+    projectId: string,
+    data: {
+      gcsKey: string;
+      originalFilename: string;
+      mimeType: string;
+      sizeBytes: number;
+      width?: number;
+      height?: number;
+    },
+  ) =>
+    apiFetch<ProjectAsset>(`/api/v1/assets/${projectId}/confirm-upload`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   delete: (projectId: string, assetId: string) =>
     apiFetch<{ message: string }>(`/api/v1/assets/${projectId}/${assetId}`, { method: 'DELETE' }),
@@ -294,10 +335,9 @@ export const sandboxApi = {
     ),
 
   stop: (projectId: string) =>
-    apiFetch<{ message: string; filesSnapshot: number }>(
-      `/api/v1/sandbox/${projectId}/stop`,
-      { method: 'POST' },
-    ),
+    apiFetch<{ message: string; filesSnapshot: number }>(`/api/v1/sandbox/${projectId}/stop`, {
+      method: 'POST',
+    }),
 
   status: (projectId: string) =>
     apiFetch<{ active: boolean; sandboxUrl?: string; uptime?: number }>(
@@ -366,10 +406,10 @@ export type AIStreamCallback = (event: AIStreamEvent) => void;
 
 export const aiApi = {
   sendMessage: (data: { projectId: string; conversationId?: string; message: string }) =>
-    apiFetch<{ conversationId: string; message: AiMessage & { explanation?: string; plan?: string[]; files?: string[] } }>(
-      '/api/v1/ai/chat',
-      { method: 'POST', body: JSON.stringify(data) },
-    ),
+    apiFetch<{
+      conversationId: string;
+      message: AiMessage & { explanation?: string; plan?: string[]; files?: string[] };
+    }>('/api/v1/ai/chat', { method: 'POST', body: JSON.stringify(data) }),
 
   /**
    * Stream AI response with Phase 3 single-pass protocol.
@@ -467,7 +507,9 @@ export const aiApi = {
           try {
             const event: AIStreamEvent = JSON.parse(eventData);
             onEvent(event);
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
       }
     }
@@ -478,32 +520,30 @@ export const aiApi = {
 
   getMessages: (projectId: string, conversationId: string) =>
     apiFetch<{ id: string; messages: AiMessage[] }>(
-      `/api/v1/ai/conversations/${projectId}/${conversationId}`
+      `/api/v1/ai/conversations/${projectId}/${conversationId}`,
     ),
 };
 
 // ─── Preview API ────────────────────────────────────────────
 export const previewApi = {
   start: (projectId: string) =>
-    apiFetch<PreviewSession & { reused: boolean }>(
-      '/api/v1/preview/start',
-      { method: 'POST', body: JSON.stringify({ projectId }) },
-    ),
+    apiFetch<PreviewSession & { reused: boolean }>('/api/v1/preview/start', {
+      method: 'POST',
+      body: JSON.stringify({ projectId }),
+    }),
 
   update: (sessionId: string, files: Record<string, string>) =>
-    apiFetch<{ message: string; filesUpdated: number }>(
-      '/api/v1/preview/update',
-      { method: 'POST', body: JSON.stringify({ sessionId, files }) },
-    ),
+    apiFetch<{ message: string; filesUpdated: number }>('/api/v1/preview/update', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, files }),
+    }),
 
-  status: (sessionId: string) =>
-    apiFetch<PreviewSession>(`/api/v1/preview/status/${sessionId}`),
+  status: (sessionId: string) => apiFetch<PreviewSession>(`/api/v1/preview/status/${sessionId}`),
 
   stop: (sessionId: string) =>
     apiFetch<{ message: string }>(`/api/v1/preview/stop/${sessionId}`, { method: 'POST' }),
 
-  logs: (sessionId: string) =>
-    apiFetch<{ logs: string[] }>(`/api/v1/preview/logs/${sessionId}`),
+  logs: (sessionId: string) => apiFetch<{ logs: string[] }>(`/api/v1/preview/logs/${sessionId}`),
 };
 
 // ─── Build API ──────────────────────────────────────────────
@@ -532,13 +572,9 @@ export const buildApi = {
 // ─── Deploy API ─────────────────────────────────────────────
 export const deployApi = {
   deploy: (data: { projectId: string; versionId: string }) =>
-    apiFetch<Deployment>(
-      '/api/v1/deploy',
-      { method: 'POST', body: JSON.stringify(data) },
-    ),
+    apiFetch<Deployment>('/api/v1/deploy', { method: 'POST', body: JSON.stringify(data) }),
 
-  list: (projectId: string) =>
-    apiFetch<Deployment[]>(`/api/v1/deploy/${projectId}`),
+  list: (projectId: string) => apiFetch<Deployment[]>(`/api/v1/deploy/${projectId}`),
 
   rollback: (projectId: string, deploymentId: string) =>
     apiFetch<{ deploymentId: string; rolledBackTo: string; url: string; message: string }>(
@@ -560,11 +596,13 @@ export const deployApi = {
 
   listDomains: (projectId: string) =>
     apiFetch<{ id: string; domain: string; sslStatus: string; dnsVerified: boolean }[]>(
-      `/api/v1/deploy/${projectId}/domains`
+      `/api/v1/deploy/${projectId}/domains`,
     ),
 
   deleteDomain: (projectId: string, domainId: string) =>
-    apiFetch<{ message: string }>(`/api/v1/deploy/${projectId}/domains/${domainId}`, { method: 'DELETE' }),
+    apiFetch<{ message: string }>(`/api/v1/deploy/${projectId}/domains/${domainId}`, {
+      method: 'DELETE',
+    }),
 };
 
 // ─── Billing API ────────────────────────────────────────────
@@ -597,16 +635,16 @@ export const billingApi = {
     }>('/api/v1/billing/usage'),
 
   createCheckout: (data: { plan: 'pro' | 'business'; interval: 'monthly' | 'yearly' }) =>
-    apiFetch<{ checkoutUrl: string; sessionId: string }>(
-      '/api/v1/billing/checkout',
-      { method: 'POST', body: JSON.stringify(data) },
-    ),
+    apiFetch<{ checkoutUrl: string; sessionId: string }>('/api/v1/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
-  getPortal: () =>
-    apiFetch<{ portalUrl: string }>('/api/v1/billing/portal', { method: 'POST' }),
+  getPortal: () => apiFetch<{ portalUrl: string }>('/api/v1/billing/portal', { method: 'POST' }),
 
   getSubscription: () =>
-    apiFetch<{ plan: string; subscription: { id: string; status: string; currentPeriodEnd: string } | null }>(
-      '/api/v1/billing/subscription'
-    ),
+    apiFetch<{
+      plan: string;
+      subscription: { id: string; status: string; currentPeriodEnd: string } | null;
+    }>('/api/v1/billing/subscription'),
 };

@@ -14,9 +14,21 @@ import * as wc from '@/lib/webcontainer';
 import { toast } from '@/components/ui/toast';
 import { Button } from '@/components/ui/button';
 import {
-  Send, Bot, User, Loader2, Sparkles, Copy, Check,
-  RotateCcw, FileCode, ArrowRight, Plus, Paperclip,
-  X, Image as ImageIcon, File as FileIcon,
+  Send,
+  Bot,
+  User,
+  Loader2,
+  Sparkles,
+  Copy,
+  Check,
+  RotateCcw,
+  FileCode,
+  ArrowRight,
+  Plus,
+  Paperclip,
+  X,
+  Image as ImageIcon,
+  File as FileIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -45,7 +57,10 @@ function FileChip({ path }: { path: string }) {
 
   return (
     <button
-      onClick={() => { openTab(path); setActiveFile(path); }}
+      onClick={() => {
+        openTab(path);
+        setActiveFile(path);
+      }}
       className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 hover:bg-brand-50 hover:text-brand-700 rounded text-2xs text-slate-600 font-mono transition-colors"
     >
       <FileCode size={9} className="text-brand-500" />
@@ -55,7 +70,13 @@ function FileChip({ path }: { path: string }) {
 }
 
 // ─── Writing Indicator (shows during file streaming) ─────────
-function WritingIndicator({ currentFile, filesWritten }: { currentFile: string | null; filesWritten: string[] }) {
+function WritingIndicator({
+  currentFile,
+  filesWritten,
+}: {
+  currentFile: string | null;
+  filesWritten: string[];
+}) {
   if (!currentFile && filesWritten.length === 0) return null;
 
   return (
@@ -64,13 +85,10 @@ function WritingIndicator({ currentFile, filesWritten }: { currentFile: string |
       <span className="truncate">
         {currentFile
           ? `Writing ${currentFile}...`
-          : `Done — ${filesWritten.length} file${filesWritten.length !== 1 ? 's' : ''}`
-        }
+          : `Done — ${filesWritten.length} file${filesWritten.length !== 1 ? 's' : ''}`}
       </span>
       {filesWritten.length > 0 && currentFile && (
-        <span className="ml-auto text-2xs text-slate-400 shrink-0">
-          {filesWritten.length} done
-        </span>
+        <span className="ml-auto text-2xs text-slate-400 shrink-0">{filesWritten.length} done</span>
       )}
     </div>
   );
@@ -78,10 +96,7 @@ function WritingIndicator({ currentFile, filesWritten }: { currentFile: string |
 
 export function AiChat() {
   const { project, updateFile, openTab, setActiveFile, setStreamingFile } = useEditorStore();
-  const {
-    conversationId, isLoading,
-    setConversationId, setLoading,
-  } = useChatStore();
+  const { conversationId, isLoading, setConversationId, setLoading } = useChatStore();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -149,11 +164,11 @@ export function AiChat() {
       }
       newAttachments.push(att);
     }
-    setPendingAttachments(prev => [...prev, ...newAttachments]);
+    setPendingAttachments((prev) => [...prev, ...newAttachments]);
   }, []);
 
   const removeAttachment = useCallback((index: number) => {
-    setPendingAttachments(prev => {
+    setPendingAttachments((prev) => {
       const next = [...prev];
       if (next[index]?.previewUrl) {
         URL.revokeObjectURL(next[index].previewUrl!);
@@ -164,7 +179,9 @@ export function AiChat() {
   }, []);
 
   // ─── Upload attachments and get URLs ───────────────────
-  const uploadAttachments = useCallback(async (): Promise<{ filename: string; mimeType: string; url: string }[]> => {
+  const uploadAttachments = useCallback(async (): Promise<
+    { filename: string; mimeType: string; url: string }[]
+  > => {
     if (!project?.id || pendingAttachments.length === 0) return [];
 
     const uploaded: { filename: string; mimeType: string; url: string }[] = [];
@@ -199,7 +216,7 @@ export function AiChat() {
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
 
-    setMessages(prev => [
+    setMessages((prev) => [
       ...prev,
       {
         id: userMsgId,
@@ -240,11 +257,13 @@ export function AiChat() {
 
             case 'text':
               if (event.token) {
-                setMessages(prev => prev.map(m =>
-                  m.id === assistantMsgId
-                    ? { ...m, content: (m.content || '') + event.token }
-                    : m
-                ));
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, content: (m.content || '') + event.token }
+                      : m,
+                  ),
+                );
               }
               break;
 
@@ -253,11 +272,11 @@ export function AiChat() {
                 currentFilePath = event.path;
                 currentFileContent = '';
                 setStreamingFile(event.path);
-                setMessages(prev => prev.map(m =>
-                  m.id === assistantMsgId
-                    ? { ...m, currentFile: event.path }
-                    : m
-                ));
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId ? { ...m, currentFile: event.path } : m,
+                  ),
+                );
               }
               break;
 
@@ -274,21 +293,23 @@ export function AiChat() {
 
                 // Write to WebContainer (fire-and-forget)
                 if (wc.getInstance()) {
-                  wc.writeFile(event.path, currentFileContent).catch(err => {
+                  wc.writeFile(event.path, currentFileContent).catch((err) => {
                     console.warn('[AiChat] WebContainer write failed:', err);
                   });
                 }
 
                 // Update message state
-                setMessages(prev => prev.map(m =>
-                  m.id === assistantMsgId
-                    ? {
-                        ...m,
-                        filesWritten: [...(m.filesWritten || []), event.path!],
-                        currentFile: null,
-                      }
-                    : m
-                ));
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId
+                      ? {
+                          ...m,
+                          filesWritten: [...(m.filesWritten || []), event.path!],
+                          currentFile: null,
+                        }
+                      : m,
+                  ),
+                );
 
                 currentFilePath = null;
                 currentFileContent = '';
@@ -298,16 +319,18 @@ export function AiChat() {
 
             case 'shell_command':
               if (event.command) {
-                setMessages(prev => prev.map(m =>
-                  m.id === assistantMsgId
-                    ? { ...m, shellCommands: [...(m.shellCommands || []), event.command!] }
-                    : m
-                ));
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, shellCommands: [...(m.shellCommands || []), event.command!] }
+                      : m,
+                  ),
+                );
 
                 // Run in WebContainer (fire-and-forget)
                 if (wc.getInstance()) {
                   const parts = event.command.split(' ');
-                  wc.runCommand(parts[0], parts.slice(1)).catch(err => {
+                  wc.runCommand(parts[0], parts.slice(1)).catch((err) => {
                     console.warn('[AiChat] WebContainer command failed:', err);
                   });
                 }
@@ -315,18 +338,18 @@ export function AiChat() {
               break;
 
             case 'stream_end':
-              setMessages(prev => prev.map(m =>
-                m.id === assistantMsgId
-                  ? { ...m, isStreaming: false, currentFile: null }
-                  : m
-              ));
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId ? { ...m, isStreaming: false, currentFile: null } : m,
+                ),
+              );
               setLoading(false);
               setStreamingFile(null);
               if (event.conversationId) setConversationId(event.conversationId);
 
               // Open first created file in editor
               if (event.filesChanged && event.filesChanged.length > 0) {
-                const htmlFile = event.filesChanged.find(p => p.endsWith('.html'));
+                const htmlFile = event.filesChanged.find((p) => p.endsWith('.html'));
                 const firstFile = htmlFile || event.filesChanged[0];
                 openTab(firstFile);
                 setActiveFile(firstFile);
@@ -334,11 +357,18 @@ export function AiChat() {
               break;
 
             case 'error':
-              setMessages(prev => prev.map(m =>
-                m.id === assistantMsgId
-                  ? { ...m, isStreaming: false, content: `Error: ${event.message}`, currentFile: null }
-                  : m
-              ));
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? {
+                        ...m,
+                        isStreaming: false,
+                        content: `Error: ${event.message}`,
+                        currentFile: null,
+                      }
+                    : m,
+                ),
+              );
               setLoading(false);
               setStreamingFile(null);
               toast('error', 'AI Error', event.message || 'Something went wrong');
@@ -347,16 +377,30 @@ export function AiChat() {
         },
       );
     } catch (err: any) {
-      setMessages(prev => prev.map(m =>
-        m.id === assistantMsgId
-          ? { ...m, isStreaming: false, content: `Error: ${err.message}`, currentFile: null }
-          : m
-      ));
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMsgId
+            ? { ...m, isStreaming: false, content: `Error: ${err.message}`, currentFile: null }
+            : m,
+        ),
+      );
       setLoading(false);
       setStreamingFile(null);
       toast('error', 'AI Error', err.message);
     }
-  }, [input, project?.id, conversationId, isLoading, updateFile, openTab, setActiveFile, setConversationId, setLoading, setStreamingFile, uploadAttachments]);
+  }, [
+    input,
+    project?.id,
+    conversationId,
+    isLoading,
+    updateFile,
+    openTab,
+    setActiveFile,
+    setConversationId,
+    setLoading,
+    setStreamingFile,
+    uploadAttachments,
+  ]);
 
   const handleCopy = (id: string, content: string) => {
     navigator.clipboard.writeText(content);
@@ -420,7 +464,10 @@ export function AiChat() {
               ].map((suggestion) => (
                 <button
                   key={suggestion}
-                  onClick={() => { setInput(suggestion); inputRef.current?.focus(); }}
+                  onClick={() => {
+                    setInput(suggestion);
+                    inputRef.current?.focus();
+                  }}
                   className="block w-full text-left px-3 py-2 text-xs text-slate-600 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
                 >
                   <ArrowRight size={10} className="inline mr-1.5 text-brand-500" />
@@ -432,7 +479,10 @@ export function AiChat() {
         )}
 
         {messages.map((msg) => (
-          <div key={msg.id} className={clsx('flex gap-2.5', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+          <div
+            key={msg.id}
+            className={clsx('flex gap-2.5', msg.role === 'user' ? 'justify-end' : 'justify-start')}
+          >
             {msg.role === 'assistant' && (
               <div className="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center shrink-0 mt-0.5">
                 <Bot size={12} className="text-brand-700" />
@@ -451,18 +501,17 @@ export function AiChat() {
                 <div className="space-y-2">
                   {/* AI's brief text response */}
                   {msg.content && (
-                    <div className="whitespace-pre-wrap break-words text-xs">
-                      {msg.content}
-                    </div>
+                    <div className="whitespace-pre-wrap break-words text-xs">{msg.content}</div>
                   )}
 
                   {/* Writing indicator (during streaming) */}
-                  {msg.isStreaming && (msg.currentFile || (msg.filesWritten && msg.filesWritten.length > 0)) && (
-                    <WritingIndicator
-                      currentFile={msg.currentFile || null}
-                      filesWritten={msg.filesWritten || []}
-                    />
-                  )}
+                  {msg.isStreaming &&
+                    (msg.currentFile || (msg.filesWritten && msg.filesWritten.length > 0)) && (
+                      <WritingIndicator
+                        currentFile={msg.currentFile || null}
+                        filesWritten={msg.filesWritten || []}
+                      />
+                    )}
 
                   {/* Files written — compact chips (after done) */}
                   {!msg.isStreaming && msg.filesWritten && msg.filesWritten.length > 0 && (
@@ -477,17 +526,22 @@ export function AiChat() {
                   {!msg.isStreaming && msg.shellCommands && msg.shellCommands.length > 0 && (
                     <div className="text-2xs text-slate-400 font-mono">
                       {msg.shellCommands.map((cmd, i) => (
-                        <div key={i} className="truncate">$ {cmd}</div>
+                        <div key={i} className="truncate">
+                          $ {cmd}
+                        </div>
                       ))}
                     </div>
                   )}
 
                   {/* Initial thinking state */}
-                  {msg.isStreaming && !msg.content && (!msg.filesWritten || msg.filesWritten.length === 0) && !msg.currentFile && (
-                    <span className="inline-flex items-center gap-1.5 text-slate-400 text-xs">
-                      <Loader2 size={12} className="animate-spin" /> Thinking...
-                    </span>
-                  )}
+                  {msg.isStreaming &&
+                    !msg.content &&
+                    (!msg.filesWritten || msg.filesWritten.length === 0) &&
+                    !msg.currentFile && (
+                      <span className="inline-flex items-center gap-1.5 text-slate-400 text-xs">
+                        <Loader2 size={12} className="animate-spin" /> Thinking...
+                      </span>
+                    )}
 
                   {/* Copy button */}
                   {!msg.isStreaming && msg.content && (
@@ -502,15 +556,20 @@ export function AiChat() {
                 </div>
               ) : (
                 <div>
-                  <div className="whitespace-pre-wrap break-words">
-                    {msg.content}
-                  </div>
+                  <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                   {/* Show attachment thumbnails on user messages */}
                   {msg.attachments && msg.attachments.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {msg.attachments.map((att, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white/20 rounded text-2xs">
-                          {att.mimeType.startsWith('image/') ? <ImageIcon size={9} /> : <FileIcon size={9} />}
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white/20 rounded text-2xs"
+                        >
+                          {att.mimeType.startsWith('image/') ? (
+                            <ImageIcon size={9} />
+                          ) : (
+                            <FileIcon size={9} />
+                          )}
                           {att.filename}
                         </span>
                       ))}

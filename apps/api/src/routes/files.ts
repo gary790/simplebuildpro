@@ -68,7 +68,7 @@ fileRoutes.get('/:projectId', async (c) => {
 
   return c.json({
     success: true,
-    data: files.map(f => ({
+    data: files.map((f) => ({
       id: f.id,
       path: f.path,
       ...(includeContent ? { content: f.content } : {}),
@@ -110,7 +110,11 @@ fileRoutes.put('/:projectId', async (c) => {
   const sizeBytes = Buffer.byteLength(content, 'utf-8');
   const limits = PLAN_LIMITS[session.plan];
   if (sizeBytes > limits.maxFileSize) {
-    throw new AppError(413, 'FILE_TOO_LARGE', `File exceeds ${limits.maxFileSize / 1024 / 1024}MB limit for your plan.`);
+    throw new AppError(
+      413,
+      'FILE_TOO_LARGE',
+      `File exceeds ${limits.maxFileSize / 1024 / 1024}MB limit for your plan.`,
+    );
   }
 
   const contentHash = crypto.createHash('sha256').update(content).digest('hex');
@@ -124,39 +128,44 @@ fileRoutes.put('/:projectId', async (c) => {
   let file;
   if (existing) {
     // Update existing file
-    [file] = await db.update(projectFiles)
+    [file] = await db
+      .update(projectFiles)
       .set({ content, contentHash, mimeType, sizeBytes, updatedAt: new Date() })
       .where(eq(projectFiles.id, existing.id))
       .returning();
   } else {
     // Create new file
-    [file] = await db.insert(projectFiles).values({
-      projectId,
-      path: filePath,
-      content,
-      contentHash,
-      mimeType,
-      sizeBytes,
-    }).returning();
+    [file] = await db
+      .insert(projectFiles)
+      .values({
+        projectId,
+        path: filePath,
+        content,
+        contentHash,
+        mimeType,
+        sizeBytes,
+      })
+      .returning();
   }
 
   // Update project timestamp
-  await db.update(projects)
-    .set({ updatedAt: new Date() })
-    .where(eq(projects.id, projectId));
+  await db.update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, projectId));
 
-  return c.json({
-    success: true,
-    data: {
-      id: file.id,
-      path: file.path,
-      contentHash: file.contentHash,
-      mimeType: file.mimeType,
-      sizeBytes: file.sizeBytes,
-      created: !existing,
-      updatedAt: file.updatedAt.toISOString(),
+  return c.json(
+    {
+      success: true,
+      data: {
+        id: file.id,
+        path: file.path,
+        contentHash: file.contentHash,
+        mimeType: file.mimeType,
+        sizeBytes: file.sizeBytes,
+        created: !existing,
+        updatedAt: file.updatedAt.toISOString(),
+      },
     },
-  }, existing ? 200 : 201);
+    existing ? 200 : 201,
+  );
 });
 
 // ─── Bulk Update Files (from AI chat) ────────────────────────
@@ -193,21 +202,25 @@ fileRoutes.put('/:projectId/bulk', async (c) => {
     });
 
     if (existing) {
-      await db.update(projectFiles)
+      await db
+        .update(projectFiles)
         .set({ content, contentHash, mimeType, sizeBytes, updatedAt: new Date() })
         .where(eq(projectFiles.id, existing.id));
       results.push({ path: filePath, created: false });
     } else {
       await db.insert(projectFiles).values({
-        projectId, path: filePath, content, contentHash, mimeType, sizeBytes,
+        projectId,
+        path: filePath,
+        content,
+        contentHash,
+        mimeType,
+        sizeBytes,
       });
       results.push({ path: filePath, created: true });
     }
   }
 
-  await db.update(projects)
-    .set({ updatedAt: new Date() })
-    .where(eq(projects.id, projectId));
+  await db.update(projects).set({ updatedAt: new Date() }).where(eq(projects.id, projectId));
 
   return c.json({
     success: true,
@@ -270,7 +283,8 @@ fileRoutes.post('/:projectId/rename', async (c) => {
   });
   if (target) throw new AppError(409, 'FILE_EXISTS', `File "${newPath}" already exists.`);
 
-  await db.update(projectFiles)
+  await db
+    .update(projectFiles)
     .set({ path: newPath, mimeType: getMimeType(newPath), updatedAt: new Date() })
     .where(eq(projectFiles.id, file.id));
 
@@ -281,13 +295,22 @@ fileRoutes.post('/:projectId/rename', async (c) => {
 function getMimeType(path: string): string {
   const ext = path.split('.').pop()?.toLowerCase();
   const map: Record<string, string> = {
-    html: 'text/html', htm: 'text/html',
-    css: 'text/css', scss: 'text/x-scss', less: 'text/x-less',
-    js: 'application/javascript', jsx: 'application/javascript',
-    ts: 'application/typescript', tsx: 'application/typescript',
-    json: 'application/json', xml: 'application/xml',
-    svg: 'image/svg+xml', md: 'text/markdown',
-    txt: 'text/plain', yaml: 'text/yaml', yml: 'text/yaml',
+    html: 'text/html',
+    htm: 'text/html',
+    css: 'text/css',
+    scss: 'text/x-scss',
+    less: 'text/x-less',
+    js: 'application/javascript',
+    jsx: 'application/javascript',
+    ts: 'application/typescript',
+    tsx: 'application/typescript',
+    json: 'application/json',
+    xml: 'application/xml',
+    svg: 'image/svg+xml',
+    md: 'text/markdown',
+    txt: 'text/plain',
+    yaml: 'text/yaml',
+    yml: 'text/yaml',
   };
   return map[ext || ''] || 'text/plain';
 }

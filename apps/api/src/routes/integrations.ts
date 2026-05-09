@@ -7,7 +7,13 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { getDb } from '@simplebuildpro/db';
-import { projects, projectFiles, userConnections, projectIntegrations, projectEnvVars } from '@simplebuildpro/db';
+import {
+  projects,
+  projectFiles,
+  userConnections,
+  projectIntegrations,
+  projectEnvVars,
+} from '@simplebuildpro/db';
 import { eq, and } from 'drizzle-orm';
 import jwt from 'jsonwebtoken';
 import { requireAuth, type AuthEnv } from '../middleware/auth';
@@ -140,7 +146,7 @@ integrationsRoutes.get('/connections', async (c) => {
 
   return c.json({
     success: true,
-    data: connections.map(conn => ({
+    data: connections.map((conn) => ({
       id: conn.id,
       provider: conn.provider,
       displayName: conn.displayName,
@@ -158,7 +164,8 @@ integrationsRoutes.delete('/connections/:provider', async (c) => {
   const provider = c.req.param('provider');
   const db = getDb();
 
-  await db.delete(userConnections)
+  await db
+    .delete(userConnections)
     .where(and(eq(userConnections.userId, session.userId), eq(userConnections.provider, provider)));
 
   return c.json({ success: true, data: { message: `${provider} disconnected.` } });
@@ -201,7 +208,10 @@ integrationsRoutes.get('/connect/github/repos', async (c) => {
   const db = getDb();
 
   const connection = await db.query.userConnections.findFirst({
-    where: and(eq(userConnections.userId, session.userId), eq(userConnections.provider, 'github_repo')),
+    where: and(
+      eq(userConnections.userId, session.userId),
+      eq(userConnections.provider, 'github_repo'),
+    ),
   });
 
   if (!connection?.accessToken) {
@@ -212,19 +222,22 @@ integrationsRoutes.get('/connect/github/repos', async (c) => {
   const page = parseInt(c.req.query('page') || '1');
   const perPage = 30;
 
-  const res = await fetch(`https://api.github.com/user/repos?sort=updated&per_page=${perPage}&page=${page}&affiliation=owner,collaborator,organization_member`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'SimpleBuildPro',
+  const res = await fetch(
+    `https://api.github.com/user/repos?sort=updated&per_page=${perPage}&page=${page}&affiliation=owner,collaborator,organization_member`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'SimpleBuildPro',
+      },
     },
-  });
+  );
 
   if (!res.ok) {
     throw new AppError(502, 'GITHUB_API_ERROR', 'Failed to fetch repos from GitHub.');
   }
 
-  const repos = await res.json() as any[];
+  const repos = (await res.json()) as any[];
 
   return c.json({
     success: true,
@@ -251,7 +264,11 @@ integrationsRoutes.get('/connect/vercel', async (c) => {
   if (!VERCEL_CLIENT_ID) throw new AppError(503, 'VERCEL_NOT_CONFIGURED', 'Vercel not configured.');
   const state = buildOAuthState(session.userId);
   const redirectUri = `${API_URL}/api/v1/connect/vercel/callback`;
-  const params = new URLSearchParams({ client_id: VERCEL_CLIENT_ID, redirect_uri: redirectUri, state });
+  const params = new URLSearchParams({
+    client_id: VERCEL_CLIENT_ID,
+    redirect_uri: redirectUri,
+    state,
+  });
   return c.redirect(`https://vercel.com/integrations/new?${params}`);
 });
 
@@ -265,10 +282,16 @@ integrationsRoutes.get('/connect/vercel/callback', async (c) => {
 
 integrationsRoutes.get('/connect/netlify', async (c) => {
   const session = c.get('session');
-  if (!NETLIFY_CLIENT_ID) throw new AppError(503, 'NETLIFY_NOT_CONFIGURED', 'Netlify not configured.');
+  if (!NETLIFY_CLIENT_ID)
+    throw new AppError(503, 'NETLIFY_NOT_CONFIGURED', 'Netlify not configured.');
   const state = buildOAuthState(session.userId);
   const redirectUri = `${API_URL}/api/v1/connect/netlify/callback`;
-  const params = new URLSearchParams({ client_id: NETLIFY_CLIENT_ID, redirect_uri: redirectUri, response_type: 'code', state });
+  const params = new URLSearchParams({
+    client_id: NETLIFY_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    state,
+  });
   return c.redirect(`https://app.netlify.com/authorize?${params}`);
 });
 
@@ -294,19 +317,26 @@ integrationsRoutes.post('/connect/cloudflare', async (c) => {
   const verifyRes = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
     headers: { Authorization: `Bearer ${apiToken}` },
   });
-  const verifyData = await verifyRes.json() as any;
+  const verifyData = (await verifyRes.json()) as any;
 
   if (!verifyData.success || verifyData.result?.status !== 'active') {
-    throw new AppError(400, 'INVALID_TOKEN', 'Cloudflare API token is invalid or inactive. Please check and try again.');
+    throw new AppError(
+      400,
+      'INVALID_TOKEN',
+      'Cloudflare API token is invalid or inactive. Please check and try again.',
+    );
   }
 
   // Get account info if no account ID provided
   let resolvedAccountId = accountId;
   if (!resolvedAccountId) {
-    const accountsRes = await fetch('https://api.cloudflare.com/client/v4/accounts?page=1&per_page=5', {
-      headers: { Authorization: `Bearer ${apiToken}` },
-    });
-    const accountsData = await accountsRes.json() as any;
+    const accountsRes = await fetch(
+      'https://api.cloudflare.com/client/v4/accounts?page=1&per_page=5',
+      {
+        headers: { Authorization: `Bearer ${apiToken}` },
+      },
+    );
+    const accountsData = (await accountsRes.json()) as any;
     if (accountsData.success && accountsData.result?.length > 0) {
       resolvedAccountId = accountsData.result[0].id;
     }
@@ -314,7 +344,10 @@ integrationsRoutes.post('/connect/cloudflare', async (c) => {
 
   const db = getDb();
   const existing = await db.query.userConnections.findFirst({
-    where: and(eq(userConnections.userId, session.userId), eq(userConnections.provider, 'cloudflare')),
+    where: and(
+      eq(userConnections.userId, session.userId),
+      eq(userConnections.provider, 'cloudflare'),
+    ),
   });
 
   const connectionData = {
@@ -367,7 +400,11 @@ integrationsRoutes.post('/connect/supabase', async (c) => {
       headers: { apikey: anonKey },
     });
     if (!healthRes.ok && healthRes.status !== 404) {
-      throw new AppError(400, 'SUPABASE_INVALID', 'Could not connect to Supabase project. Check URL and keys.');
+      throw new AppError(
+        400,
+        'SUPABASE_INVALID',
+        'Could not connect to Supabase project. Check URL and keys.',
+      );
     }
   } catch (err: any) {
     if (err instanceof AppError) throw err;
@@ -376,7 +413,10 @@ integrationsRoutes.post('/connect/supabase', async (c) => {
 
   const db = getDb();
   const existing = await db.query.userConnections.findFirst({
-    where: and(eq(userConnections.userId, session.userId), eq(userConnections.provider, 'supabase')),
+    where: and(
+      eq(userConnections.userId, session.userId),
+      eq(userConnections.provider, 'supabase'),
+    ),
   });
 
   // Extract project ref from URL
@@ -430,7 +470,7 @@ integrationsRoutes.get('/:id/integrations', async (c) => {
   return c.json({
     success: true,
     data: {
-      integrations: integrations.map(i => ({
+      integrations: integrations.map((i) => ({
         id: i.id,
         provider: i.provider,
         connectionId: i.connectionId,
@@ -438,7 +478,7 @@ integrationsRoutes.get('/:id/integrations', async (c) => {
         lastActionAt: i.lastActionAt?.toISOString() || null,
         lastActionResult: i.lastActionResult,
       })),
-      connections: connections.map(c => ({
+      connections: connections.map((c) => ({
         id: c.id,
         provider: c.provider,
         displayName: c.displayName,
@@ -467,15 +507,21 @@ integrationsRoutes.put('/:id/integrations/:provider', async (c) => {
   const db = getDb();
 
   const existing = await db.query.projectIntegrations.findFirst({
-    where: and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, provider)),
+    where: and(
+      eq(projectIntegrations.projectId, projectId),
+      eq(projectIntegrations.provider, provider),
+    ),
   });
 
   if (existing) {
-    await db.update(projectIntegrations).set({
-      connectionId: connectionId || existing.connectionId,
-      config,
-      updatedAt: new Date(),
-    }).where(eq(projectIntegrations.id, existing.id));
+    await db
+      .update(projectIntegrations)
+      .set({
+        connectionId: connectionId || existing.connectionId,
+        config,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectIntegrations.id, existing.id));
   } else {
     await db.insert(projectIntegrations).values({
       projectId,
@@ -496,8 +542,11 @@ integrationsRoutes.delete('/:id/integrations/:provider', async (c) => {
   await getOwnedProject(session.userId, projectId);
 
   const db = getDb();
-  await db.delete(projectIntegrations)
-    .where(and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, provider)));
+  await db
+    .delete(projectIntegrations)
+    .where(
+      and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, provider)),
+    );
 
   return c.json({ success: true, data: { message: 'Integration removed.' } });
 });
@@ -525,7 +574,10 @@ integrationsRoutes.post('/:id/github/push', async (c) => {
 
   // Get user's GitHub connection
   const connection = await db.query.userConnections.findFirst({
-    where: and(eq(userConnections.userId, session.userId), eq(userConnections.provider, 'github_repo')),
+    where: and(
+      eq(userConnections.userId, session.userId),
+      eq(userConnections.provider, 'github_repo'),
+    ),
   });
 
   if (!connection?.accessToken) {
@@ -561,26 +613,29 @@ integrationsRoutes.post('/:id/github/push', async (c) => {
     try {
       const refRes = await fetch(`${apiBase}/git/ref/heads/${branch}`, { headers });
       if (refRes.ok) {
-        const refData = await refRes.json() as any;
+        const refData = (await refRes.json()) as any;
         baseSha = refData.object.sha;
         const commitRes = await fetch(`${apiBase}/git/commits/${baseSha}`, { headers });
-        const commitData = await commitRes.json() as any;
+        const commitData = (await commitRes.json()) as any;
         baseTreeSha = commitData.tree.sha;
       }
-    } catch { /* Branch doesn't exist — will create */ }
+    } catch {
+      /* Branch doesn't exist — will create */
+    }
 
     // 2. Create blobs for each file
     const treeItems: { path: string; mode: string; type: string; sha: string }[] = [];
     for (const file of files) {
       const blobRes = await fetch(`${apiBase}/git/blobs`, {
-        method: 'POST', headers,
+        method: 'POST',
+        headers,
         body: JSON.stringify({ content: file.content || '', encoding: 'utf-8' }),
       });
       if (!blobRes.ok) {
-        const err = await blobRes.json() as any;
+        const err = (await blobRes.json()) as any;
         throw new Error(`Blob failed for ${file.path}: ${err.message}`);
       }
-      const blobData = await blobRes.json() as any;
+      const blobData = (await blobRes.json()) as any;
       treeItems.push({ path: file.path, mode: '100644', type: 'blob', sha: blobData.sha });
     }
 
@@ -589,37 +644,46 @@ integrationsRoutes.post('/:id/github/push', async (c) => {
     if (baseTreeSha) treePayload.base_tree = baseTreeSha;
 
     const treeRes = await fetch(`${apiBase}/git/trees`, {
-      method: 'POST', headers, body: JSON.stringify(treePayload),
+      method: 'POST',
+      headers,
+      body: JSON.stringify(treePayload),
     });
     if (!treeRes.ok) throw new Error('Tree creation failed');
-    const treeData = await treeRes.json() as any;
+    const treeData = (await treeRes.json()) as any;
 
     // 4. Create commit
     const commitPayload: Record<string, any> = { message: commitMessage, tree: treeData.sha };
     if (baseSha) commitPayload.parents = [baseSha];
 
     const commitRes = await fetch(`${apiBase}/git/commits`, {
-      method: 'POST', headers, body: JSON.stringify(commitPayload),
+      method: 'POST',
+      headers,
+      body: JSON.stringify(commitPayload),
     });
     if (!commitRes.ok) throw new Error('Commit creation failed');
-    const commitData = await commitRes.json() as any;
+    const commitData = (await commitRes.json()) as any;
 
     // 5. Update/create branch ref
     if (baseSha) {
       await fetch(`${apiBase}/git/refs/heads/${branch}`, {
-        method: 'PATCH', headers,
+        method: 'PATCH',
+        headers,
         body: JSON.stringify({ sha: commitData.sha, force: true }),
       });
     } else {
       await fetch(`${apiBase}/git/refs`, {
-        method: 'POST', headers,
+        method: 'POST',
+        headers,
         body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commitData.sha }),
       });
     }
 
     // 6. Record action
     const existing = await db.query.projectIntegrations.findFirst({
-      where: and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, 'github')),
+      where: and(
+        eq(projectIntegrations.projectId, projectId),
+        eq(projectIntegrations.provider, 'github'),
+      ),
     });
 
     const actionResult = {
@@ -630,12 +694,15 @@ integrationsRoutes.post('/:id/github/push', async (c) => {
     };
 
     if (existing) {
-      await db.update(projectIntegrations).set({
-        lastActionAt: new Date(),
-        lastActionResult: actionResult,
-        config: { ...(existing.config as any), repo: `${owner}/${repoName}`, branch },
-        updatedAt: new Date(),
-      }).where(eq(projectIntegrations.id, existing.id));
+      await db
+        .update(projectIntegrations)
+        .set({
+          lastActionAt: new Date(),
+          lastActionResult: actionResult,
+          config: { ...(existing.config as any), repo: `${owner}/${repoName}`, branch },
+          updatedAt: new Date(),
+        })
+        .where(eq(projectIntegrations.id, existing.id));
     } else {
       await db.insert(projectIntegrations).values({
         projectId,
@@ -673,7 +740,10 @@ integrationsRoutes.post('/:id/cloudflare/deploy', async (c) => {
 
   // Get Cloudflare connection
   const connection = await db.query.userConnections.findFirst({
-    where: and(eq(userConnections.userId, session.userId), eq(userConnections.provider, 'cloudflare')),
+    where: and(
+      eq(userConnections.userId, session.userId),
+      eq(userConnections.provider, 'cloudflare'),
+    ),
   });
 
   if (!connection?.accessToken) {
@@ -684,7 +754,11 @@ integrationsRoutes.post('/:id/cloudflare/deploy', async (c) => {
   const accountId = connection.accountId;
 
   if (!accountId) {
-    throw new AppError(400, 'NO_ACCOUNT_ID', 'Cloudflare account ID not found. Reconnect your account.');
+    throw new AppError(
+      400,
+      'NO_ACCOUNT_ID',
+      'Cloudflare account ID not found. Reconnect your account.',
+    );
   }
 
   // Get project files
@@ -707,10 +781,14 @@ integrationsRoutes.post('/:id/cloudflare/deploy', async (c) => {
     if (!checkRes.ok) {
       const createRes = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`,
-        { method: 'POST', headers: cfHeaders, body: JSON.stringify({ name: projectName, production_branch: 'main' }) },
+        {
+          method: 'POST',
+          headers: cfHeaders,
+          body: JSON.stringify({ name: projectName, production_branch: 'main' }),
+        },
       );
       if (!createRes.ok) {
-        const err = await createRes.json() as any;
+        const err = (await createRes.json()) as any;
         throw new Error(`Create project failed: ${JSON.stringify(err.errors)}`);
       }
     }
@@ -727,30 +805,41 @@ integrationsRoutes.post('/:id/cloudflare/deploy', async (c) => {
     );
 
     if (!deployRes.ok) {
-      const err = await deployRes.json() as any;
+      const err = (await deployRes.json()) as any;
       throw new Error(`Deploy failed: ${JSON.stringify(err.errors)}`);
     }
 
-    const deployData = await deployRes.json() as any;
+    const deployData = (await deployRes.json()) as any;
     const deployUrl = deployData.result?.url || `https://${projectName}.pages.dev`;
 
     // Record action
     const actionResult = { status: 'success', url: deployUrl, filesCount: files.length };
 
     const existing = await db.query.projectIntegrations.findFirst({
-      where: and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, 'cloudflare')),
+      where: and(
+        eq(projectIntegrations.projectId, projectId),
+        eq(projectIntegrations.provider, 'cloudflare'),
+      ),
     });
 
     if (existing) {
-      await db.update(projectIntegrations).set({
-        lastActionAt: new Date(), lastActionResult: actionResult,
-        config: { ...(existing.config as any), projectName },
-        updatedAt: new Date(),
-      }).where(eq(projectIntegrations.id, existing.id));
+      await db
+        .update(projectIntegrations)
+        .set({
+          lastActionAt: new Date(),
+          lastActionResult: actionResult,
+          config: { ...(existing.config as any), projectName },
+          updatedAt: new Date(),
+        })
+        .where(eq(projectIntegrations.id, existing.id));
     } else {
       await db.insert(projectIntegrations).values({
-        projectId, provider: 'cloudflare', connectionId: connection.id,
-        config: { projectName }, lastActionAt: new Date(), lastActionResult: actionResult,
+        projectId,
+        provider: 'cloudflare',
+        connectionId: connection.id,
+        config: { projectName },
+        lastActionAt: new Date(),
+        lastActionResult: actionResult,
       });
     }
 
@@ -797,7 +886,7 @@ integrationsRoutes.post('/:id/vercel/deploy', async (c) => {
 
   try {
     // Vercel Deployments API — create deployment with file contents
-    const vercelFiles = files.map(f => ({
+    const vercelFiles = files.map((f) => ({
       file: f.path,
       data: f.content || '',
     }));
@@ -817,29 +906,40 @@ integrationsRoutes.post('/:id/vercel/deploy', async (c) => {
     });
 
     if (!deployRes.ok) {
-      const err = await deployRes.json() as any;
+      const err = (await deployRes.json()) as any;
       throw new Error(`Vercel deploy failed: ${err.error?.message || JSON.stringify(err)}`);
     }
 
-    const deployData = await deployRes.json() as any;
+    const deployData = (await deployRes.json()) as any;
     const deployUrl = `https://${deployData.url}`;
 
     const actionResult = { status: 'success', url: deployUrl, filesCount: files.length };
 
     const existing = await db.query.projectIntegrations.findFirst({
-      where: and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, 'vercel')),
+      where: and(
+        eq(projectIntegrations.projectId, projectId),
+        eq(projectIntegrations.provider, 'vercel'),
+      ),
     });
 
     if (existing) {
-      await db.update(projectIntegrations).set({
-        lastActionAt: new Date(), lastActionResult: actionResult,
-        config: { ...(existing.config as any), projectName },
-        updatedAt: new Date(),
-      }).where(eq(projectIntegrations.id, existing.id));
+      await db
+        .update(projectIntegrations)
+        .set({
+          lastActionAt: new Date(),
+          lastActionResult: actionResult,
+          config: { ...(existing.config as any), projectName },
+          updatedAt: new Date(),
+        })
+        .where(eq(projectIntegrations.id, existing.id));
     } else {
       await db.insert(projectIntegrations).values({
-        projectId, provider: 'vercel', connectionId: connection.id,
-        config: { projectName }, lastActionAt: new Date(), lastActionResult: actionResult,
+        projectId,
+        provider: 'vercel',
+        connectionId: connection.id,
+        config: { projectName },
+        lastActionAt: new Date(),
+        lastActionResult: actionResult,
       });
     }
 
@@ -890,7 +990,7 @@ integrationsRoutes.post('/:id/netlify/deploy', async (c) => {
     const sitesRes = await fetch(`https://api.netlify.com/api/v1/sites?name=${siteName}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const sites = await sitesRes.json() as any[];
+    const sites = (await sitesRes.json()) as any[];
     const existingSite = sites.find((s: any) => s.name === siteName);
 
     if (existingSite) {
@@ -901,7 +1001,7 @@ integrationsRoutes.post('/:id/netlify/deploy', async (c) => {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: siteName }),
       });
-      const newSite = await createRes.json() as any;
+      const newSite = (await createRes.json()) as any;
       siteId = newSite.id;
     }
 
@@ -913,7 +1013,10 @@ integrationsRoutes.post('/:id/netlify/deploy', async (c) => {
     const crypto = await import('crypto');
     const fileDigests: Record<string, string> = {};
     for (const file of files) {
-      const hash = crypto.createHash('sha1').update(file.content || '').digest('hex');
+      const hash = crypto
+        .createHash('sha1')
+        .update(file.content || '')
+        .digest('hex');
       fileDigests[`/${file.path}`] = hash;
     }
 
@@ -922,16 +1025,22 @@ integrationsRoutes.post('/:id/netlify/deploy', async (c) => {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ files: fileDigests }),
     });
-    const deploy = await deployCreateRes.json() as any;
+    const deploy = (await deployCreateRes.json()) as any;
 
     // Upload required files
     if (deploy.required?.length > 0) {
       for (const file of files) {
-        const hash = crypto.createHash('sha1').update(file.content || '').digest('hex');
+        const hash = crypto
+          .createHash('sha1')
+          .update(file.content || '')
+          .digest('hex');
         if (deploy.required.includes(hash)) {
           await fetch(`https://api.netlify.com/api/v1/deploys/${deploy.id}/files/${file.path}`, {
             method: 'PUT',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/octet-stream',
+            },
             body: file.content || '',
           });
         }
@@ -942,19 +1051,30 @@ integrationsRoutes.post('/:id/netlify/deploy', async (c) => {
     const actionResult = { status: 'success', url: deployUrl, filesCount: files.length };
 
     const existingIntegration = await db.query.projectIntegrations.findFirst({
-      where: and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, 'netlify')),
+      where: and(
+        eq(projectIntegrations.projectId, projectId),
+        eq(projectIntegrations.provider, 'netlify'),
+      ),
     });
 
     if (existingIntegration) {
-      await db.update(projectIntegrations).set({
-        lastActionAt: new Date(), lastActionResult: actionResult,
-        config: { ...(existingIntegration.config as any), siteName, siteId },
-        updatedAt: new Date(),
-      }).where(eq(projectIntegrations.id, existingIntegration.id));
+      await db
+        .update(projectIntegrations)
+        .set({
+          lastActionAt: new Date(),
+          lastActionResult: actionResult,
+          config: { ...(existingIntegration.config as any), siteName, siteId },
+          updatedAt: new Date(),
+        })
+        .where(eq(projectIntegrations.id, existingIntegration.id));
     } else {
       await db.insert(projectIntegrations).values({
-        projectId, provider: 'netlify', connectionId: connection.id,
-        config: { siteName, siteId }, lastActionAt: new Date(), lastActionResult: actionResult,
+        projectId,
+        provider: 'netlify',
+        connectionId: connection.id,
+        config: { siteName, siteId },
+        lastActionAt: new Date(),
+        lastActionResult: actionResult,
       });
     }
 
@@ -995,7 +1115,11 @@ integrationsRoutes.post('/connect/aws', async (c) => {
     });
 
     if (!stsRes.ok) {
-      throw new AppError(400, 'AWS_INVALID_CREDENTIALS', 'AWS credentials are invalid. Check your Access Key ID and Secret.');
+      throw new AppError(
+        400,
+        'AWS_INVALID_CREDENTIALS',
+        'AWS credentials are invalid. Check your Access Key ID and Secret.',
+      );
     }
 
     const stsText = await stsRes.text();
@@ -1027,13 +1151,19 @@ integrationsRoutes.post('/connect/aws', async (c) => {
     };
 
     if (existing) {
-      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
+      await db
+        .update(userConnections)
+        .set(connectionData)
+        .where(eq(userConnections.id, existing.id));
     } else {
       await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
     }
 
     logger.info(`AWS connected: account ${awsAccountId} (user ${session.userId})`);
-    return c.json({ success: true, data: { message: 'AWS connected.', accountId: awsAccountId, region } });
+    return c.json({
+      success: true,
+      data: { message: 'AWS connected.', accountId: awsAccountId, region },
+    });
   } catch (err: any) {
     if (err instanceof AppError) throw err;
     throw new AppError(400, 'AWS_CONNECT_FAILED', `AWS connection failed: ${err.message}`);
@@ -1100,8 +1230,10 @@ integrationsRoutes.post('/:id/aws/deploy', async (c) => {
         // If bucket doesn't exist, try to create it
         if (s3Res.status === 404 && uploadedCount === 0) {
           // Create bucket
-          const createBody = region === 'us-east-1' ? '' :
-            `<CreateBucketConfiguration><LocationConstraint>${region}</LocationConstraint></CreateBucketConfiguration>`;
+          const createBody =
+            region === 'us-east-1'
+              ? ''
+              : `<CreateBucketConfiguration><LocationConstraint>${region}</LocationConstraint></CreateBucketConfiguration>`;
           const createRes = await awsSignedRequest({
             service: 's3',
             region,
@@ -1170,24 +1302,40 @@ integrationsRoutes.post('/:id/aws/deploy', async (c) => {
       ? `CloudFront distribution ${distributionId}`
       : `http://${bucketName}.s3-website-${region}.amazonaws.com`;
 
-    const actionResult = { status: 'success', url: deployUrl, filesCount: files.length, bucketName, region };
+    const actionResult = {
+      status: 'success',
+      url: deployUrl,
+      filesCount: files.length,
+      bucketName,
+      region,
+    };
 
     // Record action
     const existing = await db.query.projectIntegrations.findFirst({
-      where: and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, 'aws')),
+      where: and(
+        eq(projectIntegrations.projectId, projectId),
+        eq(projectIntegrations.provider, 'aws'),
+      ),
     });
 
     if (existing) {
-      await db.update(projectIntegrations).set({
-        lastActionAt: new Date(), lastActionResult: actionResult,
-        config: { ...(existing.config as any), bucketName, region, distributionId },
-        updatedAt: new Date(),
-      }).where(eq(projectIntegrations.id, existing.id));
+      await db
+        .update(projectIntegrations)
+        .set({
+          lastActionAt: new Date(),
+          lastActionResult: actionResult,
+          config: { ...(existing.config as any), bucketName, region, distributionId },
+          updatedAt: new Date(),
+        })
+        .where(eq(projectIntegrations.id, existing.id));
     } else {
       await db.insert(projectIntegrations).values({
-        projectId, provider: 'aws', connectionId: connection.id,
+        projectId,
+        provider: 'aws',
+        connectionId: connection.id,
         config: { bucketName, region, distributionId },
-        lastActionAt: new Date(), lastActionResult: actionResult,
+        lastActionAt: new Date(),
+        lastActionResult: actionResult,
       });
     }
 
@@ -1217,7 +1365,11 @@ integrationsRoutes.post('/connect/gcp', async (c) => {
     // Parse and validate the service account key
     const keyData = JSON.parse(serviceAccountKey);
     if (!keyData.client_email || !keyData.private_key || !keyData.project_id) {
-      throw new AppError(400, 'INVALID_SA_KEY', 'Invalid service account key. Must contain client_email, private_key, and project_id.');
+      throw new AppError(
+        400,
+        'INVALID_SA_KEY',
+        'Invalid service account key. Must contain client_email, private_key, and project_id.',
+      );
     }
 
     const resolvedProjectId = gcpProjectId || keyData.project_id;
@@ -1225,19 +1377,30 @@ integrationsRoutes.post('/connect/gcp', async (c) => {
     // Validate by getting an access token
     const accessToken = await getGcpAccessToken(keyData);
     if (!accessToken) {
-      throw new AppError(400, 'GCP_AUTH_FAILED', 'Could not authenticate with the provided service account key.');
+      throw new AppError(
+        400,
+        'GCP_AUTH_FAILED',
+        'Could not authenticate with the provided service account key.',
+      );
     }
 
     // Verify project access
-    const projectRes = await fetch(`https://cloudresourcemanager.googleapis.com/v1/projects/${resolvedProjectId}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const projectRes = await fetch(
+      `https://cloudresourcemanager.googleapis.com/v1/projects/${resolvedProjectId}`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
 
     if (!projectRes.ok) {
-      throw new AppError(400, 'GCP_PROJECT_ACCESS', `Cannot access GCP project "${resolvedProjectId}". Ensure the service account has the required permissions.`);
+      throw new AppError(
+        400,
+        'GCP_PROJECT_ACCESS',
+        `Cannot access GCP project "${resolvedProjectId}". Ensure the service account has the required permissions.`,
+      );
     }
 
-    const projectData = await projectRes.json() as any;
+    const projectData = (await projectRes.json()) as any;
 
     const db = getDb();
     const existing = await db.query.userConnections.findFirst({
@@ -1262,13 +1425,19 @@ integrationsRoutes.post('/connect/gcp', async (c) => {
     };
 
     if (existing) {
-      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
+      await db
+        .update(userConnections)
+        .set(connectionData)
+        .where(eq(userConnections.id, existing.id));
     } else {
       await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
     }
 
     logger.info(`GCP connected: project ${resolvedProjectId} (user ${session.userId})`);
-    return c.json({ success: true, data: { message: 'Google Cloud connected.', projectId: resolvedProjectId } });
+    return c.json({
+      success: true,
+      data: { message: 'Google Cloud connected.', projectId: resolvedProjectId },
+    });
   } catch (err: any) {
     if (err instanceof AppError) throw err;
     throw new AppError(400, 'GCP_CONNECT_FAILED', `GCP connection failed: ${err.message}`);
@@ -1329,20 +1498,27 @@ integrationsRoutes.post('/:id/gcp/deploy', async (c) => {
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ config: { rewrites: [{ glob: '**', destination: '/index.html' }] } }),
-        }
+          body: JSON.stringify({
+            config: { rewrites: [{ glob: '**', destination: '/index.html' }] },
+          }),
+        },
       );
       if (!versionRes.ok) {
-        const err = await versionRes.json() as any;
-        throw new Error(`Firebase version creation failed: ${err.error?.message || JSON.stringify(err)}`);
+        const err = (await versionRes.json()) as any;
+        throw new Error(
+          `Firebase version creation failed: ${err.error?.message || JSON.stringify(err)}`,
+        );
       }
-      const versionData = await versionRes.json() as any;
+      const versionData = (await versionRes.json()) as any;
       const versionName = versionData.name; // sites/{siteId}/versions/{versionId}
 
       // 2. Populate files — get upload URLs
       const fileHashes: Record<string, string> = {};
       for (const file of files) {
-        const hash = crypto.createHash('sha256').update(file.content || '').digest('hex');
+        const hash = crypto
+          .createHash('sha256')
+          .update(file.content || '')
+          .digest('hex');
         fileHashes[`/${file.path}`] = hash;
       }
 
@@ -1352,22 +1528,28 @@ integrationsRoutes.post('/:id/gcp/deploy', async (c) => {
           method: 'POST',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ files: fileHashes }),
-        }
+        },
       );
       if (!populateRes.ok) throw new Error('Firebase populateFiles failed');
-      const populateData = await populateRes.json() as any;
+      const populateData = (await populateRes.json()) as any;
 
       // 3. Upload required files
       if (populateData.uploadRequiredHashes?.length > 0 && populateData.uploadUrl) {
         for (const file of files) {
-          const hash = crypto.createHash('sha256').update(file.content || '').digest('hex');
+          const hash = crypto
+            .createHash('sha256')
+            .update(file.content || '')
+            .digest('hex');
           if (populateData.uploadRequiredHashes.includes(hash)) {
             // gzip the content
             const { gzipSync } = await import('zlib');
             const compressed = gzipSync(Buffer.from(file.content || ''));
             await fetch(`${populateData.uploadUrl}/${hash}`, {
               method: 'POST',
-              headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/octet-stream' },
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/octet-stream',
+              },
               body: compressed,
             });
           }
@@ -1381,7 +1563,7 @@ integrationsRoutes.post('/:id/gcp/deploy', async (c) => {
           method: 'PATCH',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'FINALIZED' }),
-        }
+        },
       );
       if (!finalizeRes.ok) throw new Error('Firebase version finalize failed');
 
@@ -1391,11 +1573,10 @@ integrationsRoutes.post('/:id/gcp/deploy', async (c) => {
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        }
+        },
       );
 
       deployUrl = `https://${resolvedSiteId}.web.app`;
-
     } else if (target === 'cloud_storage') {
       // ─── GCS Static Website Deploy ────────────────────
       const resolvedBucket = bucketName || `${gcpProjectId}-website`;
@@ -1403,7 +1584,7 @@ integrationsRoutes.post('/:id/gcp/deploy', async (c) => {
       // Ensure bucket exists
       const bucketCheckRes = await fetch(
         `https://storage.googleapis.com/storage/v1/b/${resolvedBucket}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
+        { headers: { Authorization: `Bearer ${accessToken}` } },
       );
 
       if (!bucketCheckRes.ok) {
@@ -1418,24 +1599,21 @@ integrationsRoutes.post('/:id/gcp/deploy', async (c) => {
               website: { mainPageSuffix: 'index.html', notFoundPage: '404.html' },
               iamConfiguration: { uniformBucketLevelAccess: { enabled: true } },
             }),
-          }
+          },
         );
         if (!createRes.ok) {
-          const err = await createRes.json() as any;
+          const err = (await createRes.json()) as any;
           throw new Error(`GCS bucket creation failed: ${err.error?.message}`);
         }
 
         // Make bucket publicly readable
-        await fetch(
-          `https://storage.googleapis.com/storage/v1/b/${resolvedBucket}/iam`,
-          {
-            method: 'PUT',
-            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              bindings: [{ role: 'roles/storage.objectViewer', members: ['allUsers'] }],
-            }),
-          }
-        );
+        await fetch(`https://storage.googleapis.com/storage/v1/b/${resolvedBucket}/iam`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bindings: [{ role: 'roles/storage.objectViewer', members: ['allUsers'] }],
+          }),
+        });
       }
 
       // Upload files
@@ -1450,7 +1628,7 @@ integrationsRoutes.post('/:id/gcp/deploy', async (c) => {
               'Content-Type': contentType,
             },
             body: file.content || '',
-          }
+          },
         );
       }
 
@@ -1460,20 +1638,30 @@ integrationsRoutes.post('/:id/gcp/deploy', async (c) => {
     const actionResult = { status: 'success', url: deployUrl, filesCount: files.length, target };
 
     const existing = await db.query.projectIntegrations.findFirst({
-      where: and(eq(projectIntegrations.projectId, projectId), eq(projectIntegrations.provider, 'gcp')),
+      where: and(
+        eq(projectIntegrations.projectId, projectId),
+        eq(projectIntegrations.provider, 'gcp'),
+      ),
     });
 
     if (existing) {
-      await db.update(projectIntegrations).set({
-        lastActionAt: new Date(), lastActionResult: actionResult,
-        config: { ...(existing.config as any), target, siteId, bucketName },
-        updatedAt: new Date(),
-      }).where(eq(projectIntegrations.id, existing.id));
+      await db
+        .update(projectIntegrations)
+        .set({
+          lastActionAt: new Date(),
+          lastActionResult: actionResult,
+          config: { ...(existing.config as any), target, siteId, bucketName },
+          updatedAt: new Date(),
+        })
+        .where(eq(projectIntegrations.id, existing.id));
     } else {
       await db.insert(projectIntegrations).values({
-        projectId, provider: 'gcp', connectionId: connection.id,
+        projectId,
+        provider: 'gcp',
+        connectionId: connection.id,
         config: { target, siteId, bucketName },
-        lastActionAt: new Date(), lastActionResult: actionResult,
+        lastActionAt: new Date(),
+        lastActionResult: actionResult,
       });
     }
 
@@ -1499,7 +1687,16 @@ interface AwsRequestOptions {
 }
 
 async function awsSignedRequest(opts: AwsRequestOptions): Promise<Response> {
-  const { service, region, accessKeyId, secretAccessKey, method, path, body = '', headers = {} } = opts;
+  const {
+    service,
+    region,
+    accessKeyId,
+    secretAccessKey,
+    method,
+    path,
+    body = '',
+    headers = {},
+  } = opts;
   const host = opts.host || `${service}.${region}.amazonaws.com`;
   const url = `https://${host}${path}`;
 
@@ -1518,14 +1715,26 @@ async function awsSignedRequest(opts: AwsRequestOptions): Promise<Response> {
 
   const signedHeaderKeys = Object.keys(canonicalHeaders).sort();
   const signedHeaders = signedHeaderKeys.join(';');
-  const canonicalHeaderStr = signedHeaderKeys.map(k => `${k.toLowerCase()}:${canonicalHeaders[k]}\n`).join('');
+  const canonicalHeaderStr = signedHeaderKeys
+    .map((k) => `${k.toLowerCase()}:${canonicalHeaders[k]}\n`)
+    .join('');
 
-  const canonicalRequest = [method, path.split('?')[0], path.includes('?') ? path.split('?')[1] : '',
-    canonicalHeaderStr, signedHeaders, payloadHash].join('\n');
+  const canonicalRequest = [
+    method,
+    path.split('?')[0],
+    path.includes('?') ? path.split('?')[1] : '',
+    canonicalHeaderStr,
+    signedHeaders,
+    payloadHash,
+  ].join('\n');
 
   const scope = `${shortDate}/${region}/${service}/aws4_request`;
-  const stringToSign = ['AWS4-HMAC-SHA256', dateStamp, scope,
-    crypto.createHash('sha256').update(canonicalRequest).digest('hex')].join('\n');
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    dateStamp,
+    scope,
+    crypto.createHash('sha256').update(canonicalRequest).digest('hex'),
+  ].join('\n');
 
   const kDate = crypto.createHmac('sha256', `AWS4${secretAccessKey}`).update(shortDate).digest();
   const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
@@ -1547,17 +1756,23 @@ async function awsSignedRequest(opts: AwsRequestOptions): Promise<Response> {
 }
 
 // ─── GCP JWT + Access Token helper ───────────────────────────
-async function getGcpAccessToken(keyData: { client_email: string; private_key: string }): Promise<string | null> {
+async function getGcpAccessToken(keyData: {
+  client_email: string;
+  private_key: string;
+}): Promise<string | null> {
   try {
     const now = Math.floor(Date.now() / 1000);
     const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({
-      iss: keyData.client_email,
-      scope: 'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/firebase',
-      aud: 'https://oauth2.googleapis.com/token',
-      iat: now,
-      exp: now + 3600,
-    })).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({
+        iss: keyData.client_email,
+        scope:
+          'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/firebase',
+        aud: 'https://oauth2.googleapis.com/token',
+        iat: now,
+        exp: now + 3600,
+      }),
+    ).toString('base64url');
 
     const signInput = `${header}.${payload}`;
     const sign = crypto.createSign('RSA-SHA256');
@@ -1571,7 +1786,7 @@ async function getGcpAccessToken(keyData: { client_email: string; private_key: s
       body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
     });
 
-    const tokenData = await tokenRes.json() as any;
+    const tokenData = (await tokenRes.json()) as any;
     return tokenData.access_token || null;
   } catch (err) {
     logger.error(`GCP token error: ${(err as any).message}`);
@@ -1583,19 +1798,32 @@ async function getGcpAccessToken(keyData: { client_email: string; private_key: s
 function getS3ContentType(path: string): string {
   const ext = path.split('.').pop()?.toLowerCase();
   const mimeMap: Record<string, string> = {
-    html: 'text/html', htm: 'text/html',
-    css: 'text/css', js: 'application/javascript',
-    json: 'application/json', xml: 'application/xml',
-    svg: 'image/svg+xml', png: 'image/png',
-    jpg: 'image/jpeg', jpeg: 'image/jpeg',
-    gif: 'image/gif', webp: 'image/webp',
-    ico: 'image/x-icon', woff: 'font/woff',
-    woff2: 'font/woff2', ttf: 'font/ttf',
-    txt: 'text/plain', md: 'text/markdown',
-    pdf: 'application/pdf', zip: 'application/zip',
-    ts: 'text/typescript', tsx: 'text/typescript',
-    jsx: 'text/javascript', mjs: 'application/javascript',
-    map: 'application/json', webmanifest: 'application/manifest+json',
+    html: 'text/html',
+    htm: 'text/html',
+    css: 'text/css',
+    js: 'application/javascript',
+    json: 'application/json',
+    xml: 'application/xml',
+    svg: 'image/svg+xml',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    ico: 'image/x-icon',
+    woff: 'font/woff',
+    woff2: 'font/woff2',
+    ttf: 'font/ttf',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    pdf: 'application/pdf',
+    zip: 'application/zip',
+    ts: 'text/typescript',
+    tsx: 'text/typescript',
+    jsx: 'text/javascript',
+    mjs: 'application/javascript',
+    map: 'application/json',
+    webmanifest: 'application/manifest+json',
   };
   return mimeMap[ext || ''] || 'application/octet-stream';
 }
@@ -1620,7 +1848,11 @@ integrationsRoutes.post('/:id/export', async (c) => {
 
   const totalSize = files.reduce((sum, f) => sum + (f.content?.length || 0), 0);
   if (totalSize > 10_000_000) {
-    throw new AppError(413, 'PROJECT_TOO_LARGE', 'Project too large for direct download (>10MB). Use GitHub push instead.');
+    throw new AppError(
+      413,
+      'PROJECT_TOO_LARGE',
+      'Project too large for direct download (>10MB). Use GitHub push instead.',
+    );
   }
 
   return c.json({
@@ -1629,7 +1861,11 @@ integrationsRoutes.post('/:id/export', async (c) => {
       format: 'json-files',
       filesCount: files.length,
       sizeBytes: totalSize,
-      files: files.map(f => ({ path: f.path, content: f.content || '', mimeType: f.mimeType || 'text/plain' })),
+      files: files.map((f) => ({
+        path: f.path,
+        content: f.content || '',
+        mimeType: f.mimeType || 'text/plain',
+      })),
     },
   });
 });
@@ -1650,7 +1886,7 @@ integrationsRoutes.get('/:id/env', async (c) => {
 
   return c.json({
     success: true,
-    data: vars.map(v => ({
+    data: vars.map((v) => ({
       id: v.id,
       key: v.key,
       value: v.isSecret ? '••••••••' : v.value,
@@ -1662,7 +1898,11 @@ integrationsRoutes.get('/:id/env', async (c) => {
 });
 
 const envVarSchema = z.object({
-  key: z.string().min(1).max(128).regex(/^[A-Z_][A-Z0-9_]*$/, 'Key must be UPPER_SNAKE_CASE'),
+  key: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Z_][A-Z0-9_]*$/, 'Key must be UPPER_SNAKE_CASE'),
   value: z.string().min(1),
   isSecret: z.boolean().default(true),
   description: z.string().max(255).optional(),
@@ -1685,12 +1925,15 @@ integrationsRoutes.post('/:id/env', async (c) => {
   const storedValue = isSecret ? encrypt(value) : value;
 
   if (existing) {
-    await db.update(projectEnvVars).set({
-      value: storedValue,
-      isSecret,
-      description,
-      updatedAt: new Date(),
-    }).where(eq(projectEnvVars.id, existing.id));
+    await db
+      .update(projectEnvVars)
+      .set({
+        value: storedValue,
+        isSecret,
+        description,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectEnvVars.id, existing.id));
   } else {
     await db.insert(projectEnvVars).values({
       projectId,
@@ -1711,7 +1954,8 @@ integrationsRoutes.delete('/:id/env/:key', async (c) => {
   await getOwnedProject(session.userId, projectId);
 
   const db = getDb();
-  await db.delete(projectEnvVars)
+  await db
+    .delete(projectEnvVars)
     .where(and(eq(projectEnvVars.projectId, projectId), eq(projectEnvVars.key, key)));
 
   return c.json({ success: true, data: { message: `Variable ${key} deleted.` } });
@@ -1773,7 +2017,7 @@ oauthConnectRoutes.get('/github/callback', async (c) => {
         code,
       }),
     });
-    const tokenData = await tokenRes.json() as any;
+    const tokenData = (await tokenRes.json()) as any;
 
     if (!tokenData.access_token) {
       return oauthPopupResult('github', false, 'Failed to get GitHub access token.');
@@ -1787,7 +2031,7 @@ oauthConnectRoutes.get('/github/callback', async (c) => {
         'User-Agent': 'SimpleBuildPro',
       },
     });
-    const ghUser = await userRes.json() as any;
+    const ghUser = (await userRes.json()) as any;
 
     const db = getDb();
 
@@ -1802,7 +2046,9 @@ oauthConnectRoutes.get('/github/callback', async (c) => {
       displayName: ghUser.login,
       accessToken: encrypt(tokenData.access_token),
       refreshToken: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : null,
-      tokenExpiresAt: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
+      tokenExpiresAt: tokenData.expires_in
+        ? new Date(Date.now() + tokenData.expires_in * 1000)
+        : null,
       accountId: String(ghUser.id),
       metadata: {
         login: ghUser.login,
@@ -1814,7 +2060,10 @@ oauthConnectRoutes.get('/github/callback', async (c) => {
     };
 
     if (existing) {
-      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
+      await db
+        .update(userConnections)
+        .set(connectionData)
+        .where(eq(userConnections.id, existing.id));
     } else {
       await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
     }
@@ -1872,7 +2121,7 @@ oauthConnectRoutes.get('/vercel/callback', async (c) => {
         redirect_uri: redirectUri,
       }),
     });
-    const tokenData = await tokenRes.json() as any;
+    const tokenData = (await tokenRes.json()) as any;
 
     if (!tokenData.access_token) {
       return oauthPopupResult('vercel', false, 'Failed to get Vercel access token.');
@@ -1881,7 +2130,7 @@ oauthConnectRoutes.get('/vercel/callback', async (c) => {
     const userRes = await fetch('https://api.vercel.com/v2/user', {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
-    const vercelUser = await userRes.json() as any;
+    const vercelUser = (await userRes.json()) as any;
 
     const db = getDb();
     const existing = await db.query.userConnections.findFirst({
@@ -1894,7 +2143,9 @@ oauthConnectRoutes.get('/vercel/callback', async (c) => {
       displayName: vercelUser.user?.username || vercelUser.user?.name || 'Vercel',
       accessToken: encrypt(tokenData.access_token),
       refreshToken: null,
-      tokenExpiresAt: tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
+      tokenExpiresAt: tokenData.expires_in
+        ? new Date(Date.now() + tokenData.expires_in * 1000)
+        : null,
       accountId: tokenData.team_id || vercelUser.user?.id || null,
       metadata: {
         username: vercelUser.user?.username,
@@ -1904,7 +2155,10 @@ oauthConnectRoutes.get('/vercel/callback', async (c) => {
     };
 
     if (existing) {
-      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
+      await db
+        .update(userConnections)
+        .set(connectionData)
+        .where(eq(userConnections.id, existing.id));
     } else {
       await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
     }
@@ -1964,7 +2218,7 @@ oauthConnectRoutes.get('/netlify/callback', async (c) => {
         redirect_uri: redirectUri,
       }),
     });
-    const tokenData = await tokenRes.json() as any;
+    const tokenData = (await tokenRes.json()) as any;
 
     if (!tokenData.access_token) {
       return oauthPopupResult('netlify', false, 'Failed to get Netlify access token.');
@@ -1973,7 +2227,7 @@ oauthConnectRoutes.get('/netlify/callback', async (c) => {
     const userRes = await fetch('https://api.netlify.com/api/v1/user', {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
-    const netlifyUser = await userRes.json() as any;
+    const netlifyUser = (await userRes.json()) as any;
 
     const db = getDb();
     const existing = await db.query.userConnections.findFirst({
@@ -1996,7 +2250,10 @@ oauthConnectRoutes.get('/netlify/callback', async (c) => {
     };
 
     if (existing) {
-      await db.update(userConnections).set(connectionData).where(eq(userConnections.id, existing.id));
+      await db
+        .update(userConnections)
+        .set(connectionData)
+        .where(eq(userConnections.id, existing.id));
     } else {
       await db.insert(userConnections).values({ ...connectionData, connectedAt: new Date() });
     }

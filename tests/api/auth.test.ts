@@ -20,7 +20,7 @@ async function api(path: string, options: RequestInit = {}) {
   const url = `${API_URL}/api/v1${path}`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
+    ...((options.headers as Record<string, string>) || {}),
   };
   if (accessToken && !headers.Authorization) {
     headers.Authorization = `Bearer ${accessToken}`;

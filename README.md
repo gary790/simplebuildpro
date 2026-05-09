@@ -50,122 +50,131 @@
 
 **Database**: Cloud SQL PostgreSQL 16 via Drizzle ORM
 
-| Table | Description |
-|---|---|
-| `users` | User accounts with plan, MFA, OAuth fields |
-| `oauth_accounts` | Google/GitHub OAuth linked accounts |
-| `refresh_tokens` | JWT refresh token hashes with expiry/revocation |
-| `organizations` | Teams with slug, owner, plan |
-| `org_members` | Membership with role-based access |
-| `org_invitations` | Pending invitations with token + expiry |
-| `projects` | User projects with settings, status |
-| `project_files` | File content with path, hash, MIME type |
-| `project_assets` | Binary assets in GCS with CDN URLs |
-| `project_versions` | Versioned snapshots for rollback |
-| `deployments` | Deploy records with status, URLs, Lighthouse scores |
-| `custom_domains` | Domain + SSL + DNS verification |
-| `ai_conversations` | AI chat sessions per project |
-| `ai_messages` | Individual chat messages with token tracking |
-| `preview_sessions` | Novita sandbox sessions |
-| `subscriptions` | Stripe subscription state |
-| `usage_logs` | Metered usage (AI tokens, deploys, storage) |
-| `audit_logs` | Security audit trail |
+| Table              | Description                                         |
+| ------------------ | --------------------------------------------------- |
+| `users`            | User accounts with plan, MFA, OAuth fields          |
+| `oauth_accounts`   | Google/GitHub OAuth linked accounts                 |
+| `refresh_tokens`   | JWT refresh token hashes with expiry/revocation     |
+| `organizations`    | Teams with slug, owner, plan                        |
+| `org_members`      | Membership with role-based access                   |
+| `org_invitations`  | Pending invitations with token + expiry             |
+| `projects`         | User projects with settings, status                 |
+| `project_files`    | File content with path, hash, MIME type             |
+| `project_assets`   | Binary assets in GCS with CDN URLs                  |
+| `project_versions` | Versioned snapshots for rollback                    |
+| `deployments`      | Deploy records with status, URLs, Lighthouse scores |
+| `custom_domains`   | Domain + SSL + DNS verification                     |
+| `ai_conversations` | AI chat sessions per project                        |
+| `ai_messages`      | Individual chat messages with token tracking        |
+| `preview_sessions` | Novita sandbox sessions                             |
+| `subscriptions`    | Stripe subscription state                           |
+| `usage_logs`       | Metered usage (AI tokens, deploys, storage)         |
+| `audit_logs`       | Security audit trail                                |
 
 **Storage Services**: GCS buckets for assets, builds, deploys, snapshots; Redis (Memorystore) for rate limiting
 
 ## API Endpoints
 
 ### Authentication
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/v1/auth/signup` | Register new user |
-| `POST` | `/api/v1/auth/login` | Email/password login |
-| `POST` | `/api/v1/auth/refresh` | Refresh JWT tokens |
-| `POST` | `/api/v1/auth/logout` | Revoke all tokens |
-| `GET` | `/api/v1/auth/me` | Get current user profile |
-| `PATCH` | `/api/v1/auth/me` | Update profile (name, avatar) |
-| `POST` | `/api/v1/auth/change-password` | Change password |
+
+| Method  | Path                           | Description                   |
+| ------- | ------------------------------ | ----------------------------- |
+| `POST`  | `/api/v1/auth/signup`          | Register new user             |
+| `POST`  | `/api/v1/auth/login`           | Email/password login          |
+| `POST`  | `/api/v1/auth/refresh`         | Refresh JWT tokens            |
+| `POST`  | `/api/v1/auth/logout`          | Revoke all tokens             |
+| `GET`   | `/api/v1/auth/me`              | Get current user profile      |
+| `PATCH` | `/api/v1/auth/me`              | Update profile (name, avatar) |
+| `POST`  | `/api/v1/auth/change-password` | Change password               |
 
 ### OAuth2
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/v1/oauth/google` | Redirect to Google OAuth |
-| `GET` | `/api/v1/oauth/google/callback` | Google OAuth callback |
-| `GET` | `/api/v1/oauth/github` | Redirect to GitHub OAuth |
-| `GET` | `/api/v1/oauth/github/callback` | GitHub OAuth callback |
+
+| Method | Path                            | Description              |
+| ------ | ------------------------------- | ------------------------ |
+| `GET`  | `/api/v1/oauth/google`          | Redirect to Google OAuth |
+| `GET`  | `/api/v1/oauth/google/callback` | Google OAuth callback    |
+| `GET`  | `/api/v1/oauth/github`          | Redirect to GitHub OAuth |
+| `GET`  | `/api/v1/oauth/github/callback` | GitHub OAuth callback    |
 
 ### MFA
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/v1/mfa/status` | Check MFA enabled/disabled |
-| `POST` | `/api/v1/mfa/setup` | Generate TOTP secret + QR |
-| `POST` | `/api/v1/mfa/verify-setup` | Verify code & enable MFA |
-| `POST` | `/api/v1/mfa/verify` | Verify MFA during login |
-| `POST` | `/api/v1/mfa/disable` | Disable MFA (requires password) |
+
+| Method | Path                       | Description                     |
+| ------ | -------------------------- | ------------------------------- |
+| `GET`  | `/api/v1/mfa/status`       | Check MFA enabled/disabled      |
+| `POST` | `/api/v1/mfa/setup`        | Generate TOTP secret + QR       |
+| `POST` | `/api/v1/mfa/verify-setup` | Verify code & enable MFA        |
+| `POST` | `/api/v1/mfa/verify`       | Verify MFA during login         |
+| `POST` | `/api/v1/mfa/disable`      | Disable MFA (requires password) |
 
 ### Projects
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/v1/projects` | List user projects |
-| `POST` | `/api/v1/projects` | Create project |
-| `GET` | `/api/v1/projects/:id` | Get project details |
-| `PATCH` | `/api/v1/projects/:id` | Update project |
-| `DELETE` | `/api/v1/projects/:id` | Delete project |
+
+| Method   | Path                   | Description         |
+| -------- | ---------------------- | ------------------- |
+| `GET`    | `/api/v1/projects`     | List user projects  |
+| `POST`   | `/api/v1/projects`     | Create project      |
+| `GET`    | `/api/v1/projects/:id` | Get project details |
+| `PATCH`  | `/api/v1/projects/:id` | Update project      |
+| `DELETE` | `/api/v1/projects/:id` | Delete project      |
 
 ### Files & Assets
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/v1/files?projectId=` | List project files |
-| `POST` | `/api/v1/files` | Upsert file |
-| `POST` | `/api/v1/files/bulk-upsert` | Bulk upsert files |
-| `DELETE` | `/api/v1/files` | Delete file |
-| `POST` | `/api/v1/files/rename` | Rename file |
-| `GET` | `/api/v1/assets?projectId=` | List assets |
-| `POST` | `/api/v1/assets/upload` | Upload asset |
-| `DELETE` | `/api/v1/assets/:id` | Delete asset |
+
+| Method   | Path                        | Description        |
+| -------- | --------------------------- | ------------------ |
+| `GET`    | `/api/v1/files?projectId=`  | List project files |
+| `POST`   | `/api/v1/files`             | Upsert file        |
+| `POST`   | `/api/v1/files/bulk-upsert` | Bulk upsert files  |
+| `DELETE` | `/api/v1/files`             | Delete file        |
+| `POST`   | `/api/v1/files/rename`      | Rename file        |
+| `GET`    | `/api/v1/assets?projectId=` | List assets        |
+| `POST`   | `/api/v1/assets/upload`     | Upload asset       |
+| `DELETE` | `/api/v1/assets/:id`        | Delete asset       |
 
 ### Build & Deploy
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/v1/build` | Build project (minify + snapshot) |
-| `GET` | `/api/v1/build/versions?projectId=` | List versions |
-| `POST` | `/api/v1/build/restore` | Restore version |
-| `POST` | `/api/v1/deploy` | Deploy to CDN |
-| `GET` | `/api/v1/deploy?projectId=` | List deployments |
-| `POST` | `/api/v1/deploy/rollback` | Rollback deployment |
+
+| Method | Path                                | Description                       |
+| ------ | ----------------------------------- | --------------------------------- |
+| `POST` | `/api/v1/build`                     | Build project (minify + snapshot) |
+| `GET`  | `/api/v1/build/versions?projectId=` | List versions                     |
+| `POST` | `/api/v1/build/restore`             | Restore version                   |
+| `POST` | `/api/v1/deploy`                    | Deploy to CDN                     |
+| `GET`  | `/api/v1/deploy?projectId=`         | List deployments                  |
+| `POST` | `/api/v1/deploy/rollback`           | Rollback deployment               |
 
 ### Organizations
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/v1/organizations` | Create organization |
-| `GET` | `/api/v1/organizations/:id` | Get org details |
-| `GET` | `/api/v1/organizations/:id/members` | List members |
-| `PATCH` | `/api/v1/organizations/:id/members/:mid` | Update member role |
-| `DELETE` | `/api/v1/organizations/:id/members/:mid` | Remove member |
-| `POST` | `/api/v1/organizations/:id/invitations` | Send invitation |
-| `GET` | `/api/v1/organizations/:id/invitations` | List pending invitations |
-| `DELETE` | `/api/v1/organizations/:id/invitations/:iid` | Revoke invitation |
-| `POST` | `/api/v1/organizations/invitations/:token/accept` | Accept invitation |
+
+| Method   | Path                                              | Description              |
+| -------- | ------------------------------------------------- | ------------------------ |
+| `POST`   | `/api/v1/organizations`                           | Create organization      |
+| `GET`    | `/api/v1/organizations/:id`                       | Get org details          |
+| `GET`    | `/api/v1/organizations/:id/members`               | List members             |
+| `PATCH`  | `/api/v1/organizations/:id/members/:mid`          | Update member role       |
+| `DELETE` | `/api/v1/organizations/:id/members/:mid`          | Remove member            |
+| `POST`   | `/api/v1/organizations/:id/invitations`           | Send invitation          |
+| `GET`    | `/api/v1/organizations/:id/invitations`           | List pending invitations |
+| `DELETE` | `/api/v1/organizations/:id/invitations/:iid`      | Revoke invitation        |
+| `POST`   | `/api/v1/organizations/invitations/:token/accept` | Accept invitation        |
 
 ### Admin (Business/Enterprise only)
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/v1/admin/overview` | Dashboard stats |
-| `GET` | `/api/v1/admin/users` | Paginated user list |
-| `GET` | `/api/v1/admin/projects` | Paginated project list |
-| `GET` | `/api/v1/admin/deployments` | Recent deployments |
-| `GET` | `/api/v1/admin/audit-logs` | Audit log entries |
-| `GET` | `/api/v1/admin/health` | System health check |
+
+| Method | Path                        | Description            |
+| ------ | --------------------------- | ---------------------- |
+| `GET`  | `/api/v1/admin/overview`    | Dashboard stats        |
+| `GET`  | `/api/v1/admin/users`       | Paginated user list    |
+| `GET`  | `/api/v1/admin/projects`    | Paginated project list |
+| `GET`  | `/api/v1/admin/deployments` | Recent deployments     |
+| `GET`  | `/api/v1/admin/audit-logs`  | Audit log entries      |
+| `GET`  | `/api/v1/admin/health`      | System health check    |
 
 ### Other
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/v1/ai/message` | Send AI chat message |
-| `GET` | `/api/v1/ai/conversations` | List conversations |
-| `POST` | `/api/v1/preview/start` | Start preview sandbox |
-| `POST` | `/api/v1/billing/checkout` | Create Stripe checkout |
-| `GET` | `/api/v1/billing/subscription` | Get subscription |
-| `GET` | `/health` | Health check |
+
+| Method | Path                           | Description            |
+| ------ | ------------------------------ | ---------------------- |
+| `POST` | `/api/v1/ai/message`           | Send AI chat message   |
+| `GET`  | `/api/v1/ai/conversations`     | List conversations     |
+| `POST` | `/api/v1/preview/start`        | Start preview sandbox  |
+| `POST` | `/api/v1/billing/checkout`     | Create Stripe checkout |
+| `GET`  | `/api/v1/billing/subscription` | Get subscription       |
+| `GET`  | `/health`                      | Health check           |
 
 ## Project Structure
 
@@ -496,6 +505,7 @@ docker push us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web:latest
 ### DNS Setup
 
 Point your domain's DNS to the load balancer IP:
+
 ```
 simplebuildpro.com      A     <lb_ip>
 www.simplebuildpro.com  A     <lb_ip>
@@ -510,46 +520,48 @@ SimpleBuild Pro uses a **pay-as-you-go** model with daily billing (charged to St
 
 ### Free Tier (no credit card)
 
-| Resource | Daily Limit |
-|---|---|
-| Projects | 2 total |
-| AI Messages | 10 / day |
-| Storage | 50 MB total |
-| Deploys | 3 / day |
-| Live Preview | 5 minutes / day |
-| Bandwidth | 100 MB / day |
-| Custom Domains | 0 |
+| Resource       | Daily Limit     |
+| -------------- | --------------- |
+| Projects       | 2 total         |
+| AI Messages    | 10 / day        |
+| Storage        | 50 MB total     |
+| Deploys        | 3 / day         |
+| Live Preview   | 5 minutes / day |
+| Bandwidth      | 100 MB / day    |
+| Custom Domains | 0               |
 
 ### Pay-As-You-Go (add a card → unlimited)
 
-| Resource | Customer Price | Our Cost |
-|---|---|---|
-| AI Input Tokens (per 1M) | $4.50 | $3.00 |
-| AI Output Tokens (per 1M) | $22.50 | $15.00 |
-| AI Message (avg) | ~$0.009 | ~$0.006 |
-| Deploy | $0.0075 | $0.005 |
-| Storage (per GB/month) | $0.50 | $0.07 |
-| Live Preview (per min) | $0.075 | $0.05 |
-| Bandwidth (per GB) | $0.18 | $0.12 |
-| Custom Domain (per month) | $5.00 | $0 |
+| Resource                  | Customer Price | Our Cost |
+| ------------------------- | -------------- | -------- |
+| AI Input Tokens (per 1M)  | $4.50          | $3.00    |
+| AI Output Tokens (per 1M) | $22.50         | $15.00   |
+| AI Message (avg)          | ~$0.009        | ~$0.006  |
+| Deploy                    | $0.0075        | $0.005   |
+| Storage (per GB/month)    | $0.50          | $0.07    |
+| Live Preview (per min)    | $0.075         | $0.05    |
+| Bandwidth (per GB)        | $0.18          | $0.12    |
+| Custom Domain (per month) | $5.00          | $0       |
 
 ### Spending Controls
+
 - Configurable daily spend limit ($1–$1000)
 - Warning at $5/day, pause at $20/day, hard stop at $50/day
 - Account auto-pauses if limit reached; increase limit to resume
 
 ### Billing API Endpoints
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/v1/billing/usage` | Current usage & spend |
-| `GET` | `/api/v1/billing/history` | Daily usage history |
-| `GET` | `/api/v1/billing/pricing` | Pricing table |
-| `POST` | `/api/v1/billing/setup-payment` | Create Stripe setup intent |
-| `POST` | `/api/v1/billing/confirm-payment` | Confirm card added |
-| `POST` | `/api/v1/billing/spend-limit` | Set daily limit |
-| `GET` | `/api/v1/billing/events` | Charge history |
-| `POST` | `/api/v1/billing/webhook` | Stripe webhook (no auth) |
-| `POST` | `/api/v1/billing/internal/run-daily-billing` | Cloud Scheduler trigger |
+
+| Method | Path                                         | Description                |
+| ------ | -------------------------------------------- | -------------------------- |
+| `GET`  | `/api/v1/billing/usage`                      | Current usage & spend      |
+| `GET`  | `/api/v1/billing/history`                    | Daily usage history        |
+| `GET`  | `/api/v1/billing/pricing`                    | Pricing table              |
+| `POST` | `/api/v1/billing/setup-payment`              | Create Stripe setup intent |
+| `POST` | `/api/v1/billing/confirm-payment`            | Confirm card added         |
+| `POST` | `/api/v1/billing/spend-limit`                | Set daily limit            |
+| `GET`  | `/api/v1/billing/events`                     | Charge history             |
+| `POST` | `/api/v1/billing/webhook`                    | Stripe webhook (no auth)   |
+| `POST` | `/api/v1/billing/internal/run-daily-billing` | Cloud Scheduler trigger    |
 
 ## Security
 
@@ -566,22 +578,22 @@ SimpleBuild Pro uses a **pay-as-you-go** model with daily billing (charged to St
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | Next.js 14, React 18, Tailwind CSS, Zustand, Lucide Icons |
-| API | Hono, Node.js 20, TypeScript |
-| Database | PostgreSQL 16, Drizzle ORM |
-| Auth | JWT (jsonwebtoken), bcryptjs, TOTP |
-| AI | Anthropic Claude (claude-sonnet-4-20250514) |
-| Storage | Google Cloud Storage |
-| Preview | Novita Sandbox |
-| Billing | Stripe |
-| Rate Limiting | Redis (GCP Memorystore) |
-| Build Tools | html-minifier-terser, clean-css, terser, sharp |
-| Infrastructure | GCP Cloud Run, Cloud SQL, Cloud CDN, Terraform |
-| CI/CD | GitHub Actions |
-| Testing | Playwright (E2E), Vitest (API) |
-| Monorepo | Turborepo |
+| Layer          | Technology                                                |
+| -------------- | --------------------------------------------------------- |
+| Frontend       | Next.js 14, React 18, Tailwind CSS, Zustand, Lucide Icons |
+| API            | Hono, Node.js 20, TypeScript                              |
+| Database       | PostgreSQL 16, Drizzle ORM                                |
+| Auth           | JWT (jsonwebtoken), bcryptjs, TOTP                        |
+| AI             | Anthropic Claude (claude-sonnet-4-20250514)               |
+| Storage        | Google Cloud Storage                                      |
+| Preview        | Novita Sandbox                                            |
+| Billing        | Stripe                                                    |
+| Rate Limiting  | Redis (GCP Memorystore)                                   |
+| Build Tools    | html-minifier-terser, clean-css, terser, sharp            |
+| Infrastructure | GCP Cloud Run, Cloud SQL, Cloud CDN, Terraform            |
+| CI/CD          | GitHub Actions                                            |
+| Testing        | Playwright (E2E), Vitest (API)                            |
+| Monorepo       | Turborepo                                                 |
 
 ## URLs
 
@@ -604,28 +616,30 @@ SimpleBuild Pro uses a **pay-as-you-go** model with daily billing (charged to St
 
 ### Infrastructure Components
 
-| Component | Resource | Status |
-|---|---|---|
-| **API Server** | Cloud Run `simplebuildpro-api` (rev 00007-bzj) | ✅ Running |
-| **Web Frontend** | Cloud Run `simplebuildpro-web` | ✅ Running |
-| **Database** | Cloud SQL PostgreSQL 16 `simplebuildpro-db` (136.113.45.130) | ✅ RUNNABLE (18 tables) |
-| **Cache** | Memorystore Redis `simplebuildpro-redis` (10.1.204.211:6379) | ✅ READY |
-| **VPC Connector** | `sbpro-vpc-connector` (10.8.0.0/28) | ✅ READY |
-| **Load Balancer** | Global HTTPS LB (34.120.143.111) | ✅ Active |
-| **SSL Certificate** | `simplebuildpro-cert-cm` (api/app domains) | ✅ ACTIVE |
-| **Wildcard SSL** | `simplebuildpro-sites-cert` (cdn + *.sites) | ✅ ACTIVE |
-| **Cloud CDN** | Enabled on API + Web backends | ✅ Active |
-| **GCS Buckets** | assets, builds, deploys, snapshots | ✅ Configured |
-| **Artifact Registry** | `us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro` | ✅ Ready |
-| **Secret Manager** | All production secrets configured | ✅ Active |
-| **DNS** | Cloud DNS zone `simplebuildpro-zone` | ✅ Active |
+| Component             | Resource                                                     | Status                  |
+| --------------------- | ------------------------------------------------------------ | ----------------------- |
+| **API Server**        | Cloud Run `simplebuildpro-api` (rev 00007-bzj)               | ✅ Running              |
+| **Web Frontend**      | Cloud Run `simplebuildpro-web`                               | ✅ Running              |
+| **Database**          | Cloud SQL PostgreSQL 16 `simplebuildpro-db` (136.113.45.130) | ✅ RUNNABLE (18 tables) |
+| **Cache**             | Memorystore Redis `simplebuildpro-redis` (10.1.204.211:6379) | ✅ READY                |
+| **VPC Connector**     | `sbpro-vpc-connector` (10.8.0.0/28)                          | ✅ READY                |
+| **Load Balancer**     | Global HTTPS LB (34.120.143.111)                             | ✅ Active               |
+| **SSL Certificate**   | `simplebuildpro-cert-cm` (api/app domains)                   | ✅ ACTIVE               |
+| **Wildcard SSL**      | `simplebuildpro-sites-cert` (cdn + \*.sites)                 | ✅ ACTIVE               |
+| **Cloud CDN**         | Enabled on API + Web backends                                | ✅ Active               |
+| **GCS Buckets**       | assets, builds, deploys, snapshots                           | ✅ Configured           |
+| **Artifact Registry** | `us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro`   | ✅ Ready                |
+| **Secret Manager**    | All production secrets configured                            | ✅ Active               |
+| **DNS**               | Cloud DNS zone `simplebuildpro-zone`                         | ✅ Active               |
 
 ### Verified End-to-End Flow
+
 ✅ Signup → ✅ Login → ✅ Create Project → ✅ Create File → ✅ Build → ✅ Deploy → ✅ Serve Site
 
 ### DNS Configuration — ✅ Complete
 
 DNS is managed via Google Cloud DNS (zone: `simplebuildpro-zone`). Nameservers configured at registrar:
+
 ```
 ns-cloud-e1.googledomains.com
 ns-cloud-e2.googledomains.com
@@ -634,6 +648,7 @@ ns-cloud-e4.googledomains.com
 ```
 
 A records (all → 34.120.143.111):
+
 ```
 simplebuildpro.com          A    34.120.143.111
 www.simplebuildpro.com      A    34.120.143.111

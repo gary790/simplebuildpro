@@ -15,9 +15,22 @@ import { Modal } from '@/components/ui/modal';
 import { toast } from '@/components/ui/toast';
 import { Dropdown, DropdownItem, DropdownSeparator } from '@/components/ui/dropdown';
 import {
-  Plus, FolderOpen, Clock, Globe, Rocket, MoreVertical,
-  Trash2, Settings, LogOut, User, CreditCard, BarChart3,
-  Search, LayoutGrid, List, ChevronRight,
+  Plus,
+  FolderOpen,
+  Clock,
+  Globe,
+  Rocket,
+  MoreVertical,
+  Trash2,
+  Settings,
+  LogOut,
+  User,
+  CreditCard,
+  BarChart3,
+  Search,
+  LayoutGrid,
+  List,
+  ChevronRight,
 } from 'lucide-react';
 
 interface ProjectItem {
@@ -97,7 +110,9 @@ export default function DashboardPage() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -133,15 +148,17 @@ export default function DashboardPage() {
   };
 
   const handleLogout = async () => {
-    try { await authApi.logout(); } catch { /* ignore */ }
+    try {
+      await authApi.logout();
+    } catch {
+      /* ignore */
+    }
     clearTokens();
     storeLogout();
     router.push('/login');
   };
 
-  const filtered = projects.filter(
-    (p) => p.name.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = projects.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
 
   const formatBytes = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -171,14 +188,28 @@ export default function DashboardPage() {
                   <div className="w-7 h-7 rounded-full bg-brand-600 flex items-center justify-center text-white text-xs font-bold">
                     {user?.name?.charAt(0)?.toUpperCase() || 'U'}
                   </div>
-                  <span className="hidden sm:inline text-sm font-medium text-slate-700">{user?.name || 'User'}</span>
+                  <span className="hidden sm:inline text-sm font-medium text-slate-700">
+                    {user?.name || 'User'}
+                  </span>
                 </button>
               }
             >
-              <DropdownItem icon={<User size={14} />} onClick={() => router.push('/dashboard/settings')}>Profile</DropdownItem>
-              <DropdownItem icon={<CreditCard size={14} />} onClick={() => router.push('/dashboard/settings?tab=billing')}>Billing</DropdownItem>
+              <DropdownItem
+                icon={<User size={14} />}
+                onClick={() => router.push('/dashboard/settings')}
+              >
+                Profile
+              </DropdownItem>
+              <DropdownItem
+                icon={<CreditCard size={14} />}
+                onClick={() => router.push('/dashboard/settings?tab=billing')}
+              >
+                Billing
+              </DropdownItem>
               <DropdownSeparator />
-              <DropdownItem icon={<LogOut size={14} />} onClick={handleLogout} danger>Log out</DropdownItem>
+              <DropdownItem icon={<LogOut size={14} />} onClick={handleLogout} danger>
+                Log out
+              </DropdownItem>
             </Dropdown>
           </div>
         </div>
@@ -225,7 +256,8 @@ export default function DashboardPage() {
                   <span className="text-xs font-medium text-slate-500">{label}</span>
                 </div>
                 <p className="text-lg font-bold text-slate-900">
-                  {value}<span className="text-sm font-normal text-slate-400">{sub}</span>
+                  {value}
+                  <span className="text-sm font-normal text-slate-400">{sub}</span>
                 </p>
               </div>
             ))}
@@ -237,7 +269,10 @@ export default function DashboardPage() {
           <h1 className="text-xl font-bold text-slate-900">Projects</h1>
           <div className="flex items-center gap-3">
             <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
               <input
                 type="text"
                 value={search}
@@ -289,7 +324,9 @@ export default function DashboardPage() {
               {search ? 'No matching projects' : 'No projects yet'}
             </h3>
             <p className="text-sm text-slate-500 mb-6">
-              {search ? 'Try a different search term.' : 'Create your first project to get started.'}
+              {search
+                ? 'Try a different search term.'
+                : 'Create your first project to get started.'}
             </p>
             {!search && (
               <Button onClick={() => setCreateOpen(true)} icon={<Plus size={14} />}>
@@ -322,29 +359,42 @@ export default function DashboardPage() {
                           </button>
                         }
                       >
-                        <DropdownItem icon={<Settings size={14} />} onClick={() => router.push(`/editor/${project.id}`)}>
+                        <DropdownItem
+                          icon={<Settings size={14} />}
+                          onClick={() => router.push(`/editor/${project.id}`)}
+                        >
                           Open Editor
                         </DropdownItem>
                         <DropdownSeparator />
-                        <DropdownItem icon={<Trash2 size={14} />} danger onClick={() => setDeleteConfirm(project.id)}>
+                        <DropdownItem
+                          icon={<Trash2 size={14} />}
+                          danger
+                          onClick={() => setDeleteConfirm(project.id)}
+                        >
                           Delete
                         </DropdownItem>
                       </Dropdown>
                     </div>
                   </div>
                   {project.description && (
-                    <p className="text-xs text-slate-500 line-clamp-2 mb-3">{project.description}</p>
+                    <p className="text-xs text-slate-500 line-clamp-2 mb-3">
+                      {project.description}
+                    </p>
                   )}
                   <div className="flex items-center gap-3 text-xs text-slate-400">
                     <span className="flex items-center gap-1">
                       <Clock size={10} />
                       {new Date(project.updatedAt).toLocaleDateString()}
                     </span>
-                    <span className={`px-1.5 py-0.5 rounded-full text-2xs font-medium ${
-                      project.status === 'published' ? 'bg-green-50 text-green-700' :
-                      project.status === 'archived' ? 'bg-slate-100 text-slate-500' :
-                      'bg-amber-50 text-amber-700'
-                    }`}>
+                    <span
+                      className={`px-1.5 py-0.5 rounded-full text-2xs font-medium ${
+                        project.status === 'published'
+                          ? 'bg-green-50 text-green-700'
+                          : project.status === 'archived'
+                            ? 'bg-slate-100 text-slate-500'
+                            : 'bg-amber-50 text-amber-700'
+                      }`}
+                    >
                       {project.status}
                     </span>
                   </div>
@@ -366,16 +416,24 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-4 flex-1 min-w-0">
                   <FolderOpen size={16} className="text-slate-400 shrink-0" />
                   <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-slate-900 truncate">{project.name}</h3>
-                    <p className="text-xs text-slate-400">Updated {new Date(project.updatedAt).toLocaleDateString()}</p>
+                    <h3 className="text-sm font-semibold text-slate-900 truncate">
+                      {project.name}
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Updated {new Date(project.updatedAt).toLocaleDateString()}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className={`px-2 py-0.5 rounded-full text-2xs font-medium ${
-                    project.status === 'published' ? 'bg-green-50 text-green-700' :
-                    project.status === 'archived' ? 'bg-slate-100 text-slate-500' :
-                    'bg-amber-50 text-amber-700'
-                  }`}>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-2xs font-medium ${
+                      project.status === 'published'
+                        ? 'bg-green-50 text-green-700'
+                        : project.status === 'archived'
+                          ? 'bg-slate-100 text-slate-500'
+                          : 'bg-amber-50 text-amber-700'
+                    }`}
+                  >
                     {project.status}
                   </span>
                   <ChevronRight size={14} className="text-slate-300" />
@@ -401,7 +459,9 @@ export default function DashboardPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Description (optional)</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Description (optional)
+            </label>
             <input
               type="text"
               value={newDesc}
@@ -431,8 +491,12 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} loading={creating} disabled={!newName.trim()}>Create Project</Button>
+            <Button variant="secondary" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} loading={creating} disabled={!newName.trim()}>
+              Create Project
+            </Button>
           </div>
         </div>
       </Modal>
@@ -446,8 +510,12 @@ export default function DashboardPage() {
         size="sm"
       >
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-          <Button variant="danger" onClick={() => deleteConfirm && handleDelete(deleteConfirm)}>Delete Project</Button>
+          <Button variant="secondary" onClick={() => setDeleteConfirm(null)}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={() => deleteConfirm && handleDelete(deleteConfirm)}>
+            Delete Project
+          </Button>
         </div>
       </Modal>
     </div>

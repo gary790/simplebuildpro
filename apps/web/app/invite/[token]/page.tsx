@@ -22,7 +22,9 @@ export default function InvitePage() {
   const user = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const [status, setStatus] = useState<'loading' | 'ready' | 'accepting' | 'accepted' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'accepting' | 'accepted' | 'error'>(
+    'loading',
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -112,7 +114,9 @@ export default function InvitePage() {
             <div className="text-center space-y-3 py-4">
               <CheckCircle className="mx-auto text-green-500" size={40} />
               <h2 className="text-lg font-bold text-slate-900">Welcome!</h2>
-              <p className="text-sm text-slate-500">You&apos;ve successfully joined the organization.</p>
+              <p className="text-sm text-slate-500">
+                You&apos;ve successfully joined the organization.
+              </p>
               <p className="text-xs text-slate-400">Redirecting to dashboard...</p>
             </div>
           )}

@@ -24,30 +24,30 @@ export const PLAN_LIMITS = {
     projects: 3,
     aiMessagesPerMonth: 50,
     customDomains: 0,
-    storageBytes: 100 * 1024 * 1024,       // 100 MB
+    storageBytes: 100 * 1024 * 1024, // 100 MB
     deploysPerMonth: 10,
-    maxFileSize: 5 * 1024 * 1024,           // 5 MB per file
-    maxAssetSize: 10 * 1024 * 1024,         // 10 MB per asset
+    maxFileSize: 5 * 1024 * 1024, // 5 MB per file
+    maxAssetSize: 10 * 1024 * 1024, // 10 MB per asset
     collaborators: 0,
   },
   pro: {
     projects: 25,
     aiMessagesPerMonth: 500,
     customDomains: 3,
-    storageBytes: 5 * 1024 * 1024 * 1024,   // 5 GB
-    deploysPerMonth: -1,                     // unlimited
-    maxFileSize: 25 * 1024 * 1024,           // 25 MB
-    maxAssetSize: 50 * 1024 * 1024,          // 50 MB
+    storageBytes: 5 * 1024 * 1024 * 1024, // 5 GB
+    deploysPerMonth: -1, // unlimited
+    maxFileSize: 25 * 1024 * 1024, // 25 MB
+    maxAssetSize: 50 * 1024 * 1024, // 50 MB
     collaborators: 5,
   },
   business: {
-    projects: -1,                            // unlimited
+    projects: -1, // unlimited
     aiMessagesPerMonth: 2000,
     customDomains: 10,
-    storageBytes: 25 * 1024 * 1024 * 1024,  // 25 GB
+    storageBytes: 25 * 1024 * 1024 * 1024, // 25 GB
     deploysPerMonth: -1,
-    maxFileSize: 50 * 1024 * 1024,           // 50 MB
-    maxAssetSize: 100 * 1024 * 1024,         // 100 MB
+    maxFileSize: 50 * 1024 * 1024, // 50 MB
+    maxAssetSize: 100 * 1024 * 1024, // 100 MB
     collaborators: 25,
   },
   enterprise: {
@@ -56,25 +56,53 @@ export const PLAN_LIMITS = {
     customDomains: -1,
     storageBytes: -1,
     deploysPerMonth: -1,
-    maxFileSize: 200 * 1024 * 1024,          // 200 MB
-    maxAssetSize: 500 * 1024 * 1024,         // 500 MB
+    maxFileSize: 200 * 1024 * 1024, // 200 MB
+    maxAssetSize: 500 * 1024 * 1024, // 500 MB
     collaborators: -1,
   },
 } as const;
 
 // ─── Supported File Types ────────────────────────────────────
 export const EDITABLE_EXTENSIONS = [
-  '.html', '.htm', '.css', '.scss', '.less',
-  '.js', '.jsx', '.ts', '.tsx',
-  '.json', '.xml', '.svg', '.md', '.txt',
-  '.yaml', '.yml', '.toml',
+  '.html',
+  '.htm',
+  '.css',
+  '.scss',
+  '.less',
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.json',
+  '.xml',
+  '.svg',
+  '.md',
+  '.txt',
+  '.yaml',
+  '.yml',
+  '.toml',
 ] as const;
 
 export const ASSET_MIME_TYPES = {
-  image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/avif', 'image/ico'],
+  image: [
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/svg+xml',
+    'image/avif',
+    'image/ico',
+  ],
   video: ['video/mp4', 'video/webm', 'video/ogg'],
   audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm'],
-  font: ['font/woff', 'font/woff2', 'font/ttf', 'font/otf', 'application/font-woff', 'application/font-woff2'],
+  font: [
+    'font/woff',
+    'font/woff2',
+    'font/ttf',
+    'font/otf',
+    'application/font-woff',
+    'application/font-woff2',
+  ],
   document: ['application/pdf'],
 } as const;
 
@@ -106,11 +134,11 @@ export const FILE_LANGUAGE_MAP: Record<string, string> = {
 
 // ─── Rate Limits ─────────────────────────────────────────────
 export const RATE_LIMITS = {
-  auth: { windowMs: 15 * 60 * 1000, max: 20 },         // 20 per 15 min
-  api: { windowMs: 60 * 1000, max: 120 },               // 120 per minute
-  ai: { windowMs: 60 * 1000, max: 10 },                 // 10 per minute
-  deploy: { windowMs: 60 * 60 * 1000, max: 30 },        // 30 per hour
-  upload: { windowMs: 60 * 1000, max: 30 },              // 30 per minute
+  auth: { windowMs: 15 * 60 * 1000, max: 20 }, // 20 per 15 min
+  api: { windowMs: 60 * 1000, max: 120 }, // 120 per minute
+  ai: { windowMs: 60 * 1000, max: 10 }, // 10 per minute
+  deploy: { windowMs: 60 * 60 * 1000, max: 30 }, // 30 per hour
+  upload: { windowMs: 60 * 1000, max: 30 }, // 30 per minute
 } as const;
 
 // ─── Billing: Pay-As-You-Go Pricing ─────────────────────────
@@ -118,61 +146,61 @@ export const RATE_LIMITS = {
 export const USAGE_COSTS = {
   // AI Tokens (Claude Sonnet 4)
   ai_input_token: {
-    costPer1M: 300,       // $3.00 per 1M input tokens (our cost)
-    pricePer1M: 450,      // $4.50 per 1M input tokens (customer pays)
+    costPer1M: 300, // $3.00 per 1M input tokens (our cost)
+    pricePer1M: 450, // $4.50 per 1M input tokens (customer pays)
   },
   ai_output_token: {
-    costPer1M: 1500,      // $15.00 per 1M output tokens (our cost)
-    pricePer1M: 2250,     // $22.50 per 1M output tokens (customer pays)
+    costPer1M: 1500, // $15.00 per 1M output tokens (our cost)
+    pricePer1M: 2250, // $22.50 per 1M output tokens (customer pays)
   },
   // Simplified: per-message pricing (average ~2K input + 1K output tokens)
   ai_message: {
-    costCents: 0.6,       // ~$0.006 per message (our cost)
-    priceCents: 0.9,      // ~$0.009 per message (customer pays)
+    costCents: 0.6, // ~$0.006 per message (our cost)
+    priceCents: 0.9, // ~$0.009 per message (customer pays)
   },
   // Deploys
   deploy: {
-    costCents: 0.5,       // $0.005 per deploy (GCS writes)
-    priceCents: 0.75,     // $0.0075 per deploy (customer pays)
+    costCents: 0.5, // $0.005 per deploy (GCS writes)
+    priceCents: 0.75, // $0.0075 per deploy (customer pays)
   },
   // Storage (per GB per day)
   storage_gb_day: {
-    costCents: 0.07,      // ~$0.002/GB/day (GCS)
-    priceCents: 0.10,     // ~$0.003/GB/day (customer pays)
+    costCents: 0.07, // ~$0.002/GB/day (GCS)
+    priceCents: 0.1, // ~$0.003/GB/day (customer pays)
   },
   // Preview sessions (per minute)
   preview_minute: {
-    costCents: 5,         // $0.05/min (Novita sandbox)
-    priceCents: 7.5,      // $0.075/min (customer pays)
+    costCents: 5, // $0.05/min (Novita sandbox)
+    priceCents: 7.5, // $0.075/min (customer pays)
   },
   // Custom domains (per domain per day)
   custom_domain_day: {
-    costCents: 0,         // Free for us (DNS only)
-    priceCents: 16.7,     // ~$5/month per domain ($0.167/day)
+    costCents: 0, // Free for us (DNS only)
+    priceCents: 16.7, // ~$5/month per domain ($0.167/day)
   },
   // Bandwidth (per GB)
   bandwidth_gb: {
-    costCents: 12,        // $0.12/GB (CDN egress)
-    priceCents: 18,       // $0.18/GB (customer pays)
+    costCents: 12, // $0.12/GB (CDN egress)
+    priceCents: 18, // $0.18/GB (customer pays)
   },
 } as const;
 
 // Free tier daily limits (no card required)
 export const FREE_TIER_LIMITS = {
-  ai_messages: 10,            // 10 AI messages per day
-  deploys: 3,                 // 3 deploys per day
-  storage_mb: 50,             // 50 MB total storage
-  preview_minutes: 5,         // 5 minutes of preview per day
-  projects: 2,                // 2 projects total
-  custom_domains: 0,          // No custom domains
-  bandwidth_mb: 100,          // 100 MB bandwidth per day
+  ai_messages: 10, // 10 AI messages per day
+  deploys: 3, // 3 deploys per day
+  storage_mb: 50, // 50 MB total storage
+  preview_minutes: 5, // 5 minutes of preview per day
+  projects: 2, // 2 projects total
+  custom_domains: 0, // No custom domains
+  bandwidth_mb: 100, // 100 MB bandwidth per day
 } as const;
 
 // Spending alerts (in cents)
 export const SPENDING_ALERTS = {
-  warning: 500,     // $5.00 daily spend warning
-  pause: 2000,      // $20.00 daily spend — pause account, notify
-  hardLimit: 5000,  // $50.00 daily spend — hard stop
+  warning: 500, // $5.00 daily spend warning
+  pause: 2000, // $20.00 daily spend — pause account, notify
+  hardLimit: 5000, // $50.00 daily spend — hard stop
 } as const;
 
 // Legacy plan limits (kept for backward compat, but PAYG is primary)
@@ -182,7 +210,7 @@ export const PLAN_LIMITS_LEGACY = PLAN_LIMITS;
 // Metered billing — usage reported daily to Stripe
 export const STRIPE_PRICE_IDS = {
   // Metered prices (created via Stripe API on first deploy)
-  payg_ai_tokens: '',         // Will be set after Stripe product creation
+  payg_ai_tokens: '', // Will be set after Stripe product creation
   payg_deploys: '',
   payg_storage: '',
   payg_preview: '',

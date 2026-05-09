@@ -64,10 +64,16 @@ export function validateEmail(email: string): { valid: boolean; error?: string }
 
 export function validatePassword(password: string): { valid: boolean; error?: string } {
   if (!password || password.length < VALIDATION.password.minLength) {
-    return { valid: false, error: `Password must be at least ${VALIDATION.password.minLength} characters.` };
+    return {
+      valid: false,
+      error: `Password must be at least ${VALIDATION.password.minLength} characters.`,
+    };
   }
   if (password.length > VALIDATION.password.maxLength) {
-    return { valid: false, error: `Password must be at most ${VALIDATION.password.maxLength} characters.` };
+    return {
+      valid: false,
+      error: `Password must be at most ${VALIDATION.password.maxLength} characters.`,
+    };
   }
   if (!VALIDATION.password.pattern.test(password)) {
     return { valid: false, error: VALIDATION.password.message };
@@ -80,7 +86,10 @@ export function validateProjectName(name: string): { valid: boolean; error?: str
     return { valid: false, error: 'Project name is required.' };
   }
   if (name.length > VALIDATION.projectName.maxLength) {
-    return { valid: false, error: `Project name must be at most ${VALIDATION.projectName.maxLength} characters.` };
+    return {
+      valid: false,
+      error: `Project name must be at most ${VALIDATION.projectName.maxLength} characters.`,
+    };
   }
   if (!VALIDATION.projectName.pattern.test(name)) {
     return { valid: false, error: VALIDATION.projectName.message };

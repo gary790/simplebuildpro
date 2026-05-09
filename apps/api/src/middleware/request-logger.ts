@@ -13,9 +13,10 @@ export function requestLogger(): MiddlewareHandler {
     const method = c.req.method;
     const url = c.req.path;
     const userAgent = c.req.header('user-agent') || '';
-    const remoteIp = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-      || c.req.header('x-real-ip')
-      || 'unknown';
+    const remoteIp =
+      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+      c.req.header('x-real-ip') ||
+      'unknown';
 
     // Set request ID header for tracing
     c.header('X-Request-ID', requestId);

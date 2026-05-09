@@ -102,18 +102,20 @@ export const logger = {
     log('WARNING', message, { metadata: meta }),
 
   error: (message: string, error?: Error | unknown, meta?: Record<string, unknown>) => {
-    const errorInfo = error instanceof Error
-      ? { name: error.name, message: error.message, stack: error.stack }
-      : error
-        ? { name: 'UnknownError', message: String(error) }
-        : undefined;
+    const errorInfo =
+      error instanceof Error
+        ? { name: error.name, message: error.message, stack: error.stack }
+        : error
+          ? { name: 'UnknownError', message: String(error) }
+          : undefined;
     log('ERROR', message, { error: errorInfo, metadata: meta });
   },
 
   critical: (message: string, error?: Error | unknown, meta?: Record<string, unknown>) => {
-    const errorInfo = error instanceof Error
-      ? { name: error.name, message: error.message, stack: error.stack }
-      : undefined;
+    const errorInfo =
+      error instanceof Error
+        ? { name: error.name, message: error.message, stack: error.stack }
+        : undefined;
     log('CRITICAL', message, { error: errorInfo, metadata: meta });
   },
 

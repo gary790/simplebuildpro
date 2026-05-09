@@ -13,8 +13,19 @@ import { authApi, billingApi, clearTokens, setTokens } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/toast';
 import {
-  User, CreditCard, Shield, ArrowLeft, Check, ExternalLink, Loader2,
-  Smartphone, Copy, ShieldCheck, ShieldOff, KeyRound, AlertTriangle,
+  User,
+  CreditCard,
+  Shield,
+  ArrowLeft,
+  Check,
+  ExternalLink,
+  Loader2,
+  Smartphone,
+  Copy,
+  ShieldCheck,
+  ShieldOff,
+  KeyRound,
+  AlertTriangle,
   Plug2,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -23,9 +34,30 @@ type Tab = 'profile' | 'billing' | 'security' | 'integrations';
 
 const PLAN_FEATURES: Record<string, string[]> = {
   free: ['3 projects', '50 AI messages/mo', '100 MB storage', '10 deploys/mo'],
-  pro: ['25 projects', '500 AI messages/mo', '5 GB storage', 'Unlimited deploys', '3 custom domains', 'Priority support'],
-  business: ['Unlimited projects', '2,000 AI messages/mo', '25 GB storage', 'Unlimited deploys', '10 custom domains', 'Team collaboration'],
-  enterprise: ['Unlimited everything', 'Custom AI limits', '500 GB storage', 'Dedicated support', 'SSO / SAML', 'SLA guarantee'],
+  pro: [
+    '25 projects',
+    '500 AI messages/mo',
+    '5 GB storage',
+    'Unlimited deploys',
+    '3 custom domains',
+    'Priority support',
+  ],
+  business: [
+    'Unlimited projects',
+    '2,000 AI messages/mo',
+    '25 GB storage',
+    'Unlimited deploys',
+    '10 custom domains',
+    'Team collaboration',
+  ],
+  enterprise: [
+    'Unlimited everything',
+    'Custom AI limits',
+    '500 GB storage',
+    'Dedicated support',
+    'SSO / SAML',
+    'SLA guarantee',
+  ],
 };
 
 function SettingsContent() {
@@ -52,7 +84,8 @@ function SettingsContent() {
   useEffect(() => {
     if (activeTab === 'billing') {
       setBillingLoading(true);
-      billingApi.getSubscription()
+      billingApi
+        .getSubscription()
         .then((data) => setSubscription(data))
         .catch(() => {})
         .finally(() => setBillingLoading(false));
@@ -62,7 +95,10 @@ function SettingsContent() {
   const handleUpdateProfile = async () => {
     setSaving(true);
     try {
-      const updated = await authApi.updateProfile({ name: name.trim(), avatarUrl: avatarUrl.trim() || null });
+      const updated = await authApi.updateProfile({
+        name: name.trim(),
+        avatarUrl: avatarUrl.trim() || null,
+      });
       setUser(updated as any);
       toast('success', 'Profile updated');
     } catch (err: any) {
@@ -115,7 +151,11 @@ function SettingsContent() {
   };
 
   const handleLogout = async () => {
-    try { await authApi.logout(); } catch { /* ignore */ }
+    try {
+      await authApi.logout();
+    } catch {
+      /* ignore */
+    }
     clearTokens();
     storeLogout();
     router.push('/login');
@@ -175,7 +215,9 @@ function SettingsContent() {
 
                 <div className="space-y-5">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Full Name
+                    </label>
                     <input
                       type="text"
                       value={name}
@@ -196,7 +238,9 @@ function SettingsContent() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Avatar URL (optional)</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Avatar URL (optional)
+                    </label>
                     <input
                       type="url"
                       value={avatarUrl}
@@ -207,7 +251,9 @@ function SettingsContent() {
                   </div>
 
                   <div className="pt-2 flex justify-between items-center">
-                    <Button onClick={handleUpdateProfile} loading={saving}>Save Changes</Button>
+                    <Button onClick={handleUpdateProfile} loading={saving}>
+                      Save Changes
+                    </Button>
                     <button
                       onClick={handleLogout}
                       className="text-sm text-red-600 hover:text-red-700 font-medium"
@@ -238,7 +284,10 @@ function SettingsContent() {
                         </p>
                         {subscription?.subscription && (
                           <p className="text-sm text-slate-500 mt-1">
-                            Renews {new Date(subscription.subscription.currentPeriodEnd).toLocaleDateString()}
+                            Renews{' '}
+                            {new Date(
+                              subscription.subscription.currentPeriodEnd,
+                            ).toLocaleDateString()}
                           </p>
                         )}
                       </div>
@@ -260,17 +309,24 @@ function SettingsContent() {
                         key={plan}
                         className={clsx(
                           'rounded-xl border p-5',
-                          isCurrent ? 'border-brand-500 bg-brand-50/50' : 'border-slate-200 bg-white',
+                          isCurrent
+                            ? 'border-brand-500 bg-brand-50/50'
+                            : 'border-slate-200 bg-white',
                         )}
                       >
-                        <h3 className="text-base font-bold text-slate-900 capitalize mb-1">{plan}</h3>
+                        <h3 className="text-base font-bold text-slate-900 capitalize mb-1">
+                          {plan}
+                        </h3>
                         <p className="text-2xl font-extrabold text-slate-900 mb-4">
                           {plan === 'free' ? '$0' : plan === 'pro' ? '$19' : '$49'}
                           <span className="text-sm font-normal text-slate-500">/mo</span>
                         </p>
                         <ul className="space-y-2 mb-5">
                           {PLAN_FEATURES[plan].map((feature) => (
-                            <li key={feature} className="flex items-center gap-2 text-xs text-slate-600">
+                            <li
+                              key={feature}
+                              className="flex items-center gap-2 text-xs text-slate-600"
+                            >
                               <Check size={12} className="text-green-500 shrink-0" />
                               {feature}
                             </li>
@@ -301,8 +357,14 @@ function SettingsContent() {
             {activeTab === 'integrations' && (
               <div className="bg-white rounded-xl border border-slate-200 p-6">
                 <h2 className="text-lg font-bold text-slate-900 mb-2">Integrations</h2>
-                <p className="text-sm text-slate-500 mb-5">Connect GitHub, Cloudflare, Vercel, Netlify, and Supabase to deploy and manage your projects.</p>
-                <Button onClick={() => router.push('/dashboard/settings/integrations')} icon={<Plug2 size={14} />}>
+                <p className="text-sm text-slate-500 mb-5">
+                  Connect GitHub, Cloudflare, Vercel, Netlify, and Supabase to deploy and manage
+                  your projects.
+                </p>
+                <Button
+                  onClick={() => router.push('/dashboard/settings/integrations')}
+                  icon={<Plug2 size={14} />}
+                >
                   Manage Integrations
                 </Button>
               </div>
@@ -316,7 +378,9 @@ function SettingsContent() {
 
                   <div className="space-y-4 max-w-md">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Current Password</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Current Password
+                      </label>
                       <input
                         type="password"
                         value={currentPassword}
@@ -325,7 +389,9 @@ function SettingsContent() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        New Password
+                      </label>
                       <input
                         type="password"
                         value={newPassword}
@@ -335,7 +401,9 @@ function SettingsContent() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Confirm New Password</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Confirm New Password
+                      </label>
                       <input
                         type="password"
                         value={confirmPassword}
@@ -367,11 +435,13 @@ function SettingsContent() {
 
 export default function SettingsPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-pulse text-slate-400">Loading settings...</div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="animate-pulse text-slate-400">Loading settings...</div>
+        </div>
+      }
+    >
       <SettingsContent />
     </Suspense>
   );
@@ -411,8 +481,11 @@ function MfaSection() {
           setMfaEnabled(data.data.enabled);
           setRecoveryCodesRemaining(data.data.recoveryCodesRemaining || 0);
         }
-      } catch { /* ignore */ }
-      finally { setMfaLoading(false); }
+      } catch {
+        /* ignore */
+      } finally {
+        setMfaLoading(false);
+      }
     };
     fetchStatus();
   }, []);
@@ -523,10 +596,12 @@ function MfaSection() {
     <div className="bg-white rounded-xl border border-slate-200 p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className={clsx(
-            'p-2 rounded-lg',
-            mfaEnabled ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500',
-          )}>
+          <div
+            className={clsx(
+              'p-2 rounded-lg',
+              mfaEnabled ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500',
+            )}
+          >
             <Smartphone size={18} />
           </div>
           <div>
@@ -538,10 +613,12 @@ function MfaSection() {
             </p>
           </div>
         </div>
-        <span className={clsx(
-          'text-xs font-semibold px-2.5 py-1 rounded-full',
-          mfaEnabled ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600',
-        )}>
+        <span
+          className={clsx(
+            'text-xs font-semibold px-2.5 py-1 rounded-full',
+            mfaEnabled ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600',
+          )}
+        >
           {mfaEnabled ? 'Enabled' : 'Disabled'}
         </span>
       </div>
@@ -551,8 +628,11 @@ function MfaSection() {
           <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
             <ShieldCheck size={16} className="text-green-600 shrink-0" />
             <p className="text-sm text-green-700">
-              Two-factor authentication is active. {recoveryCodesRemaining > 0 && (
-                <span className="font-medium">{recoveryCodesRemaining} recovery codes remaining.</span>
+              Two-factor authentication is active.{' '}
+              {recoveryCodesRemaining > 0 && (
+                <span className="font-medium">
+                  {recoveryCodesRemaining} recovery codes remaining.
+                </span>
               )}
             </p>
           </div>
@@ -571,7 +651,8 @@ function MfaSection() {
               <div className="flex items-start gap-2">
                 <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
                 <p className="text-sm text-red-700">
-                  Disabling 2FA will remove the extra security layer. Enter your password to confirm.
+                  Disabling 2FA will remove the extra security layer. Enter your password to
+                  confirm.
                 </p>
               </div>
               <input
@@ -591,7 +672,14 @@ function MfaSection() {
                 >
                   Confirm Disable
                 </Button>
-                <Button size="sm" variant="secondary" onClick={() => { setDisableOpen(false); setDisablePassword(''); }}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setDisableOpen(false);
+                    setDisablePassword('');
+                  }}
+                >
                   Cancel
                 </Button>
               </div>
@@ -625,7 +713,11 @@ function MfaSection() {
             </h3>
             <div className="flex items-start gap-6">
               {qrCodeUrl ? (
-                <img src={qrCodeUrl} alt="MFA QR Code" className="w-48 h-48 rounded-lg border border-slate-200" />
+                <img
+                  src={qrCodeUrl}
+                  alt="MFA QR Code"
+                  className="w-48 h-48 rounded-lg border border-slate-200"
+                />
               ) : (
                 <div className="w-48 h-48 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center">
                   <Loader2 size={24} className="animate-spin text-slate-400" />
@@ -669,16 +761,25 @@ function MfaSection() {
               autoFocus
               onKeyDown={(e) => e.key === 'Enter' && handleVerifySetup()}
             />
-            {verifyError && (
-              <p className="text-xs text-red-600 mt-1">{verifyError}</p>
-            )}
+            {verifyError && <p className="text-xs text-red-600 mt-1">{verifyError}</p>}
           </div>
 
           <div className="flex gap-2">
-            <Button onClick={handleVerifySetup} loading={verifying} disabled={verifyCode.length !== 6}>
+            <Button
+              onClick={handleVerifySetup}
+              loading={verifying}
+              disabled={verifyCode.length !== 6}
+            >
               Verify & Enable
             </Button>
-            <Button variant="secondary" onClick={() => { setSetupStep('idle'); setVerifyCode(''); setVerifyError(''); }}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setSetupStep('idle');
+                setVerifyCode('');
+                setVerifyError('');
+              }}
+            >
               Cancel
             </Button>
           </div>
@@ -692,15 +793,18 @@ function MfaSection() {
             <div className="text-sm text-amber-700">
               <p className="font-semibold">Save your recovery codes!</p>
               <p className="text-xs mt-1">
-                If you lose access to your authenticator app, use these codes to log in.
-                Each code can only be used once. Store them in a secure location.
+                If you lose access to your authenticator app, use these codes to log in. Each code
+                can only be used once. Store them in a secure location.
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2 p-4 bg-slate-50 border border-slate-200 rounded-lg">
             {recoveryCodes.map((code, i) => (
-              <div key={i} className="font-mono text-sm text-slate-800 bg-white px-3 py-1.5 rounded border border-slate-200 text-center">
+              <div
+                key={i}
+                className="font-mono text-sm text-slate-800 bg-white px-3 py-1.5 rounded border border-slate-200 text-center"
+              >
                 {code}
               </div>
             ))}
@@ -717,7 +821,10 @@ function MfaSection() {
             </Button>
             <Button
               size="sm"
-              onClick={() => { setSetupStep('idle'); setRecoveryCodes([]); }}
+              onClick={() => {
+                setSetupStep('idle');
+                setRecoveryCodes([]);
+              }}
             >
               I&apos;ve Saved My Codes
             </Button>

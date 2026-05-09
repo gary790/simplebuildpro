@@ -120,11 +120,10 @@ export function generateAccessToken(user: {
 
 // Generate refresh token (long-lived: 30 days)
 export function generateRefreshToken(userId: string): string {
-  return jwt.sign(
-    { sub: userId, type: 'refresh' },
-    JWT_SECRET(),
-    { expiresIn: '30d', issuer: 'simplebuildpro.com' },
-  );
+  return jwt.sign({ sub: userId, type: 'refresh' }, JWT_SECRET(), {
+    expiresIn: '30d',
+    issuer: 'simplebuildpro.com',
+  });
 }
 
 // Verify refresh token
