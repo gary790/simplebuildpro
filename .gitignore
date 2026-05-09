@@ -58,3 +58,4 @@ simplebuildpro-sa-key.json
 
 # Turbo cache
 .turbo/
+.github/workflows/
