@@ -1,0 +1,143 @@
+{{- if .Values.websocket.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.websocket.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Values.websocket.name }}
+    app.kubernetes.io/name: {{ .Values.websocket.name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: websocket
+spec:
+  replicas: {{ .Values.websocket.replicas.min }}
+  selector:
+    matchLabels:
+      app: {{ .Values.websocket.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.websocket.name }}
+        app.kubernetes.io/name: {{ .Values.websocket.name }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ .Values.api.serviceAccount }}
+      containers:
+        - name: {{ .Values.websocket.name }}
+          image: "{{ .Values.websocket.image.repository }}:{{ .Values.websocket.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.websocket.port }}
+              protocol: TCP
+          env:
+            {{- range $key, $value := .Values.websocket.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- range .Values.secrets }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: simplebuildpro-secrets
+                  key: {{ .name }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.websocket.resources.requests.cpu }}
+              memory: {{ .Values.websocket.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.websocket.resources.limits.cpu }}
+              memory: {{ .Values.websocket.resources.limits.memory }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.websocket.healthCheck.path }}
+              port: {{ .Values.websocket.port }}
+            initialDelaySeconds: {{ .Values.websocket.healthCheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.websocket.healthCheck.periodSeconds }}
+            failureThreshold: {{ .Values.websocket.healthCheck.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.websocket.healthCheck.path }}
+              port: {{ .Values.websocket.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      # WebSocket connections need longer graceful shutdown
+      terminationGracePeriodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.websocket.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Values.websocket.name }}
+  annotations:
+    cloud.google.com/backend-config: '{"default": "websocket-backend-config"}'
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.websocket.port }}
+      targetPort: {{ .Values.websocket.port }}
+      protocol: TCP
+      name: ws
+  selector:
+    app: {{ .Values.websocket.name }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Values.websocket.name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.websocket.name }}
+  minReplicas: {{ .Values.websocket.replicas.min }}
+  maxReplicas: {{ .Values.websocket.replicas.max }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.websocket.autoscaling.targetCPUUtilization }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+---
+# BackendConfig for WebSocket support (session affinity + timeout)
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: websocket-backend-config
+  namespace: {{ .Release.Namespace }}
+spec:
+  timeoutSec: 3600  # 1 hour WebSocket timeout
+  connectionDraining:
+    drainingTimeoutSec: 60
+  sessionAffinity:
+    affinityType: "GENERATED_COOKIE"
+    affinityCookieTtlSec: 3600
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Values.websocket.name }}-pdb
+  namespace: {{ .Release.Namespace }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.websocket.minAvailable }}
+  selector:
+    matchLabels:
+      app: {{ .Values.websocket.name }}
+{{- end }}

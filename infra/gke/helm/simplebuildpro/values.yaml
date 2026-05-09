@@ -1,0 +1,224 @@
+# SimpleBuild Pro — Helm Chart Default Values
+# Override these in values-staging.yaml or values-production.yaml
+
+# ─── Global ───────────────────────────────────────────────────
+global:
+  project: simplebuildpro
+  region: us-central1
+  registry: us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro
+  imagePullPolicy: IfNotPresent
+
+# ─── API Service ──────────────────────────────────────────────
+api:
+  enabled: true
+  name: api
+  image:
+    repository: us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api
+    tag: phase1
+  replicas:
+    min: 3
+    max: 50
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  port: 8080
+  healthCheck:
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    failureThreshold: 3
+  autoscaling:
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+  env:
+    NODE_ENV: production
+    PORT: "8080"
+  serviceAccount: simplebuildpro-api
+
+# ─── Web Service ──────────────────────────────────────────────
+web:
+  enabled: true
+  name: web
+  image:
+    repository: us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/web
+    tag: phase0
+  replicas:
+    min: 3
+    max: 20
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  port: 3000
+  healthCheck:
+    path: /
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+  autoscaling:
+    targetCPUUtilization: 75
+    targetMemoryUtilization: 85
+  env:
+    NODE_ENV: production
+    PORT: "3000"
+
+# ─── WebSocket Service ────────────────────────────────────────
+websocket:
+  enabled: true
+  name: websocket
+  image:
+    repository: us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api
+    tag: phase1
+  replicas:
+    min: 2
+    max: 20
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  port: 8081
+  healthCheck:
+    path: /ws/health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+  autoscaling:
+    targetCPUUtilization: 60
+  env:
+    NODE_ENV: production
+    PORT: "8081"
+    WS_MODE: "true"
+
+# ─── Worker Service (Background Jobs) ────────────────────────
+worker:
+  enabled: true
+  name: worker
+  image:
+    repository: us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api
+    tag: phase1
+  replicas:
+    min: 2
+    max: 10
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  env:
+    NODE_ENV: production
+    WORKER_MODE: "true"
+    WORKER_CONCURRENCY: "5"
+
+# ─── Secrets (from GCP Secret Manager) ───────────────────────
+secrets:
+  - name: DATABASE_URL
+    secretName: simplebuildpro-database-url
+    version: latest
+  - name: REDIS_URL
+    secretName: simplebuildpro-redis-url
+    version: latest
+  - name: JWT_SECRET
+    secretName: simplebuildpro-jwt-secret
+    version: latest
+  - name: JWT_REFRESH_SECRET
+    secretName: simplebuildpro-jwt-refresh-secret
+    version: latest
+  - name: GOOGLE_CLIENT_ID
+    secretName: simplebuildpro-google-client-id
+    version: latest
+  - name: GOOGLE_CLIENT_SECRET
+    secretName: simplebuildpro-google-client-secret
+    version: latest
+  - name: GITHUB_CLIENT_ID
+    secretName: simplebuildpro-github-client-id
+    version: latest
+  - name: GITHUB_CLIENT_SECRET
+    secretName: simplebuildpro-github-client-secret
+    version: latest
+  - name: STRIPE_SECRET_KEY
+    secretName: simplebuildpro-stripe-secret-key
+    version: latest
+  - name: STRIPE_WEBHOOK_SECRET
+    secretName: simplebuildpro-stripe-webhook-secret
+    version: latest
+  - name: ANTHROPIC_API_KEY
+    secretName: simplebuildpro-anthropic-api-key
+    version: latest
+  - name: GCS_BUCKET
+    secretName: simplebuildpro-gcs-bucket
+    version: latest
+  - name: RESEND_API_KEY
+    secretName: RESEND_API_KEY
+    version: latest
+  - name: ENCRYPTION_KEY
+    secretName: simplebuildpro-encryption-key
+    version: latest
+  - name: E2B_API_KEY
+    secretName: simplebuildpro-e2b-api-key
+    version: latest
+  - name: NOVITA_API_KEY
+    secretName: simplebuildpro-novita-api-key
+    version: latest
+  - name: PAGESPEED_API_KEY
+    secretName: simplebuildpro-pagespeed-api-key
+    version: latest
+
+# ─── Ingress ─────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: gce
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: simplebuildpro-ip
+    networking.gke.io/managed-certificates: simplebuildpro-cert
+    kubernetes.io/ingress.class: gce
+  hosts:
+    - host: api.simplebuildpro.com
+      paths:
+        - path: /
+          service: api
+    - host: app.simplebuildpro.com
+      paths:
+        - path: /
+          service: web
+    - host: simplebuildpro.com
+      paths:
+        - path: /
+          service: web
+    - host: www.simplebuildpro.com
+      paths:
+        - path: /
+          service: web
+    - host: ws.simplebuildpro.com
+      paths:
+        - path: /
+          service: websocket
+
+# ─── Pod Disruption Budget ────────────────────────────────────
+podDisruptionBudget:
+  api:
+    minAvailable: 2
+  web:
+    minAvailable: 2
+  websocket:
+    minAvailable: 1
+
+# ─── Network Policy ──────────────────────────────────────────
+networkPolicy:
+  enabled: true
+  # Only allow traffic from ingress and between services
+  allowIngressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: simplebuildpro

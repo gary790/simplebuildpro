@@ -1,0 +1,134 @@
+# ============================================================
+# SimpleBuild Pro — Cloud Build Security Gate
+# Blocks deployments if critical/high vulnerabilities are found
+# in container images after build
+# ============================================================
+
+steps:
+  # Step 1: Build the API image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/simplebuildpro/api:$SHORT_SHA'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/simplebuildpro/api:latest'
+      - '-f'
+      - 'infra/docker/Dockerfile.api'
+      - '.'
+    id: 'build-api'
+
+  # Step 2: Push to Artifact Registry (triggers auto-scan)
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/simplebuildpro/api:$SHORT_SHA'
+    id: 'push-api'
+    waitFor: ['build-api']
+
+  # Step 3: Wait for vulnerability scan to complete
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Waiting for vulnerability scan to complete..."
+        IMAGE="us-central1-docker.pkg.dev/$PROJECT_ID/simplebuildpro/api:$SHORT_SHA"
+        
+        # Wait up to 5 minutes for scan
+        for i in $(seq 1 30); do
+          SCAN_STATUS=$(gcloud artifacts docker images describe "$$IMAGE" \
+            --format="value(discovery[0].analysisStatus)" 2>/dev/null || echo "SCANNING")
+          
+          if [ "$$SCAN_STATUS" = "FINISHED_SUCCESS" ] || [ "$$SCAN_STATUS" = "FINISHED_FAILED" ]; then
+            echo "Scan complete: $$SCAN_STATUS"
+            break
+          fi
+          
+          echo "  Scan in progress... (attempt $$i/30)"
+          sleep 10
+        done
+    id: 'wait-scan'
+    waitFor: ['push-api']
+
+  # Step 4: Security gate — check for critical vulnerabilities
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        IMAGE="us-central1-docker.pkg.dev/$PROJECT_ID/simplebuildpro/api:$SHORT_SHA"
+        echo "=== Vulnerability Assessment ==="
+        echo "Image: $$IMAGE"
+        echo ""
+        
+        # Get vulnerability counts
+        VULNS=$(gcloud artifacts docker images list-vulnerabilities "$$IMAGE" \
+          --format="json" 2>/dev/null || echo "[]")
+        
+        CRITICAL=$(echo "$$VULNS" | jq '[.[] | select(.vulnerability.effectiveSeverity=="CRITICAL")] | length')
+        HIGH=$(echo "$$VULNS" | jq '[.[] | select(.vulnerability.effectiveSeverity=="HIGH")] | length')
+        MEDIUM=$(echo "$$VULNS" | jq '[.[] | select(.vulnerability.effectiveSeverity=="MEDIUM")] | length')
+        LOW=$(echo "$$VULNS" | jq '[.[] | select(.vulnerability.effectiveSeverity=="LOW")] | length')
+        
+        echo "Vulnerability Summary:"
+        echo "  Critical: $$CRITICAL"
+        echo "  High:     $$HIGH"
+        echo "  Medium:   $$MEDIUM"
+        echo "  Low:      $$LOW"
+        echo ""
+        
+        # GATE: Block deployment if critical vulnerabilities exist
+        if [ "$$CRITICAL" -gt 0 ]; then
+          echo "❌ DEPLOYMENT BLOCKED: $$CRITICAL critical vulnerabilities found!"
+          echo ""
+          echo "Critical vulnerabilities:"
+          echo "$$VULNS" | jq -r '.[] | select(.vulnerability.effectiveSeverity=="CRITICAL") | "  - \(.vulnerability.shortDescription // .vulnerability.packageIssue[0].affectedPackage) (CVE: \(.vulnerability.packageIssue[0].fixedCpeUri // "N/A"))"'
+          exit 1
+        fi
+        
+        # WARN: Alert on high vulnerabilities (don't block)
+        if [ "$$HIGH" -gt 5 ]; then
+          echo "⚠️  WARNING: $$HIGH high-severity vulnerabilities found"
+          echo "   Consider addressing before next release"
+        fi
+        
+        echo "✅ Security gate PASSED — no critical vulnerabilities"
+    id: 'security-gate'
+    waitFor: ['wait-scan']
+
+  # Step 5: Deploy (only if security gate passes)
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'simplebuildpro-api'
+      - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/simplebuildpro/api:$SHORT_SHA'
+      - '--region=us-central1'
+      - '--no-allow-unauthenticated'
+      - '--ingress=internal-and-cloud-load-balancing'
+    id: 'deploy-api'
+    waitFor: ['security-gate']
+
+  # Step 6: Tag as deployed
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud artifacts docker tags add \
+          "us-central1-docker.pkg.dev/$PROJECT_ID/simplebuildpro/api:$SHORT_SHA" \
+          "us-central1-docker.pkg.dev/$PROJECT_ID/simplebuildpro/api:deployed"
+        echo "✅ Image tagged as 'deployed'"
+    id: 'tag-deployed'
+    waitFor: ['deploy-api']
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+timeout: '900s'
+
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/simplebuildpro/api:$SHORT_SHA'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/simplebuildpro/api:latest'

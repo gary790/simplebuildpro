@@ -1,0 +1,14 @@
+apiVersion: v2
+name: simplebuildpro
+description: SimpleBuild Pro — Full-stack web application platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - simplebuildpro
+  - web-platform
+  - saas
+maintainers:
+  - name: SimpleBuild Pro Team
+    email: engineering@simplebuildpro.com
+dependencies: []

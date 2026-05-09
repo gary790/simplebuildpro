@@ -28,6 +28,8 @@ import { analyticsRoutes } from './routes/analytics';
 import { ssoRoutes } from './routes/sso';
 import { gdprRoutes } from './routes/gdpr';
 import { brandingRoutes } from './routes/branding';
+import { dedicatedRoutes } from './routes/dedicated';
+import { dataResidencyRoutes } from './routes/data-residency';
 import { sitesRoutes } from './routes/sites';
 import { integrationsRoutes, oauthConnectRoutes } from './routes/integrations';
 import { errorHandler } from './middleware/error-handler';
@@ -98,6 +100,8 @@ app.route('/api/v1/connect', oauthConnectRoutes); // Public OAuth popup flow (no
 app.route('/api/v1/sso', ssoRoutes); // SSO SAML 2.0 / OIDC (Phase 5)
 app.route('/api/v1/gdpr', gdprRoutes); // GDPR compliance (Phase 5)
 app.route('/api/v1/branding', brandingRoutes); // Org branding / white-label (Phase 5)
+app.route('/api/v1/dedicated', dedicatedRoutes); // Dedicated infrastructure (Phase 5.2)
+app.route('/api/v1/data-residency', dataResidencyRoutes); // Data residency EU/US (Phase 5.2)
 app.route('/health', healthRoutes);
 
 // ─── Sites Serving (*.sites.simplebuildpro.com via host header) ──

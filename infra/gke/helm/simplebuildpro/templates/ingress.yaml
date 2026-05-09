@@ -1,0 +1,72 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: simplebuildpro-ingress
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- range $key, $value := .Values.ingress.annotations }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .service }}
+                port:
+                  number: {{- if eq .service "api" }} {{ $.Values.api.port }}
+                          {{- else if eq .service "web" }} {{ $.Values.web.port }}
+                          {{- else if eq .service "websocket" }} {{ $.Values.websocket.port }}
+                          {{- end }}
+          {{- end }}
+    {{- end }}
+---
+# Managed Certificate for GKE
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: simplebuildpro-cert
+  namespace: {{ .Release.Namespace }}
+spec:
+  domains:
+    - simplebuildpro.com
+    - www.simplebuildpro.com
+    - app.simplebuildpro.com
+    - api.simplebuildpro.com
+    - ws.simplebuildpro.com
+{{- end }}
+---
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: simplebuildpro-network-policy
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from GKE Ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+    # Allow internal namespace traffic
+    - from:
+        {{- range .Values.networkPolicy.allowIngressFrom }}
+        - {{ toYaml . | nindent 10 }}
+        {{- end }}
+  egress:
+    # Allow all egress (Cloud SQL, Redis, external APIs)
+    - {}
+{{- end }}
