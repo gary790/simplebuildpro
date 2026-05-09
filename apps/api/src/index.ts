@@ -28,6 +28,7 @@ import { integrationsRoutes, oauthConnectRoutes } from './routes/integrations';
 import { errorHandler } from './middleware/error-handler';
 import { rateLimiter } from './middleware/rate-limiter';
 import { requestLogger } from './middleware/request-logger';
+import { securityHeaders, csrfProtection } from './middleware/security';
 import { logger } from './services/logger';
 import { apmMiddleware, metricsCollector } from './services/monitoring';
 
@@ -38,6 +39,8 @@ app.use('*', timing());
 app.use('*', apmMiddleware());
 app.use('*', requestLogger());
 app.use('*', secureHeaders());
+app.use('*', securityHeaders());
+app.use('*', csrfProtection);
 app.use(
   '*',
   cors({

@@ -344,8 +344,27 @@ billingWebhookRoute.post('/webhook', async (c) => {
   const sig = c.req.header('stripe-signature');
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-  // For now, accept events without verification (configure webhook secret later)
-  const event = await c.req.json();
+  // Stripe webhook signature verification
+  let event: any;
+  if (webhookSecret && webhookSecret !== 'PLACEHOLDER' && sig) {
+    const Stripe = (await import('stripe')).default;
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+      apiVersion: '2024-12-18.acacia' as any,
+    });
+    const rawBody = await c.req.text();
+    try {
+      event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
+    } catch (err: any) {
+      console.error('[Billing Webhook] Signature verification failed:', err.message);
+      return c.json({ error: 'Invalid signature' }, 400);
+    }
+  } else {
+    // Fallback: accept without verification (dev mode or secret not yet configured)
+    event = await c.req.json();
+    console.warn(
+      '[Billing Webhook] Running WITHOUT signature verification — configure STRIPE_WEBHOOK_SECRET',
+    );
+  }
 
   switch (event.type) {
     case 'setup_intent.succeeded': {
