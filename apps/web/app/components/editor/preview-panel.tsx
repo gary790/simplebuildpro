@@ -35,9 +35,12 @@ export function PreviewPanel() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
-  const hasIndex = files.has('index.html') || files.has('index.htm');
+  const hasIndex = files.has('index.html') || files.has('index.htm') || 
+    Array.from(files.keys()).some(p => p.endsWith('/index.html') || p.endsWith('/index.htm'));
 
   // Priority: WebContainer URL > Sandbox URL > Blob fallback
+  // IMPORTANT: Blob preview shows IMMEDIATELY if index.html exists.
+  // WebContainer/Sandbox only take over once they're fully ready with a URL.
   const useWebcontainer = webcontainerReady && !!webcontainerUrl;
   const useSandbox = !useWebcontainer && !!sandboxUrl && sandboxStatus === 'running';
   const useBlobPreview = !useWebcontainer && !useSandbox && hasIndex;
@@ -49,7 +52,17 @@ export function PreviewPanel() {
   const previewHtml = useMemo(() => {
     if (!useBlobPreview) return null;
 
-    const indexHtml = files.get('index.html') || files.get('index.htm') || '';
+    // Find index.html — check root first, then subdirectories
+    let indexHtml = files.get('index.html') || files.get('index.htm') || '';
+    if (!indexHtml) {
+      // Look for index.html in subdirectories
+      for (const [path, content] of files.entries()) {
+        if (path.endsWith('/index.html') || path.endsWith('/index.htm')) {
+          indexHtml = content;
+          break;
+        }
+      }
+    }
     if (!indexHtml) return null;
 
     let html = indexHtml;
@@ -119,7 +132,8 @@ export function PreviewPanel() {
   }, [previewHtml, previewUrl]);
 
   const hasPreview = !!previewUrl || useBlobPreview;
-  const isBooting = !webcontainerReady && sandboxStatus !== 'running' && sandboxStatus !== 'error';
+  // Only show booting state if there's NO index.html to render as fallback
+  const isBooting = !hasIndex && !webcontainerReady && sandboxStatus !== 'running' && sandboxStatus !== 'error' && sandboxStatus !== 'idle';
 
   return (
     <div className={clsx(

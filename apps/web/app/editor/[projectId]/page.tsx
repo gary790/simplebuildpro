@@ -144,34 +144,36 @@ export default function EditorPage() {
           setActiveFile(indexFile);
         }
 
-        // ─── Boot WebContainer in background ─────────────
-        if (wc.isSupported()) {
-          setWebcontainerReady(false);
-          setSandboxStatus('creating'); // reuse status for UI compat
-          try {
-            await wc.boot();
-            // Mount project files into WebContainer
-            await wc.mountFiles(fileMap);
-            setWebcontainerReady(true);
-            setSandboxStatus('running');
-            console.log('[Editor] WebContainer booted, files mounted');
+        // Set sandbox to idle immediately — blob preview can render now
+        setSandboxStatus('idle');
 
-            // Start dev server if project has package.json
-            const devUrl = await wc.startDevServer((output) => {
-              addTerminalLog(output.replace(/\n$/, ''));
-            });
-            if (devUrl) {
-              setWebcontainerUrl(devUrl);
-              console.log('[Editor] Dev server ready:', devUrl);
+        // ─── Boot WebContainer in background (non-blocking) ──
+        // This runs separately and will upgrade the preview if it succeeds.
+        // If it fails, blob preview continues working fine.
+        if (wc.isSupported()) {
+          // Don't await — let it run in background
+          (async () => {
+            try {
+              setSandboxStatus('creating');
+              await wc.boot();
+              await wc.mountFiles(fileMap);
+              setWebcontainerReady(true);
+              setSandboxStatus('running');
+              console.log('[Editor] WebContainer booted, files mounted');
+
+              const devUrl = await wc.startDevServer((output) => {
+                addTerminalLog(output.replace(/\n$/, ''));
+              });
+              if (devUrl) {
+                setWebcontainerUrl(devUrl);
+                console.log('[Editor] Dev server ready:', devUrl);
+              }
+            } catch (wcErr: any) {
+              console.warn('[Editor] WebContainer failed:', wcErr.message);
+              setSandboxStatus('idle');
+              // No problem — blob preview handles it
             }
-          } catch (wcErr: any) {
-            console.warn('[Editor] WebContainer failed:', wcErr.message);
-            setSandboxStatus('error');
-            // Editor still works — just no instant preview
-          }
-        } else {
-          console.warn('[Editor] WebContainer not supported (no SharedArrayBuffer)');
-          setSandboxStatus('idle');
+          })();
         }
       } catch (err: any) {
         toast('error', 'Failed to load project', err.message);
@@ -185,7 +187,6 @@ export default function EditorPage() {
     clearChat();
 
     return () => {
-      // Teardown WebContainer on unmount
       wc.teardown();
       setProject(null);
       setFiles(new Map());
