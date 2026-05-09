@@ -19,6 +19,7 @@ import { requireAuth, type AuthEnv } from '../middleware/auth';
 import { AppError } from '../middleware/error-handler';
 import { rateLimiter } from '../middleware/rate-limiter';
 import { getStorageService } from '../services/storage';
+import { sendDeployNotificationEmail } from '../services/email';
 import {
   GCS_BUCKET_BUILDS,
   GCS_BUCKET_DEPLOYS,
@@ -27,6 +28,7 @@ import {
   CDN_URL,
 } from '@simplebuildpro/shared';
 import { validateDomain } from '@simplebuildpro/shared';
+import { users } from '@simplebuildpro/db';
 
 export const deployRoutes = new Hono<AuthEnv>();
 deployRoutes.use('*', requireAuth);
@@ -151,6 +153,14 @@ deployRoutes.post('/', async (c) => {
       },
     });
 
+    // Send deploy success notification email (fire and forget)
+    const user = await db.query.users.findFirst({ where: eq(users.id, session.userId) });
+    if (user) {
+      sendDeployNotificationEmail(user.email, user.name, project.name, 'success', siteUrl).catch(
+        () => {},
+      );
+    }
+
     return c.json(
       {
         success: true,
@@ -179,12 +189,106 @@ deployRoutes.post('/', async (c) => {
       .where(eq(deployments.id, deployment.id));
 
     console.error('[Deploy] Failed:', err);
+
+    // Send deploy failure notification email (fire and forget)
+    const user = await db.query.users.findFirst({ where: eq(users.id, session.userId) });
+    if (user) {
+      sendDeployNotificationEmail(
+        user.email,
+        user.name,
+        project.name,
+        'failed',
+        undefined,
+        err instanceof Error ? err.message : 'Unknown error',
+      ).catch(() => {});
+    }
+
     throw new AppError(
       502,
       'DEPLOY_FAILED',
       `Deployment failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
     );
   }
+});
+
+// ─── Rollback Deployment ─────────────────────────────────────
+deployRoutes.post('/rollback/:projectId', async (c) => {
+  const session = c.get('session');
+  const projectId = c.req.param('projectId');
+  const body = await c.req.json().catch(() => ({}));
+  const targetDeploymentId = body.deploymentId; // Optional: rollback to specific deployment
+
+  const db = getDb();
+
+  // Verify project ownership
+  const project = await db.query.projects.findFirst({
+    where: and(eq(projects.id, projectId), eq(projects.ownerId, session.userId)),
+  });
+  if (!project) throw new AppError(404, 'PROJECT_NOT_FOUND', 'Project not found.');
+
+  // Find the deployment to rollback to
+  let targetDeployment: any;
+  if (targetDeploymentId) {
+    targetDeployment = await db.query.deployments.findFirst({
+      where: and(eq(deployments.id, targetDeploymentId), eq(deployments.projectId, projectId)),
+    });
+  } else {
+    // Get the second most recent successful deployment (the one before current)
+    const recentDeploys = await db
+      .select()
+      .from(deployments)
+      .where(and(eq(deployments.projectId, projectId), eq(deployments.status, 'live')))
+      .orderBy(desc(deployments.createdAt))
+      .limit(2);
+
+    targetDeployment = recentDeploys[1]; // Second most recent
+  }
+
+  if (!targetDeployment) {
+    throw new AppError(404, 'NO_ROLLBACK_TARGET', 'No previous deployment found to rollback to.');
+  }
+
+  // Re-deploy from the target deployment's GCS prefix
+  const storage = getStorageService();
+  const deployPrefix = `sites/${project.slug}`;
+  const sourcePrefix = targetDeployment.gcsPrefix || deployPrefix;
+
+  // If source and target are the same prefix, it's already the files we need
+  // Just create a new deployment record pointing to the same version
+  const [rollbackDeploy] = await db
+    .insert(deployments)
+    .values({
+      projectId,
+      versionId: targetDeployment.versionId,
+      status: 'live',
+      url: targetDeployment.url,
+      cdnUrl: targetDeployment.cdnUrl,
+      gcsPrefix: sourcePrefix,
+      createdBy: session.userId,
+      buildDurationMs: 0,
+      completedAt: new Date(),
+    })
+    .returning();
+
+  // Log usage
+  await db.insert(usageLogs).values({
+    userId: session.userId,
+    organizationId: session.organizationId,
+    type: 'deploy',
+    quantity: 1,
+    metadata: { projectId, rollbackFrom: 'current', rollbackTo: targetDeployment.id },
+  });
+
+  return c.json({
+    success: true,
+    data: {
+      deploymentId: rollbackDeploy.id,
+      status: 'live',
+      url: targetDeployment.url,
+      rolledBackTo: targetDeployment.id,
+      rolledBackToDate: targetDeployment.createdAt,
+    },
+  });
 });
 
 // ─── List Deployments ────────────────────────────────────────

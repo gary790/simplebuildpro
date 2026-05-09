@@ -606,13 +606,20 @@ const sendMessageSchema = z.object({
     .default([]),
   // Phase 3: mode flag — 'build' (default) or 'deploy'
   mode: z.enum(['build', 'deploy']).optional().default('build'),
+  // Phase 3: model selection — 'fast' (Haiku) or 'quality' (Sonnet)
+  model: z.enum(['fast', 'quality']).optional().default('quality'),
 });
 
 // ─── Stream Chat (SSE) — Single-Pass Structured Output ───────
 aiRoutes.post('/chat/stream', async (c) => {
   const session = c.get('session');
   const body = await c.req.json();
-  const { projectId, conversationId, message, attachments, mode } = sendMessageSchema.parse(body);
+  const { projectId, conversationId, message, attachments, mode, model } =
+    sendMessageSchema.parse(body);
+
+  // Phase 3: Model selection — 'fast' uses Haiku (cheaper/faster), 'quality' uses Sonnet (default)
+  const AI_MODEL_FAST = 'claude-3-5-haiku-20241022';
+  const selectedModel = model === 'fast' ? AI_MODEL_FAST : AI_MODEL;
 
   const db = getDb();
 
@@ -734,7 +741,7 @@ Use the available tools to help them deploy.`;
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: AI_MODEL,
+        model: selectedModel,
         max_tokens: 2048,
         system: deploySystemPrompt,
         messages: [{ role: 'user', content: message }],
@@ -802,7 +809,7 @@ Use the available tools to help them deploy.`;
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: AI_MODEL,
+            model: selectedModel,
             max_tokens: AI_MAX_TOKENS,
             stream: true,
             system: systemPrompt,
@@ -981,7 +988,7 @@ Use the available tools to help them deploy.`;
           organizationId: session.organizationId,
           type: 'ai_tokens',
           quantity: tokensUsed,
-          metadata: { conversationId: convId, model: AI_MODEL },
+          metadata: { conversationId: convId, model: selectedModel },
         });
 
         logger.info(
@@ -1099,7 +1106,7 @@ aiRoutes.post('/chat', async (c) => {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: AI_MODEL,
+      model: selectedModel,
       max_tokens: AI_MAX_TOKENS,
       system: systemPrompt,
       messages: apiMessages2,

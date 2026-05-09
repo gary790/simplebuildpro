@@ -87,7 +87,7 @@ sitesRoutes.all('/*', async (c) => {
   } catch (err: any) {
     // If file not found, try with .html extension (clean URLs)
     if (err.code === 404 || err.message?.includes('No such object') || err.code === 'ENOENT') {
-      // Try with .html extension for clean URLs
+      // Try with .html extension for clean URLs (e.g., /about → /about.html)
       if (!filePath.includes('.')) {
         try {
           const storage = getStorageService();
@@ -103,11 +103,31 @@ sitesRoutes.all('/*', async (c) => {
             },
           });
         } catch {
+          // Fall through to SPA fallback
+        }
+
+        // SPA fallback: serve index.html for client-side routing
+        // This supports React Router, Vue Router, Next.js, etc.
+        try {
+          const storage = getStorageService();
+          const indexContent = await storage.download(
+            GCS_BUCKET_DEPLOYS,
+            `sites/${slug}/index.html`,
+          );
+          return new Response(indexContent, {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Cache-Control': 'no-cache',
+              'X-SPA-Fallback': 'true',
+            },
+          });
+        } catch {
           // Fall through to 404
         }
       }
 
-      // Try serving 404.html if it exists
+      // Try serving custom 404.html if it exists
       try {
         const storage = getStorageService();
         const notFoundContent = await storage.download(

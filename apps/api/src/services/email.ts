@@ -200,6 +200,75 @@ export async function sendWelcomeEmail(email: string, name: string): Promise<voi
   }
 }
 
+export async function sendDeployNotificationEmail(
+  email: string,
+  name: string,
+  projectName: string,
+  status: 'success' | 'failed',
+  url?: string,
+  error?: string,
+): Promise<void> {
+  const isSuccess = status === 'success';
+  const subject = isSuccess
+    ? `✅ Deploy successful — ${projectName}`
+    : `❌ Deploy failed — ${projectName}`;
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+  <div style="text-align: center; margin-bottom: 32px;">
+    <h1 style="color: #111; font-size: 24px; margin: 0;">SimpleBuild Pro</h1>
+  </div>
+  <h2 style="color: ${isSuccess ? '#16a34a' : '#dc2626'}; font-size: 20px;">${isSuccess ? '✅' : '❌'} Deploy ${status}</h2>
+  <p style="color: #555; font-size: 16px; line-height: 1.6;">
+    Hi ${name},<br><br>
+    Your project <strong>${projectName}</strong> has been ${isSuccess ? 'deployed successfully' : 'failed to deploy'}.
+  </p>
+  ${
+    isSuccess && url
+      ? `
+  <div style="text-align: center; margin: 32px 0;">
+    <a href="${url}" style="background-color: #16a34a; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 16px;">
+      View Live Site
+    </a>
+  </div>
+  <p style="color: #888; font-size: 14px;">Live at: <a href="${url}" style="color: #2563eb;">${url}</a></p>
+  `
+      : ''
+  }
+  ${
+    !isSuccess && error
+      ? `
+  <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 16px; margin: 24px 0;">
+    <p style="color: #991b1b; font-size: 14px; margin: 0; font-family: monospace;">${error}</p>
+  </div>
+  <p style="color: #555; font-size: 14px;">Check the build logs in your dashboard for more details.</p>
+  `
+      : ''
+  }
+  <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+  <p style="color: #aaa; font-size: 12px; text-align: center;">
+    SimpleBuild Pro · Build websites with AI
+  </p>
+</body>
+</html>`;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: email,
+      subject,
+      html,
+    });
+    console.log(`[email] Deploy ${status} notification sent to ${email} for ${projectName}`);
+  } catch (err) {
+    console.error(`[email] Failed to send deploy notification to ${email}:`, err);
+    // Non-critical — don't throw
+  }
+}
+
 export async function sendSpendAlertEmail(
   email: string,
   name: string,
