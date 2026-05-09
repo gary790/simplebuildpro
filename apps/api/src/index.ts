@@ -25,6 +25,9 @@ import { orgRoutes } from './routes/organizations';
 import { mfaRoutes } from './routes/mfa';
 import { adminRoutes } from './routes/admin';
 import { analyticsRoutes } from './routes/analytics';
+import { ssoRoutes } from './routes/sso';
+import { gdprRoutes } from './routes/gdpr';
+import { brandingRoutes } from './routes/branding';
 import { sitesRoutes } from './routes/sites';
 import { integrationsRoutes, oauthConnectRoutes } from './routes/integrations';
 import { errorHandler } from './middleware/error-handler';
@@ -92,6 +95,9 @@ app.route('/api/v1/analytics', analyticsRoutes);
 app.route('/api/v1/billing/enhanced', billingEnhancedRoutes);
 app.route('/api/v1/projects', integrationsRoutes); // Ship panel: integrations, github push, cf deploy, export
 app.route('/api/v1/connect', oauthConnectRoutes); // Public OAuth popup flow (no auth middleware)
+app.route('/api/v1/sso', ssoRoutes); // SSO SAML 2.0 / OIDC (Phase 5)
+app.route('/api/v1/gdpr', gdprRoutes); // GDPR compliance (Phase 5)
+app.route('/api/v1/branding', brandingRoutes); // Org branding / white-label (Phase 5)
 app.route('/health', healthRoutes);
 
 // ─── Sites Serving (*.sites.simplebuildpro.com via host header) ──
@@ -156,7 +162,7 @@ serve({ fetch: app.fetch, port }, (info) => {
   │  Routes:  auth, oauth, projects, files,   │
   │           assets, ai, build, deploy,      │
   │           billing, orgs, mfa, admin,      │
-  │           integrations, health            │
+  │           integrations, sso, gdpr, health │
   └──────────────────────────────────────────┘
   `);
 });

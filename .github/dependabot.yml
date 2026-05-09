@@ -1,0 +1,161 @@
+# ============================================================
+# SimpleBuild Pro — Dependabot Configuration
+# Automated dependency updates & security scanning
+# Phase 5.3b: Security & Compliance
+# ============================================================
+
+version: 2
+
+updates:
+  # ─── Root package (turbo, shared devDeps) ──────────────────
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'America/New_York'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'automated'
+    commit-message:
+      prefix: 'deps(root)'
+    reviewers:
+      - 'gary790'
+    groups:
+      dev-dependencies:
+        dependency-type: 'development'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # ─── API application ──────────────────────────────────────
+  - package-ecosystem: 'npm'
+    directory: '/apps/api'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'America/New_York'
+    open-pull-requests-limit: 10
+    labels:
+      - 'dependencies'
+      - 'api'
+      - 'automated'
+    commit-message:
+      prefix: 'deps(api)'
+    reviewers:
+      - 'gary790'
+    groups:
+      hono-ecosystem:
+        patterns:
+          - 'hono'
+          - '@hono/*'
+      security:
+        patterns:
+          - 'jose'
+          - 'bcryptjs'
+          - 'zod'
+      aws-gcp:
+        patterns:
+          - '@google-cloud/*'
+          - 'stripe'
+      minor-and-patch:
+        dependency-type: 'production'
+        update-types:
+          - 'minor'
+          - 'patch'
+        exclude-patterns:
+          - 'hono'
+          - '@hono/*'
+    # Ignore major bumps for critical deps (manual review)
+    ignore:
+      - dependency-name: 'drizzle-orm'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'stripe'
+        update-types: ['version-update:semver-major']
+
+  # ─── Web application ──────────────────────────────────────
+  - package-ecosystem: 'npm'
+    directory: '/apps/web'
+    schedule:
+      interval: 'weekly'
+      day: 'tuesday'
+      time: '09:00'
+      timezone: 'America/New_York'
+    open-pull-requests-limit: 5
+    labels:
+      - 'dependencies'
+      - 'web'
+      - 'automated'
+    commit-message:
+      prefix: 'deps(web)'
+    reviewers:
+      - 'gary790'
+    groups:
+      next-ecosystem:
+        patterns:
+          - 'next'
+          - 'react'
+          - 'react-dom'
+          - '@next/*'
+      minor-and-patch:
+        dependency-type: 'production'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # ─── Database package ─────────────────────────────────────
+  - package-ecosystem: 'npm'
+    directory: '/packages/db'
+    schedule:
+      interval: 'weekly'
+      day: 'wednesday'
+      time: '09:00'
+      timezone: 'America/New_York'
+    open-pull-requests-limit: 3
+    labels:
+      - 'dependencies'
+      - 'database'
+      - 'automated'
+    commit-message:
+      prefix: 'deps(db)'
+    reviewers:
+      - 'gary790'
+
+  # ─── Docker base images ───────────────────────────────────
+  - package-ecosystem: 'docker'
+    directory: '/infra/docker'
+    schedule:
+      interval: 'weekly'
+      day: 'wednesday'
+      time: '09:00'
+      timezone: 'America/New_York'
+    open-pull-requests-limit: 3
+    labels:
+      - 'dependencies'
+      - 'docker'
+      - 'security'
+    commit-message:
+      prefix: 'deps(docker)'
+    reviewers:
+      - 'gary790'
+
+  # ─── GitHub Actions ───────────────────────────────────────
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'thursday'
+      time: '09:00'
+      timezone: 'America/New_York'
+    open-pull-requests-limit: 3
+    labels:
+      - 'dependencies'
+      - 'ci'
+      - 'automated'
+    commit-message:
+      prefix: 'deps(actions)'
+    reviewers:
+      - 'gary790'

@@ -287,3 +287,55 @@ export async function sendSpendAlertEmail(
     console.error(`[email] Failed to send spend alert to ${email}:`, error);
   }
 }
+
+export async function sendDataExportEmail(email: string, name: string): Promise<void> {
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+  <div style="text-align: center; margin-bottom: 32px;">
+    <h1 style="color: #111; font-size: 24px; margin: 0;">SimpleBuild Pro</h1>
+  </div>
+  <h2 style="color: #111; font-size: 20px;">📦 Your Data Export is Ready</h2>
+  <p style="color: #555; font-size: 16px; line-height: 1.6;">
+    Hi ${name},<br><br>
+    Your GDPR data export has been generated successfully. The export includes all your personal data,
+    projects, files, conversations, usage history, and audit trail.
+  </p>
+  <p style="color: #555; font-size: 16px; line-height: 1.6;">
+    The download should have started automatically. If it didn't, you can request a new export from
+    your account settings.
+  </p>
+  <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px; margin: 24px 0;">
+    <p style="color: #0369a1; font-size: 14px; margin: 0;">
+      <strong>Note:</strong> For security, you can only request one data export every 24 hours.
+      The export file contains sensitive information — please store it securely.
+    </p>
+  </div>
+  <div style="text-align: center; margin: 32px 0;">
+    <a href="${APP_URL}/dashboard/settings" style="background-color: #2563eb; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 16px;">
+      Account Settings
+    </a>
+  </div>
+  <hr style="border: none; border-top: 1px solid #eee; margin: 32px 0;">
+  <p style="color: #aaa; font-size: 12px; text-align: center;">
+    SimpleBuild Pro · Build websites with AI<br>
+    This email was sent because a data export was requested for your account.
+  </p>
+</body>
+</html>`;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: email,
+      subject: '📦 Your data export is ready — SimpleBuild Pro',
+      html,
+    });
+    console.log(`[email] Data export notification sent to ${email}`);
+  } catch (error) {
+    console.error(`[email] Failed to send data export email to ${email}:`, error);
+    // Non-critical — don't throw
+  }
+}
