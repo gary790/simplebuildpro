@@ -60,9 +60,10 @@ export function PreviewPanel() {
   // Active preview URL (WebContainer or Sandbox)
   const previewUrl = useWebcontainer ? webcontainerUrl : useSandbox ? sandboxUrl : null;
 
-  // Build fallback blob preview HTML
+  // Build fallback blob preview HTML — always compute if htmlFile exists
+  // (don't gate on useBlobPreview so it's ready immediately when needed)
   const previewHtml = useMemo(() => {
-    if (!useBlobPreview || !htmlFile) return null;
+    if (!htmlFile) return null;
 
     let indexHtml = files.get(htmlFile) || '';
     if (!indexHtml) return null;
@@ -90,11 +91,12 @@ export function PreviewPanel() {
     }
 
     return html;
-  }, [files, useBlobPreview]);
+  }, [files, htmlFile]);
 
   // Auto-refresh blob preview with debounce
+  // Also handles initial load — when iframe ref becomes available
   useEffect(() => {
-    if (!useBlobPreview || !autoRefresh || !previewHtml || !iframeRef.current) return;
+    if (!useBlobPreview || !autoRefresh || !previewHtml) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -104,7 +106,7 @@ export function PreviewPanel() {
         iframeRef.current.src = url;
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       }
-    }, 500);
+    }, 100); // Reduced from 500ms to 100ms for faster initial render
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);

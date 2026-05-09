@@ -87,9 +87,45 @@ export function AiChat() {
   const [input, setInput] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ─── Load conversation history from DB on mount ─────────
+  useEffect(() => {
+    if (!project?.id || historyLoaded) return;
+
+    const loadHistory = async () => {
+      try {
+        const conversations = await aiApi.getConversations(project.id);
+        if (conversations && conversations.length > 0) {
+          const latestConv = conversations[0];
+          setConversationId(latestConv.id);
+
+          const convData = await aiApi.getMessages(project.id, latestConv.id);
+          if (convData?.messages && convData.messages.length > 0) {
+            const loadedMessages: ChatMessage[] = convData.messages.map((m: any) => ({
+              id: m.id,
+              role: m.role as 'user' | 'assistant',
+              content: m.content || '',
+              timestamp: m.createdAt || new Date().toISOString(),
+              isStreaming: false,
+              filesWritten: m.appliedFiles ? [] : undefined,
+              attachments: m.attachments || undefined,
+            }));
+            setMessages(loadedMessages);
+          }
+        }
+      } catch (err: any) {
+        console.warn('[AiChat] Failed to load history:', err.message);
+      } finally {
+        setHistoryLoaded(true);
+      }
+    };
+
+    loadHistory();
+  }, [project?.id, historyLoaded, setConversationId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -338,6 +374,7 @@ export function AiChat() {
   const clearMessages = () => {
     setMessages([]);
     setConversationId(null);
+    setHistoryLoaded(true); // Don't re-load history after clearing
   };
 
   return (
