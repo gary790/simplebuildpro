@@ -11,7 +11,7 @@
     "studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "drizzle-orm": "^0.38.0",
+    "drizzle-orm": "^0.45.2",
     "pg": "^8.13.0",
     "@types/pg": "^8.11.0"
   },
