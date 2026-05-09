@@ -20,15 +20,24 @@ function createPool(): Pool {
     );
   }
 
+  // Optimized pool settings for Cloud Run (Phase 4.1d)
+  // Cloud Run max-instances=10, each with this pool = max 100 DB connections
+  // Cloud SQL db-f1-micro supports ~100 connections
+  const isProduction = process.env.NODE_ENV === 'production';
+
   return new Pool({
     connectionString,
-    max: 20, // Max connections in pool
-    idleTimeoutMillis: 30000, // Close idle connections after 30s
+    max: isProduction ? 10 : 20, // Reduced per-instance to avoid exhausting Cloud SQL
+    min: isProduction ? 2 : 0, // Keep warm connections in production
+    idleTimeoutMillis: isProduction ? 60000 : 30000, // 60s idle in prod (reduce reconnects)
     connectionTimeoutMillis: 10000, // Timeout connecting after 10s
-    ssl:
-      process.env.NODE_ENV === 'production'
-        ? { rejectUnauthorized: false } // Cloud SQL uses self-signed certs
-        : false,
+    statement_timeout: 30000, // Kill queries running > 30s
+    query_timeout: 30000,
+    ssl: isProduction
+      ? { rejectUnauthorized: false } // Cloud SQL uses self-signed certs
+      : false,
+    // Application name for pg_stat_activity monitoring
+    application_name: `simplebuildpro-api-${process.env.K_REVISION || 'local'}`,
   });
 }
 

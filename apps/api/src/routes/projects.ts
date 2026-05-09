@@ -18,6 +18,7 @@ import { requireAuth, type AuthEnv } from '../middleware/auth';
 import { AppError } from '../middleware/error-handler';
 import { PLAN_LIMITS, STARTER_TEMPLATES } from '@simplebuildpro/shared';
 import { slugify } from '@simplebuildpro/shared';
+import { cache, CACHE_KEYS, CACHE_TTL } from '../services/cache';
 import crypto from 'crypto';
 
 export const projectRoutes = new Hono<AuthEnv>();
@@ -32,6 +33,16 @@ projectRoutes.get('/', async (c) => {
   const pageSize = Math.min(parseInt(c.req.query('pageSize') || '20'), 50);
   const status = c.req.query('status');
   const offset = (page - 1) * pageSize;
+
+  // Try cache first (only for default queries without status filter)
+  const cacheKey = CACHE_KEYS.projectList(session.userId, page);
+  if (!status) {
+    const cached = await cache.get<any>(cacheKey);
+    if (cached) {
+      c.header('X-Cache', 'HIT');
+      return c.json({ success: true, data: cached });
+    }
+  }
 
   const conditions = [eq(projects.ownerId, session.userId)];
   if (status && ['draft', 'published', 'archived'].includes(status)) {
@@ -59,34 +70,39 @@ projectRoutes.get('/', async (c) => {
 
   const total = totalResult[0]?.count || 0;
 
-  return c.json({
-    success: true,
-    data: {
-      items: projectList.map((p) => ({
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        description: p.description,
-        status: p.status,
-        templateId: p.templateId,
-        settings: p.settings,
-        lastDeployedAt: p.lastDeployedAt?.toISOString() || null,
-        createdAt: p.createdAt.toISOString(),
-        updatedAt: p.updatedAt.toISOString(),
-        latestDeployment: p.deployments[0]
-          ? {
-              id: p.deployments[0].id,
-              status: p.deployments[0].status,
-              url: p.deployments[0].url,
-            }
-          : null,
-      })),
-      total,
-      page,
-      pageSize,
-      hasMore: offset + pageSize < total,
-    },
-  });
+  const responseData = {
+    items: projectList.map((p) => ({
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      description: p.description,
+      status: p.status,
+      templateId: p.templateId,
+      settings: p.settings,
+      lastDeployedAt: p.lastDeployedAt?.toISOString() || null,
+      createdAt: p.createdAt.toISOString(),
+      updatedAt: p.updatedAt.toISOString(),
+      latestDeployment: p.deployments[0]
+        ? {
+            id: p.deployments[0].id,
+            status: p.deployments[0].status,
+            url: p.deployments[0].url,
+          }
+        : null,
+    })),
+    total,
+    page,
+    pageSize,
+    hasMore: offset + pageSize < total,
+  };
+
+  // Cache the result (only default queries)
+  if (!status) {
+    await cache.set(cacheKey, responseData, CACHE_TTL.MEDIUM);
+  }
+
+  c.header('X-Cache', 'MISS');
+  return c.json({ success: true, data: responseData });
 });
 
 // ─── Get Single Project ──────────────────────────────────────
@@ -94,6 +110,15 @@ projectRoutes.get('/:id', async (c) => {
   const session = c.get('session');
   const projectId = c.req.param('id');
   const db = getDb();
+
+  // Try cache for project detail
+  const detailCacheKey = CACHE_KEYS.projectDetail(projectId);
+  const cached = await cache.get<any>(detailCacheKey);
+  if (cached && cached._ownerId === session.userId) {
+    c.header('X-Cache', 'HIT');
+    const { _ownerId, ...data } = cached;
+    return c.json({ success: true, data });
+  }
 
   const project = await db.query.projects.findFirst({
     where: and(eq(projects.id, projectId), eq(projects.ownerId, session.userId)),
@@ -111,47 +136,50 @@ projectRoutes.get('/:id', async (c) => {
     throw new AppError(404, 'PROJECT_NOT_FOUND', 'Project not found.');
   }
 
-  return c.json({
-    success: true,
-    data: {
-      id: project.id,
-      name: project.name,
-      slug: project.slug,
-      description: project.description,
-      status: project.status,
-      templateId: project.templateId,
-      settings: project.settings,
-      lastDeployedAt: project.lastDeployedAt?.toISOString() || null,
-      createdAt: project.createdAt.toISOString(),
-      updatedAt: project.updatedAt.toISOString(),
-      files: project.files.map((f) => ({
-        id: f.id,
-        path: f.path,
-        mimeType: f.mimeType,
-        sizeBytes: f.sizeBytes,
-        updatedAt: f.updatedAt.toISOString(),
-      })),
-      assets: project.assets.map((a) => ({
-        id: a.id,
-        filename: a.filename,
-        originalFilename: a.originalFilename,
-        cdnUrl: a.cdnUrl,
-        mimeType: a.mimeType,
-        sizeBytes: a.sizeBytes,
-        width: a.width,
-        height: a.height,
-        createdAt: a.createdAt.toISOString(),
-      })),
-      versions: project.versions.map((v) => ({
-        id: v.id,
-        versionNumber: v.versionNumber,
-        message: v.message,
-        fileCount: v.fileCount,
-        totalSizeBytes: v.totalSizeBytes,
-        createdAt: v.createdAt.toISOString(),
-      })),
-    },
-  });
+  const responseData = {
+    id: project.id,
+    name: project.name,
+    slug: project.slug,
+    description: project.description,
+    status: project.status,
+    templateId: project.templateId,
+    settings: project.settings,
+    lastDeployedAt: project.lastDeployedAt?.toISOString() || null,
+    createdAt: project.createdAt.toISOString(),
+    updatedAt: project.updatedAt.toISOString(),
+    files: project.files.map((f) => ({
+      id: f.id,
+      path: f.path,
+      mimeType: f.mimeType,
+      sizeBytes: f.sizeBytes,
+      updatedAt: f.updatedAt.toISOString(),
+    })),
+    assets: project.assets.map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      originalFilename: a.originalFilename,
+      cdnUrl: a.cdnUrl,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+      width: a.width,
+      height: a.height,
+      createdAt: a.createdAt.toISOString(),
+    })),
+    versions: project.versions.map((v) => ({
+      id: v.id,
+      versionNumber: v.versionNumber,
+      message: v.message,
+      fileCount: v.fileCount,
+      totalSizeBytes: v.totalSizeBytes,
+      createdAt: v.createdAt.toISOString(),
+    })),
+  };
+
+  // Cache with owner verification token
+  await cache.set(detailCacheKey, { ...responseData, _ownerId: session.userId }, CACHE_TTL.MEDIUM);
+
+  c.header('X-Cache', 'MISS');
+  return c.json({ success: true, data: responseData });
 });
 
 // ─── Create Project ──────────────────────────────────────────
@@ -321,6 +349,9 @@ projectRoutes.delete('/:id', async (c) => {
 
   // Cascade delete handles files, assets, versions, deployments, conversations
   await db.delete(projects).where(eq(projects.id, projectId));
+
+  // Invalidate caches
+  await cache.invalidateProject(projectId, session.userId);
 
   // TODO: Queue GCS cleanup job to delete associated assets and builds from storage
 

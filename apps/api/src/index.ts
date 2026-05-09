@@ -19,18 +19,22 @@ import { aiRoutes } from './routes/ai';
 import { buildRoutes } from './routes/build';
 import { deployRoutes } from './routes/deploy';
 import { billingRoutes, billingWebhookRoute } from './routes/billing';
+import { billingEnhancedRoutes } from './routes/billing-enhanced';
 import { healthRoutes } from './routes/health';
 import { orgRoutes } from './routes/organizations';
 import { mfaRoutes } from './routes/mfa';
 import { adminRoutes } from './routes/admin';
+import { analyticsRoutes } from './routes/analytics';
 import { sitesRoutes } from './routes/sites';
 import { integrationsRoutes, oauthConnectRoutes } from './routes/integrations';
 import { errorHandler } from './middleware/error-handler';
 import { rateLimiter } from './middleware/rate-limiter';
 import { requestLogger } from './middleware/request-logger';
 import { customSecurityHeaders, csrfProtection } from './middleware/security';
+import { cacheControl, etagMiddleware, compressionMiddleware } from './middleware/compression';
 import { logger } from './services/logger';
 import { apmMiddleware, metricsCollector } from './services/monitoring';
+import { cache } from './services/cache';
 
 const app = new Hono();
 
@@ -41,6 +45,9 @@ app.use('*', requestLogger());
 app.use('*', secureHeaders());
 app.use('*', customSecurityHeaders);
 app.use('*', csrfProtection);
+app.use('*', cacheControl);
+app.use('*', etagMiddleware);
+app.use('*', compressionMiddleware);
 app.use(
   '*',
   cors({
@@ -81,6 +88,8 @@ app.route('/api/v1/billing', billingWebhookRoute); // Stripe webhook (no auth)
 app.route('/api/v1/organizations', orgRoutes);
 app.route('/api/v1/mfa', mfaRoutes);
 app.route('/api/v1/admin', adminRoutes);
+app.route('/api/v1/analytics', analyticsRoutes);
+app.route('/api/v1/billing/enhanced', billingEnhancedRoutes);
 app.route('/api/v1/projects', integrationsRoutes); // Ship panel: integrations, github push, cf deploy, export
 app.route('/api/v1/connect', oauthConnectRoutes); // Public OAuth popup flow (no auth middleware)
 app.route('/health', healthRoutes);
@@ -104,7 +113,10 @@ app.get('/internal/metrics', (c) => {
   if (internalToken && authHeader !== `Bearer ${internalToken}`) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
-  return c.json(metricsCollector.getMetrics());
+  return c.json({
+    ...metricsCollector.getMetrics(),
+    cache: cache.getStats(),
+  });
 });
 
 // ─── Error Handler ───────────────────────────────────────────
