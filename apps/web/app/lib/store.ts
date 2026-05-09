@@ -4,6 +4,7 @@
 // ============================================================
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { User, Project, ProjectFile, ProjectAsset, PreviewSession } from '@simplebuildpro/shared';
 
 // ─── Auth Store ─────────────────────────────────────────────
@@ -253,26 +254,37 @@ interface ChatState {
   clearMessages: () => void;
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
-  conversationId: null,
-  messages: [],
-  isLoading: false,
-  setConversationId: (id) => set({ conversationId: id }),
-  addMessage: (msg) => set({ messages: [...get().messages, msg] }),
-  updateLastMessage: (content) => {
-    const messages = [...get().messages];
-    const last = messages[messages.length - 1];
-    if (last && last.role === 'assistant') {
-      messages[messages.length - 1] = { ...last, content };
+export const useChatStore = create<ChatState>()(
+  persist(
+    (set, get) => ({
+      conversationId: null,
+      messages: [],
+      isLoading: false,
+      setConversationId: (id) => set({ conversationId: id }),
+      addMessage: (msg) => set({ messages: [...get().messages, msg] }),
+      updateLastMessage: (content) => {
+        const messages = [...get().messages];
+        const last = messages[messages.length - 1];
+        if (last && last.role === 'assistant') {
+          messages[messages.length - 1] = { ...last, content };
+        }
+        set({ messages });
+      },
+      setStreaming: (id, streaming) => {
+        const messages = get().messages.map(m =>
+          m.id === id ? { ...m, isStreaming: streaming } : m
+        );
+        set({ messages });
+      },
+      setLoading: (isLoading) => set({ isLoading }),
+      clearMessages: () => set({ messages: [], conversationId: null }),
+    }),
+    {
+      name: 'sbpro-chat',
+      partialize: (state) => ({
+        conversationId: state.conversationId,
+        messages: state.messages,
+      }),
     }
-    set({ messages });
-  },
-  setStreaming: (id, streaming) => {
-    const messages = get().messages.map(m =>
-      m.id === id ? { ...m, isStreaming: streaming } : m
-    );
-    set({ messages });
-  },
-  setLoading: (isLoading) => set({ isLoading }),
-  clearMessages: () => set({ messages: [], conversationId: null }),
-}));
+  )
+);
