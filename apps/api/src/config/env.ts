@@ -41,9 +41,6 @@ interface EnvConfig {
   // Storage
   GCS_BUCKET: string;
 
-  // Preview
-  NOVITA_API_KEY: string;
-
   // Lighthouse
   PAGESPEED_API_KEY: string;
 
@@ -108,7 +105,6 @@ export function loadConfig(): EnvConfig {
     STRIPE_WEBHOOK_SECRET: env.STRIPE_WEBHOOK_SECRET || '',
     ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY || '',
     GCS_BUCKET: env.GCS_BUCKET || '',
-    NOVITA_API_KEY: env.NOVITA_API_KEY || '',
     PAGESPEED_API_KEY: env.PAGESPEED_API_KEY || '',
     GCP_PROJECT_ID: env.GCP_PROJECT_ID || defaults.GCP_PROJECT_ID!,
     GCP_REGION: env.GCP_REGION || defaults.GCP_REGION!,
