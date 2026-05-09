@@ -1,0 +1,11 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:phase1'
+      - '-f'
+      - 'infra/docker/Dockerfile.api'
+      - '.'
+images:
+  - 'us-central1-docker.pkg.dev/simplebuildpro/simplebuildpro/api:phase1'
