@@ -9,7 +9,7 @@ import { createMiddleware } from 'hono/factory';
  * Security headers middleware for all responses.
  * Implements OWASP recommended headers.
  */
-export const securityHeaders = createMiddleware(async (c, next) => {
+export const customSecurityHeaders = createMiddleware(async (c, next) => {
   await next();
 
   // Strict Transport Security (1 year, include subdomains, preload)
