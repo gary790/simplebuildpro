@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@google-cloud/storage": "^7.14.0",
-    "@hono/node-server": "^1.13.0",
+    "@hono/node-server": "^2.0.2",
     "@simplebuildpro/db": "*",
     "@simplebuildpro/shared": "*",
     "bcryptjs": "^2.4.3",
